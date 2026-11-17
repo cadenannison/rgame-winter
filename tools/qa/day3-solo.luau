@@ -1,10 +1,10 @@
 --!nocheck
 -- QA scenario day3-solo (runner style): run on the SERVER datamodel during Play (start_play, local player)
--- in ONE MCP call. Prints <= 8 lines: `PASS day3-solo/check` or `FAIL day3-solo/check: reason` (FAILs first).
+-- in ONE MCP call. Prints <= 10 lines: `PASS day3-solo/check` or `FAIL day3-solo/check: reason` (FAILs first).
 -- Flow: spawn at camp -> gather wood -> fuel the camp fire -> craft + place a workbench -> 3 days at
 -- DebugService clockSpeed -> a wolf at the fire edge retreats. Uses the services' request handlers
--- (handleGather/handleAddFuel/handleCraft/handlePlace), so every server validation runs.
-local MAX_LINES = 8
+-- (handleGather/handleAddFuel/handleUse/handleCraft/handlePlace), so every server validation runs.
+local MAX_LINES = 10
 local NAME = "day3-solo"
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
@@ -26,7 +26,7 @@ local function api(name)
 end
 local Chunk, Fire, Gather = api("Chunk"), api("Fire"), api("Gather")
 local Inv, Craft, Place = api("Inventory"), api("Crafting"), api("Placement")
-local Mob, Debug = api("Mobs"), api("Debug")
+local Mob, Debug, Survival = api("Mobs"), api("Debug"), api("Survival")
 
 local function flat(a, b)
 	return Vector3.new(a.X - b.X, 0, a.Z - b.Z).Magnitude
@@ -93,6 +93,37 @@ local function scenario(chk)
 		fire ~= nil and Inv.count(P, "Wood") == woodBefore - 1 and fuel1 > fuel0 + Config.Fire.WoodFuelSeconds - 5,
 		"fuel " .. math.floor(fuel0) .. "->" .. math.floor(fuel1) .. " wood " .. woodBefore .. "->" .. Inv.count(P, "Wood")
 	)
+
+	-- 3b. eat raw meat: hunger rises by the catalog value and one item is consumed; a full belly refuses
+	local function meatSlot()
+		for i, st in Inv.get(P).slots do
+			if st and st.id == "RawMeat" then
+				return i
+			end
+		end
+		return nil
+	end
+	Inv.add(P, "RawMeat", 2)
+	Survival.feed(P, -40)
+	task.wait(Config.Meters.ReplicateInterval + 0.4)
+	local h0 = P:GetAttribute(Config.Meters.HungerAttribute) or 0
+	local slot = meatSlot()
+	if slot then
+		Inv.handleUse(P, slot)
+	end
+	task.wait(Config.Meters.ReplicateInterval + 0.4)
+	local h1 = P:GetAttribute(Config.Meters.HungerAttribute) or 0
+	chk(
+		"eat_meat",
+		slot ~= nil and Inv.count(P, "RawMeat") == 1 and h1 >= h0 + Config.Food.RawMeatHunger - 3,
+		"meat " .. Inv.count(P, "RawMeat") .. " hunger " .. math.floor(h0) .. "->" .. math.floor(h1)
+	)
+	Survival.feed(P, Config.Meters.MaxHunger)
+	slot = meatSlot() -- no wait: hunger drains, so a pause would leave room to eat
+	if slot then
+		Inv.handleUse(P, slot)
+	end
+	chk("eat_refused_full", Inv.count(P, "RawMeat") == 1, "meat " .. Inv.count(P, "RawMeat"))
 
 	-- 4. craft a workbench (QA top-up of materials beyond the one gathered tree)
 	Inv.add(P, "Wood", 10)

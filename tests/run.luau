@@ -28,6 +28,7 @@ require("./SurvivalTests")(check)
 require("./ItemTests")(check)
 require("./MobTests")(check)
 require("./PlacementTests")(check)
+require("./ConsumeTests")(check)
 require("./FlowTests")(check)
 
 if failures > 0 then

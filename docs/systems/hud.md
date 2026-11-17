@@ -11,4 +11,5 @@ Status: in progress
 
 ## Integration points
 - Consumes: Workspace attr Config.World.CampAttribute (HudConfig.CampAttribute reads it from Config); MetersUpdate, InventoryUpdate; tags Config.Gather.NodeTag (tree/rock slots now registered by ChunkService), Config.Mobs.Tag.
-- Exposes: nothing server-side. No PlaceRequest or AddFuelRequest sender yet (build/fuel UI pending).
+- Exposes: nothing server-side. Senders: PlaceRequest (selected placeable, aimed HudConfig.PlaceDistance ahead, server snaps), AddFuelRequest (fire within Config.Fire.AddFuelRange, has Wood), GatherRequest, AttackRequest, UseItemRequest (eat; also tap the selected food slot). One context action (ActionPick.choose: fuel > gather/attack > eat > place) drives the mobile button and the E key on PC.
+- Notify(kind, text) -> Toast.luau (length-capped, HudConfig.ToastSeconds).

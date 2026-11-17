@@ -16,7 +16,7 @@ Invariants:
 - Wrong tool or tool below node tier never harvests.
 Exploit surface: Handlers check type, then tag/range, then Guard rate limit, then state (depleted, tool, tier, workbench proximity from tagged instances). Client sends only ids/slots/instances; counts, yields, tiers and durability are server-computed. Slot numbers range-checked.
 Playtest checklist: 1. Hand gather on a tree is refused. 2. Craft Axe with 3 Wood succeeds, with 2 fails. 3. Axe on tree x4 yields wood, node hides, respawns later. 4. Spear fails away from a workbench, succeeds beside a tagged one.
-Status: in progress (server, placement, node registration and tests done; client build UI and food use handler pending)
+Status: in progress (server, placement, food, client senders and tests done)
 
 ## Placement (PlacementService)
 - Owner files: src/server/Items/PlacementService.luau, src/shared/logic/Placement.luau, tests/PlacementTests.luau, ItemCatalog.Structures, Config.Build.
@@ -27,3 +27,4 @@ Status: in progress (server, placement, node registration and tests done; client
 - Exposes: InventoryService.{count, add, remove, getSelected, wearSelected} (used by FireService wood spender, MobService weapon damage/drops, PlacementService cost); GatherService.registerNode (ChunkService); CraftingService.registerWorkbench (PlacementService); handleGather/handleCraft/handlePlace (QA/server path, full validation).
 - Consumes: Config.Inventory.StarterItems (starter Axe on join); FireService.register/count; Workspace.Chunks for ground.
 - Catalog changes: Campfire item/recipe (5 Wood, 2 Stone), RawMeat (food), Hide; Pickaxe is wood-only (4 Wood) so stone is obtainable; Spear damage = Config.Combat.SpearDamage.
+- Food: FoodService.install() (init.server, before start) registers InventoryService.setUseHandler; UseItemRequest(slot) -> type, slot range, Guard (UseRateInterval) -> state (Consume.eat: food, alive, not downed, hunger not full) -> act (SurvivalService.feed clamped gain, consume 1, Notify "eat"). Hunger value is data: ItemCatalog RawMeat.hunger = Config.Food.RawMeatHunger. InventoryService.handleUse = QA path.

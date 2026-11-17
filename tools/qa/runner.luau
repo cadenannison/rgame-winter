@@ -10,7 +10,15 @@ local Config = require(game.ReplicatedStorage.Shared.Config)
 local SCENARIOS = {}
 
 SCENARIOS.debug = function(chk)
-	local Debug = require(game.ServerScriptService.Server.Debug.DebugService)
+	-- MCP code runs in another VM: reach the live DebugService through the Studio-only QA bridge.
+	local Bridge = game:GetService("ServerStorage"):WaitForChild(Config.Debug.BridgeName, 10)
+	local Debug = setmetatable({}, {
+		__index = function(_, fn)
+			return function(...)
+				return Bridge:Invoke("Debug", fn, ...)
+			end
+		end,
+	})
 	local D = Config.Debug
 	local P = Players:GetPlayers()[1]
 	chk("player_exists", P ~= nil, "no player")
@@ -23,18 +31,14 @@ SCENARIOS.debug = function(chk)
 	chk("setDay_rejects_bad", select(1, Debug.run(P, "setDay", -1)) == false, "accepted -1")
 	Debug.run(P, "blizzard", true)
 	chk("blizzard", Workspace:GetAttribute(D.WorldBlizzardAttribute) == true, "not set")
-	local hit = 0
-	local off = Debug.register("stalker", function()
-		hit += 1
-	end)
 	Debug.run(P, "stalker", true)
-	off()
-	chk("registry_hook", hit == 1, "handler calls " .. hit)
+	chk("stalker", Workspace:GetAttribute(D.WorldStalkerAttribute) == true, "not set")
 	Debug.run(P, "invincible", true)
 	chk("invincible", P:GetAttribute(D.PlayerInvincibleAttribute) == true, "not set")
 	Debug.run(P, "invincible", false)
 	Debug.run(P, "blizzard", false)
 	Debug.run(P, "stalker", false)
+	Debug.run(P, "setDay", 1)
 end
 
 local function runScenario(name, fn)

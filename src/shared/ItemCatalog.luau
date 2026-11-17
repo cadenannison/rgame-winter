@@ -13,6 +13,7 @@ export type ItemDef = {
 	durability: number?, -- starting durability for tools and weapons
 	damage: number?, -- weapons
 	structureId: string?, -- placeables
+	hunger: number?, -- food: hunger restored per item
 }
 
 export type Recipe = {
@@ -105,6 +106,7 @@ ItemCatalog.Items = {
 		name = "Raw Meat",
 		kind = "food",
 		maxStack = Config.Inventory.MaxStack,
+		hunger = Config.Food.RawMeatHunger,
 	},
 	Hide = { id = "Hide", name = "Hide", kind = "resource", maxStack = Config.Inventory.MaxStack },
 } :: { [string]: ItemDef }

@@ -12,15 +12,15 @@ World and art are built by idempotent scripts in tools/ (the place file is not i
 | DebugService | standard | Studio-only debug commands + plug-in registry + QA bridge; inert when published | src/server/Debug/DebugService.luau |
 | ChunkService (world-gen) | standard | seeded 8x8 layout, chunk streaming, camp fire, registers tree/rock gather nodes | src/server/World/ChunkService.luau |
 | DayNight/Survival/Fire (survival) | standard | clock, meters, downed/revive, campfire fuel | src/server/Survival/*.luau |
-| Inventory/Gather/Crafting/Placement (items-crafting) | full | inventory, tier-gated nodes, crafting, grid-snapped structure placement | src/server/Items/*.luau |
+| Inventory/Gather/Crafting/Placement (items-crafting) | full | inventory, tier-gated nodes, crafting, grid-snapped structure placement | src/server/Items/*.luau (incl. FoodService eat handler) |
 | MobService (mobs) | full | budgeted spawns, AI near players, fire repel, melee, drops | src/server/Mobs/MobService.luau |
-| HUD | light | client bars, hotbar, compass, hints, mobile action button | src/client/HUD/HudController.luau |
+| HUD | light | client bars, hotbar, compass, hints, mobile/E context action (fuel, gather, attack, eat, place), Notify toast | src/client/HUD/HudController.luau |
 | LoadingScreen | light | ReplicatedFirst loading screen with failure message | src/first/LoadingScreen.client.luau |
 
 ## Wiring (src/server/init.server.luau)
 - FireService.setWoodSpender -> InventoryService.remove(player, "Wood", n).
 - Spawn.setSpawnProvider -> ChunkService.getCampSpawnPosition.
-- DebugService.expose for the Studio-only QA bridge (Debug, Chunk, Fire, Gather, Inventory, Crafting, Placement, Mobs).
+- DebugService.expose for the Studio-only QA bridge (Debug, Chunk, Survival, Fire, Gather, Inventory, Crafting, Placement, Mobs).
 - Start order: Data, Debug, Chunk, DayNight, Survival, Fire, Inventory, Crafting (+Gather), Placement, Mobs, Spawn (last, so no character loads before the world and systems exist).
 - Direct requires across systems: ChunkService -> GatherService.registerNode; PlacementService -> CraftingService.registerWorkbench, FireService.register/count; MobService -> FireService.getLitPositions, InventoryService.getSelected/wearSelected/add.
 

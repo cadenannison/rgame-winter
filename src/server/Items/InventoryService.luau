@@ -157,6 +157,9 @@ local function onUse(player: Player, slot: unknown)
 	end
 end
 
+-- Same path as UseItemRequest (QA and server callers); runs the full validation.
+InventoryService.handleUse = onUse
+
 local function cleanup(player: Player)
 	inventories[player] = nil
 	selected[player] = nil

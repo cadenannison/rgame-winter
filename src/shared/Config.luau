@@ -130,6 +130,10 @@ export type GatherConfig = {
 	NodeTag: string,
 }
 
+export type FoodConfig = {
+	RawMeatHunger: number,
+}
+
 export type CraftConfig = {
 	Range: number,
 	WorkbenchRange: number,
@@ -228,6 +232,7 @@ export type Config = {
 	ToolTier: ToolTierConfig,
 	Gather: GatherConfig,
 	Craft: CraftConfig,
+	Food: FoodConfig,
 	Build: BuildConfig,
 	Mobs: MobConfig,
 	Combat: CombatConfig,
@@ -390,6 +395,9 @@ local Config: Config = {
 		Range = 14, -- max studs from player to workbench for tier 1 recipes
 		WorkbenchRange = 14, -- studs counted as "at a workbench"
 		MaxTier = 1, -- highest workbench tier in Phase 1 (0 = by hand)
+	},
+	Food = {
+		RawMeatHunger = 25, -- hunger restored by eating one Raw Meat (ItemCatalog food rows read this)
 	},
 	Build = {
 		GridStep = 4, -- snap grid size in studs

@@ -11,4 +11,4 @@ Status: in progress
 
 ## Integration points
 - Exposes: register(command, handler) (DayNight setDay/clockSpeed, Chunk teleportRing, Survival invincible), run, expose(name, api).
-- QA bridge (Studio only): ServerStorage[Config.Debug.BridgeName] BindableFunction, Invoke(service, fn, ...) calls a live exposed service. Needed because MCP execute_luau runs in another VM and gets fresh module copies. init.server exposes Debug, Chunk, Fire, Gather, Inventory, Crafting, Placement, Mobs. Not created on published servers; ServerStorage is not client-visible.
+- QA bridge (Studio only): ServerStorage[Config.Debug.BridgeName] BindableFunction, Invoke(service, fn, ...) calls a live exposed service. Needed because MCP execute_luau runs in another VM and gets fresh module copies. init.server exposes Debug, Chunk, Survival, Fire, Gather, Inventory, Crafting, Placement, Mobs. Not created on published servers; ServerStorage is not client-visible.

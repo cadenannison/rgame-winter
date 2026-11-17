@@ -1,6 +1,7 @@
 --!strict
 -- Client HUD built in code. Read-only: displays MetersUpdate / InventoryUpdate / Workspace + Player
--- Attributes; sends intent only (SelectSlotRequest, GatherRequest, AttackRequest).
+-- Attributes; sends intent only (SelectSlotRequest, GatherRequest, AttackRequest, UseItemRequest,
+-- PlaceRequest, AddFuelRequest). Server validates everything.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -15,6 +16,11 @@ local Remotes = require(Shared:WaitForChild("Remotes"))
 local HudMath = require(Shared:WaitForChild("logic"):WaitForChild("HudMath"))
 local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
 local DebugChat = require(script.Parent:WaitForChild("DebugChat"))
+local Toast = require(script.Parent:WaitForChild("Toast"))
+local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
+local ActionPick = require(Shared:WaitForChild("logic"):WaitForChild("ActionPick"))
+
+local ACTION_KEY = Enum.KeyCode.E -- PC key for the context action (mobile uses the on-screen button)
 
 local HOTBAR_KEYS: { Enum.KeyCode } = {
 	Enum.KeyCode.One,
@@ -233,6 +239,8 @@ function HudController.start()
 		hotbar
 	)
 
+	local slotItems: { [number]: string } = {} -- mirror of InventoryUpdate (display and action choice only)
+	local selectedSlot = 1
 	local slots: { [number]: Slot } = {}
 	for i = 1, slotCount do
 		local button = make("TextButton", {
@@ -268,7 +276,13 @@ function HudController.start()
 		countLabel.TextXAlignment = Enum.TextXAlignment.Right
 		slots[i] = { button = button, name = nameLabel, count = countLabel, stroke = stroke }
 		connect(cleanups, button.Activated, function()
-			Remotes.event(Remotes.SelectSlotRequest):FireServer(i)
+			-- Tapping the already-selected food slot eats it; otherwise just select.
+			local def = ItemCatalog.Items[slotItems[i] or ""]
+			if i == selectedSlot and def and def.kind == "food" then
+				Remotes.event(Remotes.UseItemRequest):FireServer(i)
+			else
+				Remotes.event(Remotes.SelectSlotRequest):FireServer(i)
+			end
 		end)
 	end
 
@@ -315,8 +329,10 @@ function HudController.start()
 	local lastDist = -1
 	local targetKind = "none"
 	local targetInstance: Instance? = nil
+	local fireInstance: Instance? = nil
 
 	local function setSelected(selected: number)
+		selectedSlot = selected
 		for i, slot in slots do
 			slot.stroke.Enabled = i == selected
 		end
@@ -347,7 +363,7 @@ function HudController.start()
 	end
 
 	local function pickTarget()
-		targetKind, targetInstance = "none", nil
+		targetKind, targetInstance, fireInstance = "none", nil, nil
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if not root or not root:IsA("BasePart") then
@@ -369,18 +385,63 @@ function HudController.start()
 		end
 		scan(Config.Gather.NodeTag, "gather")
 		scan(Config.Mobs.Tag, "attack")
+		local fireBest = Config.Fire.AddFuelRange
+		for _, inst in CollectionService:GetTagged(Config.Fire.Tag) do
+			local pos = nodePosition(inst)
+			if pos and (pos - root.Position).Magnitude <= fireBest then
+				fireBest, fireInstance = (pos - root.Position).Magnitude, inst
+			end
+		end
+	end
+
+	local function currentAction(): string
+		local def = ItemCatalog.Items[slotItems[selectedSlot] or ""]
+		return ActionPick.choose({
+			fireInRange = fireInstance ~= nil,
+			hasWood = (function()
+				for _, id in slotItems do
+					if id == "Wood" then
+						return true
+					end
+				end
+				return false
+			end)(),
+			targetKind = targetKind,
+			selectedKind = if def then def.kind else nil,
+		})
+	end
+
+	-- Sends one request for the chosen action; never mutates local state.
+	local function doAction()
+		pickTarget()
+		local action = currentAction()
+		if action == "fuel" and fireInstance then
+			Remotes.event(Remotes.AddFuelRequest):FireServer(fireInstance)
+		elseif action == "gather" and targetInstance then
+			Remotes.event(Remotes.GatherRequest):FireServer(targetInstance)
+		elseif action == "attack" and targetInstance then
+			Remotes.event(Remotes.AttackRequest):FireServer(targetInstance)
+		elseif action == "eat" then
+			Remotes.event(Remotes.UseItemRequest):FireServer(selectedSlot)
+		elseif action == "place" then
+			local def = ItemCatalog.Items[slotItems[selectedSlot] or ""]
+			local character = player.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if def and def.structureId and root and root:IsA("BasePart") then
+				local look = root.CFrame.LookVector
+				local _, yaw, _ = root.CFrame:ToOrientation()
+				Remotes.event(Remotes.PlaceRequest):FireServer(
+					def.structureId,
+					root.Position + look * HudConfig.PlaceDistance,
+					math.deg(yaw)
+				)
+			end
+		end
 	end
 
 	if actionButton then
 		local b = actionButton
-		connect(cleanups, b.Activated, function()
-			pickTarget()
-			if targetKind == "gather" and targetInstance then
-				Remotes.event(Remotes.GatherRequest):FireServer(targetInstance)
-			elseif targetKind == "attack" and targetInstance then
-				Remotes.event(Remotes.AttackRequest):FireServer(targetInstance)
-			end
-		end)
+		connect(cleanups, b.Activated, doAction)
 	end
 
 	-- Server -> client updates. Remotes.event may yield, so connect from a spawned thread.
@@ -414,6 +475,16 @@ function HudController.start()
 				return
 			end
 			hasItems = false
+			table.clear(slotItems)
+			for i, stack in p.slots do
+				if
+					type(i) == "number"
+					and type(stack) == "table"
+					and type(stack.id) == "string"
+				then
+					slotItems[i] = stack.id
+				end
+			end
 			for i, slot in slots do
 				local stack = p.slots[i]
 				if type(stack) == "table" and type(stack.id) == "string" then
@@ -441,6 +512,10 @@ function HudController.start()
 	end)
 	connect(cleanups, UserInputService.InputBegan, function(input: InputObject, processed: boolean)
 		if processed then
+			return
+		end
+		if input.KeyCode == ACTION_KEY then
+			doAction()
 			return
 		end
 		local idx = table.find(HOTBAR_KEYS, input.KeyCode)
@@ -500,14 +575,12 @@ function HudController.start()
 		end
 		if actionButton then
 			pickTarget()
-			actionButton.Text = if targetKind == "gather"
-				then "Gather"
-				elseif targetKind == "attack" then "Attack"
-				else "Act"
+			actionButton.Text = ActionPick.Labels[currentAction()] or ActionPick.Labels.none
 		end
 	end)
 
 	addCleanup(cleanups, DebugChat.start())
+	addCleanup(cleanups, Toast.start(gui))
 
 	local function teardown()
 		if destroyed then
