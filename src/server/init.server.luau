@@ -10,6 +10,13 @@ local Guard = require(script.Net.Guard)
 local DataService = require(script.Data.DataService)
 local Spawn = require(script.Spawn.SpawnService)
 local DebugService = require(script.Debug.DebugService)
+local ChunkService = require(script.World.ChunkService)
+local DayNightService = require(script.Survival.DayNightService)
+local SurvivalService = require(script.Survival.SurvivalService)
+local FireService = require(script.Survival.FireService)
+local InventoryService = require(script.Items.InventoryService)
+local CraftingService = require(script.Items.CraftingService)
+local MobService = require(script.Mobs.MobService)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 -- Make sure the remote folder and every remote exist before clients connect.
@@ -19,6 +26,13 @@ Remotes.createAll()
 DataService.start()
 Spawn.start()
 DebugService.start() -- no-op outside Studio
+ChunkService.start()
+DayNightService.start()
+SurvivalService.start()
+FireService.start()
+InventoryService.start()
+CraftingService.start()
+MobService.start()
 
 local function onPlayerAdded(player: Player)
 	-- Per-player setup goes here.

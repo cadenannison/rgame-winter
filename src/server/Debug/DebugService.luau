@@ -21,6 +21,7 @@ local D = Config.Debug
 local registry: { [string]: { Handler } } = {}
 local connections: { RBXScriptConnection } = {}
 local ownedForceFields: { [Player]: ForceField } = {}
+local playerConnections: { [Player]: RBXScriptConnection } = {}
 local started = false
 
 local limits: DebugCommands.Limits = {
@@ -111,16 +112,41 @@ local function onCharacterAdded(player: Player)
 end
 
 local function onPlayerAdded(player: Player)
-	table.insert(
-		connections,
-		player.CharacterAdded:Connect(function()
-			onCharacterAdded(player)
-		end)
-	)
+	if playerConnections[player] then
+		return
+	end
+	playerConnections[player] = player.CharacterAdded:Connect(function()
+		onCharacterAdded(player)
+	end)
+end
+
+local function clearPlayerState(player: Player)
+	setInvincible(player, false)
+	player:SetAttribute(D.PlayerInvincibleAttribute, nil)
+	player:SetAttribute(D.PlayerRingAttribute, nil)
 end
 
 local function onPlayerRemoving(player: Player)
-	ownedForceFields[player] = nil
+	local conn = playerConnections[player]
+	if conn then
+		conn:Disconnect()
+		playerConnections[player] = nil
+	end
+	clearPlayerState(player)
+end
+
+local function clearWorldState()
+	for _, attr in
+		{
+			D.WorldDayAttribute,
+			D.WorldClockSpeedAttribute,
+			D.WorldBlizzardAttribute,
+			D.WorldDarkEventAttribute,
+			D.WorldStalkerAttribute,
+		}
+	do
+		Workspace:SetAttribute(attr, nil)
+	end
 end
 
 function DebugService.start()
@@ -158,9 +184,17 @@ function DebugService.stop()
 		c:Disconnect()
 	end
 	table.clear(connections)
+	for player, conn in playerConnections do
+		conn:Disconnect()
+		playerConnections[player] = nil
+	end
+	for _, player in Players:GetPlayers() do
+		clearPlayerState(player)
+	end
 	for player in ownedForceFields do
 		setInvincible(player, false)
 	end
+	clearWorldState()
 	started = false
 end
 

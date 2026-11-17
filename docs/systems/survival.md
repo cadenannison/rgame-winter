@@ -1,0 +1,12 @@
+# Survival (day/night, meters, campfire, downed)
+Tier: standard
+Purpose: Server-authoritative day/night clock, per-player health/warmth/hunger, campfires with fuel, and downed/revive.
+Spec: docs/specs/run-loop.md, docs/specs/survival.md.
+Owner files: src/server/Survival/{DayNightService,SurvivalService,FireService}.luau, src/shared/logic/{DayClock,FireLogic,SurvivalLogic}.luau, tests/SurvivalTests.luau
+Public API: DayNightService.getDay/isNight/getElapsed/setDay/setClockSpeed. SurvivalService.getMeters/isDowned/damage/heal/feed/warm. FireService.isWarm(Vector3)/isLit/addFuel/setWoodSpender(fn(player, amount) -> boolean). Remotes: MetersUpdate (server -> client, MetersPayload); AddFuelRequest (fire: Instance); ReviveRequest (target: Player). Debug handlers: setDay, clockSpeed, invincible.
+Data touched: Workspace attributes Day/IsNight/ClockHour (Config.Time); Player attributes Warmth, Hunger, Downed (Config.Downed.StateAttribute); Campfire attributes FuelSeconds, Lit; CollectionService tag Config.Fire.Tag. Health mirrors to Humanoid.Health. Nothing persisted.
+Invariants: meters stay within [0, Max]; day counter never decreases except via debug setDay; warmth drains outside a lit fire radius (x night multiplier at night) and regenerates inside; downed players' meters are frozen and bleed out after BleedoutSeconds; a player with no able teammate dies instead of going down; fuel is within [0, MaxFuelSeconds]; same seed gives the same 100-day sim result.
+Exploit surface: AddFuelRequest and ReviveRequest are type-checked, rate limited (Guard, Net.UseRateInterval), state-checked (alive, not downed) and range-checked on the server; wood is spent through a server-only spender hook; the revive channel is re-validated each tick; the client never sends meter values.
+Playtest checklist: 1. Local player stands outside a fire at night, warmth falls; inside the radius it rises. 2. Add wood near a campfire, FuelSeconds rises; far away it is rejected. 3. DebugService setDay/clockSpeed/invincible change the clock and block damage. 4. Two players: one downed, the other revives within ReviveSeconds. Script: tools/qa (survival scenario, not yet written).
+Status: in progress
+Notes: outside damage dealt directly to the Humanoid is absorbed as health loss (Dead state is disabled; the service kills explicitly). Clothing tier, bed/sleeping bag and blizzards are not wired yet.
