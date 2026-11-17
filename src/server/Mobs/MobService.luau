@@ -16,7 +16,7 @@ local MobAI = require(Shared.logic.MobAI)
 local MobRules = require(Shared.logic.MobRules)
 local Server = script.Parent.Parent
 local Guard = require(Server.Net.Guard)
-local FireService = require(Server.Survival.FireService)
+local FireRepel = require(Shared.logic.FireRepel)
 local InventoryService = require(Server.Items.InventoryService)
 
 type MobKind = {
@@ -38,6 +38,8 @@ type MobRow = {
 	wanderUntil: number,
 	lastAction: string?,
 	burst: MobAI.Burst,
+	windup: MobAI.Windup,
+	leaveDeadline: number?,
 }
 
 type PlayerInfo = { player: Player, root: BasePart, humanoid: Humanoid }
@@ -68,6 +70,7 @@ local KINDS: { MobKind } = {
 }
 
 local MOBS = Config.Mobs
+local NIGHT = Config.Night
 local HEALTH_ATTRIBUTE = MOBS.HealthAttribute
 
 local MobService = {}
@@ -179,6 +182,8 @@ local function createMob(kind: MobKind, position: Vector3): Model?
 		wanderUntil = 0,
 		lastAction = nil,
 		burst = { burstEnd = 0, restEnd = 0 },
+		windup = { startedAt = nil },
+		leaveDeadline = nil,
 	}
 	rows[model] = row
 	rowCount += 1
@@ -277,20 +282,50 @@ local function horizontalDir(from: Vector3, to: Vector3): Vector3
 	return if d.Magnitude > 0.001 then d.Unit else Vector3.new(1, 0, 0)
 end
 
--- Lit campfire (FireService state) whose repel radius contains pos.
-local function repellingFire(pos: Vector3, fires: { Vector3 }): Vector3?
-	for _, f in fires do
-		if MobRules.distance(toPoint(pos), toPoint(f)) <= Config.Fire.RepelRadius then
-			return f
+-- Lit campfires from the Fire tag (position + per-fire WarmRadius attribute, Config fallback).
+local function collectFires(): { FireRepel.Fire }
+	local out: { FireRepel.Fire } = {}
+	for _, fire in CollectionService:GetTagged(Config.Fire.Tag) do
+		local fuel = fire:GetAttribute(Config.Fire.FuelAttribute)
+		if type(fuel) == "number" and fuel > 0 then
+			local p: Vector3? = nil
+			if fire:IsA("Model") then
+				p = fire:GetPivot().Position
+			elseif fire:IsA("BasePart") then
+				p = fire.Position
+			end
+			if p then
+				local r = fire:GetAttribute(NIGHT.WarmRadiusAttribute)
+				table.insert(out, {
+					x = p.X,
+					z = p.Z,
+					radius = if type(r) == "number" then r else Config.Fire.WarmRadius,
+				})
+			end
 		end
 	end
-	return nil
+	return out
+end
+
+local function repelOf(f: FireRepel.Fire): number
+	return FireRepel.repelRadius(f.radius, Config.Fire.RepelRadius, NIGHT.RepelMargin)
+end
+
+local function setWindup(row: MobRow, on: boolean)
+	if (row.model:GetAttribute(NIGHT.WindupAttribute) == true) ~= on then
+		row.model:SetAttribute(NIGHT.WindupAttribute, on)
+	end
+end
+
+local function biteSeq(player: Player)
+	local n = player:GetAttribute(NIGHT.BiteAttribute)
+	player:SetAttribute(NIGHT.BiteAttribute, (if type(n) == "number" then n else 0) + 1)
 end
 
 local function stepMob(
 	row: MobRow,
 	infos: { PlayerInfo },
-	fires: { Vector3 },
+	fires: { FireRepel.Fire },
 	isNight: boolean,
 	now: number
 )
@@ -305,7 +340,11 @@ local function stepMob(
 			nearestInfo = info
 		end
 	end
-	local fire = if row.kind.behavior == "Hunt" then repellingFire(pos, fires) else nil
+	local hunter = row.kind.behavior == "Hunt"
+	local fireIndex = if hunter
+		then FireRepel.insideAny(pos.X, pos.Z, fires, NIGHT.RepelMargin, Config.Fire.RepelRadius)
+		else nil
+	local fire = if fireIndex then fires[fireIndex] else nil
 	local action = MobAI.decide({
 		behavior = row.kind.behavior,
 		nearestPlayerDist = nearest,
@@ -317,7 +356,18 @@ local function stepMob(
 		inFireRepel = fire ~= nil,
 		canAttack = now >= row.nextAttackAt,
 	})
+	-- A windup in progress holds its place until the bite lands or the target leaves strike reach.
+	if hunter and row.windup.startedAt ~= nil and (action == "Chase" or action == "Attack") then
+		action = "Attack"
+	end
+	if hunter and action ~= "Attack" and row.windup.startedAt ~= nil then
+		row.windup.startedAt = nil
+		setWindup(row, false)
+	end
 	row.lastAction = action
+	if action ~= "Leave" then
+		row.leaveDeadline = nil
+	end
 
 	local humanoid = row.humanoid
 	if action == "Flee" and nearestInfo then
@@ -331,17 +381,51 @@ local function stepMob(
 		end
 	elseif action == "Retreat" and fire then
 		humanoid.WalkSpeed = stats.FleeSpeed
-		humanoid:MoveTo(pos + horizontalDir(fire, pos) * MOBS.RetreatStep)
+		humanoid:MoveTo(
+			pos + horizontalDir(Vector3.new(fire.x, pos.Y, fire.z), pos) * MOBS.RetreatStep
+		)
+	elseif action == "Leave" then
+		-- Dawn: run away from the nearest player, then despawn.
+		local deadline = row.leaveDeadline or (now + NIGHT.DawnLeaveSeconds)
+		row.leaveDeadline = deadline
+		if now >= deadline then
+			removeMob(row.model)
+			return
+		end
+		humanoid.WalkSpeed = stats.FleeSpeed
+		if nearestInfo then
+			humanoid:MoveTo(pos + horizontalDir(nearestInfo.root.Position, pos) * MOBS.RetreatStep)
+		end
 	elseif action == "Chase" and nearestInfo then
 		humanoid.WalkSpeed = stats.FleeSpeed
-		humanoid:MoveTo(nearestInfo.root.Position)
+		local target = nearestInfo.root.Position
+		local tx, tz = target.X, target.Z
+		-- Never path into a fire's repel circle to reach a sheltered player.
+		for _, f in fires do
+			tx, tz = FireRepel.clampTarget(tx, tz, f, repelOf(f))
+		end
+		humanoid:MoveTo(Vector3.new(tx, target.Y, tz))
 	elseif action == "Attack" and nearestInfo then
-		-- Server recomputes distance at the action.
+		-- Server recomputes distance at every phase of the bite.
 		local d = MobRules.distance(toPoint(pos), toPoint(nearestInfo.root.Position))
-		if d <= stats.AttackRange then
+		local reach = d <= stats.AttackRange + NIGHT.StrikeLeeway
+		local result =
+			MobAI.windupStep(row.windup, now, d <= stats.AttackRange, reach, NIGHT.WindupSeconds)
+		if result == "Start" then
+			row.lastAction = "Windup"
+			humanoid:MoveTo(pos)
+			setWindup(row, true)
+		elseif result == "Wait" then
+			row.lastAction = "Windup"
+			humanoid:MoveTo(pos)
+		elseif result == "Cancel" then
+			setWindup(row, false)
+		elseif result == "Strike" then
+			setWindup(row, false)
 			row.nextAttackAt = now + stats.AttackCooldown
 			if nearestInfo.player:GetAttribute(Config.Debug.PlayerInvincibleAttribute) ~= true then
 				nearestInfo.humanoid:TakeDamage(row.damage)
+				biteSeq(nearestInfo.player)
 			end
 		end
 	else
@@ -381,10 +465,23 @@ local function aiPass(infos: { PlayerInfo })
 	end
 
 	local active = MobRules.selectActive(points, playerPoints, Config.Mobs.AIActiveRadius)
+	-- Dawn: night-only mobs outside the AI radius are never stepped, so they could never finish leaving.
+	if not getIsNight() then
+		local activeSet: { [number]: boolean } = {}
+		for _, index in active do
+			activeSet[index] = true
+		end
+		for i, model in models do
+			local row = rows[model]
+			if row and row.kind.stats.NightOnly and not activeSet[i] then
+				removeMob(model)
+			end
+		end
+	end
 	if #active == 0 then
 		return
 	end
-	local fires = FireService.getLitPositions()
+	local fires = collectFires()
 	local isNight = getIsNight()
 	local now = os.clock()
 	for _, index in active do
@@ -519,7 +616,7 @@ function MobService.spawn(kindName: string, position: Vector3): Model?
 	return nil
 end
 
--- Last AI action of a mob ("Wander" | "Flee" | "Rest" | "Chase" | "Attack" | "Retreat"), nil before its first step.
+-- Last AI action of a mob ("Wander" | "Flee" | "Rest" | "Chase" | "Attack" | "Windup" | "Retreat" | "Leave"), nil before its first step.
 function MobService.getLastAction(model: Model): string?
 	local row = rows[model]
 	return if row then row.lastAction else nil

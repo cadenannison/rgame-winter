@@ -45,34 +45,34 @@ return function(check: (string, boolean) -> ())
 
 	-- Crafting without enough materials
 	local empty = fresh()
-	local ok, reason = Crafting.craft(empty, "Axe", 0)
+	local ok, reason = Crafting.craft(empty, "Axe", {})
 	check("craft no materials fails", not ok and reason == "MissingMaterials")
 	local partial = fresh()
 	Inventory.add(partial, "Wood", 2, 50)
-	ok, reason = Crafting.craft(partial, "Axe", 0)
+	ok, reason = Crafting.craft(partial, "Axe", {})
 	check("craft short materials fails", not ok and reason == "MissingMaterials")
 	check(
 		"craft failure leaves inventory",
 		Inventory.count(partial, "Wood") == 2 and Inventory.count(partial, "Axe") == 0
 	)
-	ok, reason = Crafting.craft(partial, "Nope", 0)
+	ok, reason = Crafting.craft(partial, "Nope", {})
 	check("craft unknown recipe", not ok and reason == "UnknownRecipe")
 
 	-- Success and tiers
 	local rich = fresh()
 	Inventory.add(rich, "Wood", 10, 50)
 	Inventory.add(rich, "Stone", 4, 50)
-	ok = Crafting.craft(rich, "Axe", 0)
+	ok = Crafting.craft(rich, "Axe", {})
 	check(
 		"craft axe",
 		ok and Inventory.count(rich, "Axe") == 1 and Inventory.count(rich, "Wood") == 7
 	)
-	ok, reason = Crafting.craft(rich, "Spear", 0)
+	ok, reason = Crafting.craft(rich, "Spear", {})
 	check(
 		"tier1 recipe needs workbench",
-		not ok and reason == "NeedWorkbench" and Inventory.count(rich, "Spear") == 0
+		not ok and reason == "NeedStation" and Inventory.count(rich, "Spear") == 0
 	)
-	ok = Crafting.craft(rich, "Spear", 1)
+	ok = Crafting.craft(rich, "Spear", { workbench = true })
 	check(
 		"craft spear at workbench",
 		ok and Inventory.count(rich, "Spear") == 1 and Inventory.count(rich, "Stone") == 3
@@ -94,7 +94,7 @@ return function(check: (string, boolean) -> ())
 	-- Full inventory refuses craft and keeps materials
 	local full = Inventory.new(1)
 	Inventory.add(full, "Wood", 50, 50)
-	ok, reason = Crafting.craft(full, "Axe", 0)
+	ok, reason = Crafting.craft(full, "Axe", {})
 	check(
 		"craft inventory full",
 		not ok and reason == "InventoryFull" and Inventory.count(full, "Wood") == 50

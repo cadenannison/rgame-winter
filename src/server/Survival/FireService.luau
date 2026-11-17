@@ -11,15 +11,22 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
+local ItemCatalog = require(Shared.ItemCatalog)
 local FireLogic = require(Shared.logic.FireLogic)
+local FireTiers = require(Shared.logic.FireTiers)
 local Guard = require(script.Parent.Parent.Net.Guard)
+local InventoryService = require(script.Parent.Parent.Items.InventoryService)
 
 local F = Config.Fire
 local FUEL_ATTRIBUTE = F.FuelAttribute
 local LIT_ATTRIBUTE = F.LitAttribute
 local RATE_KEY = "AddFuel"
+local UPGRADE_RATE_KEY = "UpgradeFire"
 
 export type WoodSpender = (player: Player, amount: number) -> boolean
+
+-- A lit campfire for range checks: position plus the radii of its current tier.
+export type LitFire = { x: number, z: number, warmRadius: number, buildRadius: number }
 
 local FireService = {}
 
@@ -48,11 +55,25 @@ local function writeFire(fire: Instance, fuel: number)
 	fire:SetAttribute(LIT_ATTRIBUTE, fuel > 0)
 end
 
+local function tierOf(fire: Instance): number
+	return FireTiers.clamp(fire:GetAttribute(F.TierAttribute))
+end
+
+-- Server recomputes every tier-derived attribute from the tier row (replicates to clients and mobs).
+local function applyTier(fire: Instance, tier: number)
+	local row = FireTiers.get(tier)
+	fire:SetAttribute(F.TierAttribute, FireTiers.clamp(tier))
+	fire:SetAttribute(F.WarmRadiusAttribute, row.WarmRadius)
+	fire:SetAttribute(F.BuildRadiusAttribute, row.BuildRadius)
+	fire:SetAttribute(F.LightRangeAttribute, row.LightRange)
+end
+
 local function register(fire: Instance)
 	if fires[fire] then
 		return
 	end
 	fires[fire] = true
+	applyTier(fire, tierOf(fire))
 	if type(fire:GetAttribute(FUEL_ATTRIBUTE)) ~= "number" then
 		writeFire(fire, F.BurnSeconds)
 	else
@@ -95,6 +116,30 @@ function FireService.getLitPositions(): { Vector3 }
 	return out
 end
 
+-- Every lit campfire with its tier radii (placement build range, mob repel).
+function FireService.getLitFires(): { LitFire }
+	local out: { LitFire } = {}
+	for fire in fires do
+		if readFuel(fire) > 0 then
+			local p = pivotPosition(fire)
+			if p then
+				local row = FireTiers.get(tierOf(fire))
+				table.insert(out, {
+					x = p.X,
+					z = p.Z,
+					warmRadius = row.WarmRadius,
+					buildRadius = row.BuildRadius,
+				})
+			end
+		end
+	end
+	return out
+end
+
+function FireService.getTier(fire: Instance): number
+	return tierOf(fire)
+end
+
 -- Server hook: Inventory code installs the function that removes wood from a player; returns true if spent.
 function FireService.setWoodSpender(fn: WoodSpender?)
 	woodSpender = fn
@@ -110,7 +155,7 @@ function FireService.addFuel(fire: Instance, seconds: number): number
 		return 0
 	end
 	local state = FireLogic.new(readFuel(fire))
-	local added = FireLogic.addFuel(state, seconds, F.MaxFuelSeconds)
+	local added = FireLogic.addFuel(state, seconds, FireTiers.get(tierOf(fire)).MaxFuelSeconds)
 	writeFire(fire, state.fuel)
 	return added
 end
@@ -120,7 +165,16 @@ function FireService.isWarm(position: Vector3): boolean
 	for fire in fires do
 		if readFuel(fire) > 0 then
 			local p = pivotPosition(fire)
-			if p and FireLogic.inRadius(p.X, p.Z, position.X, position.Z, F.WarmRadius) then
+			if
+				p
+				and FireLogic.inRadius(
+					p.X,
+					p.Z,
+					position.X,
+					position.Z,
+					FireTiers.get(tierOf(fire)).WarmRadius
+				)
+			then
 				return true
 			end
 		end
@@ -171,7 +225,8 @@ local function onAddFuel(player: Player, fire: unknown)
 	if (root.Position - position).Magnitude > F.AddFuelRange then
 		return
 	end
-	if readFuel(target) >= F.MaxFuelSeconds then
+	local row = FireTiers.get(tierOf(target))
+	if readFuel(target) >= row.MaxFuelSeconds then
 		return
 	end
 	local spend = woodSpender
@@ -182,8 +237,66 @@ local function onAddFuel(player: Player, fire: unknown)
 	if not okSpend or spent ~= true then
 		return
 	end
-	FireService.addFuel(target, F.WoodFuelSeconds)
+	FireService.addFuel(target, row.WoodFuelSeconds)
 end
+
+local function notify(player: Player, text: string)
+	Remotes.event(Remotes.Notify):FireClient(player, "fire", text)
+end
+
+local function itemName(id: string): string
+	local def = ItemCatalog.Items[id]
+	return if def then def.name else id
+end
+
+-- Handler order: type -> sanity -> rate limit -> state (downed, range, tier cap, cost) -> act.
+-- The server recomputes tier rows and cost; the client sends only the fire.
+local function onUpgrade(player: Player, fire: unknown)
+	if typeof(fire) ~= "Instance" then
+		return
+	end
+	local target = fire :: Instance
+	if not fires[target] or not target:IsDescendantOf(Workspace) then
+		return
+	end
+	if not Guard.rateLimit(player, UPGRADE_RATE_KEY, F.UpgradeRateInterval) then
+		return
+	end
+	if player:GetAttribute(Config.Downed.StateAttribute) == true then
+		return
+	end
+	local root = playerRoot(player)
+	local position = pivotPosition(target)
+	if not root or not position then
+		return
+	end
+	if (root.Position - position).Magnitude > F.UpgradeRange then
+		notify(player, "Too far to upgrade the fire")
+		return
+	end
+	local tier = tierOf(target)
+	local cost = FireTiers.nextCost(tier)
+	if cost == nil then
+		notify(player, "Fire is fully upgraded")
+		return
+	end
+	for _, input in cost do
+		if InventoryService.count(player, input.id) < input.count then
+			notify(player, `Upgrade needs {FireTiers.costText(cost, itemName)}`)
+			return
+		end
+	end
+	for _, input in cost do
+		if not InventoryService.remove(player, input.id, input.count) then
+			return
+		end
+	end
+	applyTier(target, tier + 1)
+	notify(player, `Fire upgraded to tier {tier + 1}`)
+end
+
+-- Same path as UpgradeFireRequest (QA and server callers); runs the full validation.
+FireService.handleUpgrade = onUpgrade
 
 -- Same path as AddFuelRequest (QA and server callers); runs the full validation.
 FireService.handleAddFuel = onAddFuel
@@ -216,6 +329,16 @@ function FireService.start()
 					return
 				end
 				onAddFuel(player, fire)
+			end)
+	)
+	table.insert(
+		connections,
+		Remotes.event(Remotes.UpgradeFireRequest).OnServerEvent
+			:Connect(function(player: Player, fire: unknown)
+				if player.Parent ~= Players then
+					return
+				end
+				onUpgrade(player, fire)
 			end)
 	)
 	table.insert(

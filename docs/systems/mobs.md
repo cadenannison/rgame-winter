@@ -15,3 +15,10 @@ Status: in progress
 - Config: all former local tuning is in Config.Mobs (FolderName, attrs, wander/flee/retreat, spawn ray); budget cap is Scaling.MaxMobBudgetMultiplier; attack rate is Net.AttackRateInterval only.
 - Catchable prey (client UX pass): flee runs in bursts (MobStats.FleeBurstSeconds) with pauses (FleeRestSeconds), MobAI.fleeBurst (pure, tested); lastAction "Rest" during pauses. Hare FleeSpeed 12 and caribou 13 are below Config.WALK_SPEED 16. Melee reach = Combat.MeleeRange + MobStats.HitRadius + LagCompensation (server). Gather tools deal Combat.ToolDamage (axe one-shots a day-1 hare), weapons their catalog damage, else MeleeBaseDamage; tools/weapons wear per hit.
 - Kill: unregistered at once (tag removed, anchored), MobHealth set to 0, destroyed after Mobs.DeathRemoveDelay so clients play the hit confirm from the attribute.
+
+## Night danger
+- Wolf attack: in range + ready -> Windup (Config.Night.WindupSeconds; mob attr Windup true, client growl + tint) -> bite if the target is still within AttackRange + StrikeLeeway (dodgeable). Bite = Wolf.Damage (scaled), AttackCooldown 2s; Player attr BiteSeq bumps (client flash + sound, NightFeedback.luau). MobAI.windupStep (pure).
+- Fire repel reads each lit fire's WarmRadius attribute (fallback Fire.WarmRadius via RepelRadius) + Night.RepelMargin; chase targets are clamped outside the circle (FireRepel, pure). Lit = FuelSeconds > 0 on Config.Fire.Tag instances.
+- Dawn: night-only mobs decide "Leave" (run from nearest player), despawn after Night.DawnLeaveSeconds.
+- Lighting: DayNightService writes Lighting every Lighting.UpdateInterval from LightingMath.nightAmount (dusk/dawn ramp = TwilightPhase). Client adds a PointLight (WarmLight) to lit campfires sized from WarmRadius. Dusk/dawn cues: Assets DuskSound/DawnSound (empty = silent, see ART.md).
+- QA: tools/qa/night-danger.luau; sim: tests/sim.luau night-danger section, tests/NightTests.luau.

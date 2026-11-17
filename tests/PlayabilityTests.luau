@@ -30,11 +30,11 @@ return function(check: (string, boolean) -> ())
 	check("hotbar has 9 slots for keys 1-9", Config.Inventory.HotbarSize == 9)
 
 	-- Craft panel status from counts.
-	check("craft status missing", Crafting.status({}, "Campfire", 0) == "MissingMaterials")
-	check("craft status ok", Crafting.status({ Wood = 5, Stone = 2 }, "Campfire", 0) == "Ok")
+	check("craft status missing", Crafting.status({}, "Campfire", {}) == "MissingMaterials")
+	check("craft status ok", Crafting.status({ Wood = 5, Stone = 2 }, "Campfire", {}) == "Ok")
 	check(
 		"craft status needs workbench",
-		Crafting.status({ Wood = 9, Stone = 9 }, "Spear", 0) == "NeedWorkbench"
+		Crafting.status({ Wood = 9, Stone = 9 }, "Spear", {}) == "NeedStation"
 	)
 	local list = Crafting.listForTier(Config.Craft.MaxTier)
 	check(

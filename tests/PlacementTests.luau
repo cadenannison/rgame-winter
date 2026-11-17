@@ -23,6 +23,8 @@ return function(check: (string, boolean) -> ())
 			fireCount = 0,
 			maxFires = Config.Fire.MaxPerTeam,
 			itemCount = 1,
+			litFires = { { x = 0, z = 0, buildRadius = Config.Fire.Tiers[1].BuildRadius } },
+			buildExempt = false,
 		}
 	end
 	check("place ok", (Placement.check(base())))

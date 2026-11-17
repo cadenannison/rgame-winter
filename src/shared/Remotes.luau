@@ -33,6 +33,7 @@ Remotes.AttackRequest = "AttackRequest" -- client -> server (target: Instance?)
 Remotes.SelectSlotRequest = "SelectSlotRequest" -- client -> server (slot: number)
 Remotes.UseItemRequest = "UseItemRequest" -- client -> server (slot: number), eat/consume
 Remotes.AddFuelRequest = "AddFuelRequest" -- client -> server (fire: Instance), spends wood from inventory
+Remotes.UpgradeFireRequest = "UpgradeFireRequest" -- client -> server (fire: Instance), spends the tier upgrade cost
 Remotes.ReviveRequest = "ReviveRequest" -- client -> server (target: Player)
 Remotes.DebugCommand = "DebugCommand" -- client -> server, Studio only (command: string, arg: any); not in Remotes.all
 
@@ -48,6 +49,7 @@ Remotes.all = {
 	Remotes.SelectSlotRequest,
 	Remotes.UseItemRequest,
 	Remotes.AddFuelRequest,
+	Remotes.UpgradeFireRequest,
 	Remotes.ReviveRequest,
 }
 

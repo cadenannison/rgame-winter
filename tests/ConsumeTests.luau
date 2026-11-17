@@ -55,4 +55,10 @@ return function(check: (string, boolean) -> ())
 	check("fuel when nothing targeted", ActionPick.choose(ctx) == "fuel")
 	ctx.hasWood = false
 	check("no fuel without wood", ActionPick.choose(ctx) == "none")
+	ctx.craftStation = true
+	check("craft at a station", ActionPick.choose(ctx) == "craft")
+	ctx.craftStation, ctx.upgradeAvailable = false, true
+	check("upgrade near a fire", ActionPick.choose(ctx) == "upgrade")
+	ctx.selectedKind, ctx.selectedId, ctx.hasWood = "resource", "Wood", true
+	check("wood in hand still fuels over upgrade", ActionPick.choose(ctx) == "fuel")
 end

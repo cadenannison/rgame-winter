@@ -15,7 +15,8 @@ export type Panel = {
 	setOpen: (boolean) -> (),
 	toggle: () -> (),
 	isOpen: () -> boolean,
-	refresh: (counts: { [string]: number }, tier: number) -> (),
+	refresh: (counts: { [string]: number }, near: Crafting.Near) -> (),
+	statusOf: (recipeId: string) -> string, -- last computed status (QA bridge)
 	click: (recipeId: string) -> (), -- same path as clicking a recipe row (QA bridge uses it)
 	destroy: () -> (),
 }
@@ -154,7 +155,13 @@ function CraftPanel.new(
 		if s == "Ok" then
 			onCraft(id)
 		else
-			onDenied(HudConfig.NotifyText[s] or s)
+			local stationId = Crafting.requiredStation(id)
+			local station = if stationId then Config.Craft.Stations[stationId] else nil
+			if s == "NeedStation" and station then
+				onDenied(`Needs a {station.Label} nearby`)
+			else
+				onDenied(HudConfig.NotifyText[s] or s)
+			end
 		end
 	end
 	for order, id in Crafting.listForTier(Config.Craft.MaxTier) do
@@ -210,13 +217,23 @@ function CraftPanel.new(
 		isOpen = function(): boolean
 			return open
 		end,
-		refresh = function(counts: { [string]: number }, tier: number)
-			benchNote.Text = if tier >= 1
-				then "At a workbench (tier 1 recipes unlocked)"
-				else "No workbench nearby (tier 0 only)"
+		statusOf = function(recipeId: string): string
+			return status[recipeId] or "Unknown"
+		end,
+		refresh = function(counts: { [string]: number }, near: Crafting.Near)
+			local here: { string } = {}
+			for name, station in Config.Craft.Stations do
+				if near[name] then
+					table.insert(here, station.Label)
+				end
+			end
+			table.sort(here)
+			benchNote.Text = if #here > 0
+				then `At a {table.concat(here, ", ")}: its recipes are unlocked`
+				else "No station nearby: hand recipes only"
 			for id, row in rows do
 				local recipe = ItemCatalog.Recipes[id]
-				local s = Crafting.status(counts, id, tier)
+				local s = Crafting.status(counts, id, near)
 				status[id] = s
 				local parts: { string } = {}
 				for _, input in recipe.inputs do
@@ -229,7 +246,11 @@ function CraftPanel.new(
 				local outDef = ItemCatalog.Items[recipe.output.id]
 				row.title.Text = if outDef then outDef.name else id
 				row.detail.Text = table.concat(parts, "   ")
-					.. (if s == "NeedWorkbench" then "   (needs workbench)" else "")
+					.. (
+						if s == "NeedStation"
+							then `   (needs {Config.Craft.Stations[recipe.station or ""].Label})`
+							else ""
+					)
 				local dim = if s == "Ok" then 0 else HudConfig.DisabledTransparency
 				row.title.TextTransparency = dim
 				row.detail.TextTransparency = dim

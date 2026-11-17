@@ -52,7 +52,7 @@ return function(check: (string, boolean) -> ())
 		"wolf chases while on cooldown",
 		MobAI.decide(input({ nearestPlayerDist = 3, canAttack = false })) == "Chase"
 	)
-	check("wolf passive by day", MobAI.decide(input({ isNight = false })) == "Wander")
+	check("wolf leaves by day", MobAI.decide(input({ isNight = false })) == "Leave")
 	check("wolf ignores far player", MobAI.decide(input({ nearestPlayerDist = 80 })) == "Wander")
 	check(
 		"wolf retreats at fire edge",

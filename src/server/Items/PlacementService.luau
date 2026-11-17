@@ -126,8 +126,9 @@ local function build(
 	part:SetAttribute(B.OwnerAttribute, player.UserId)
 	if def.role == "campfire" then
 		CollectionService:AddTag(part, Config.Fire.Tag)
-	elseif def.role == "workbench" then
-		CraftingService.registerWorkbench(part, def.tier)
+	end
+	if def.station then
+		CraftingService.registerStation(part, def.station, def.tier)
 	end
 	placed[part] = player.UserId
 	part.Destroying:Once(function()
@@ -178,6 +179,10 @@ local function onPlace(player: Player, structureId: unknown, position: unknown, 
 	local x = Placement.snap(pos.X, B.GridStep)
 	local z = Placement.snap(pos.Z, B.GridStep)
 	local rotation = Placement.snapRotation(rotationY :: number, B.RotationStep)
+	local litFires: { Placement.BuildFire } = {}
+	for _, fire in FireService.getLitFires() do
+		table.insert(litFires, { x = fire.x, z = fire.z, buildRadius = fire.buildRadius })
+	end
 	local ok, reason = Placement.check({
 		structureId = id,
 		target = { x = x, z = z },
@@ -190,6 +195,8 @@ local function onPlace(player: Player, structureId: unknown, position: unknown, 
 		fireCount = FireService.count(),
 		maxFires = Config.Fire.MaxPerTeam,
 		itemCount = InventoryService.count(player, def.itemId),
+		litFires = litFires,
+		buildExempt = B.RangeExempt[def.id] == true,
 	})
 	if not ok then
 		notify(player, reason)

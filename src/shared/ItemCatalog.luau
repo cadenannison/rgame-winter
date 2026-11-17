@@ -18,7 +18,8 @@ export type ItemDef = {
 
 export type Recipe = {
 	id: string,
-	tier: number, -- workbench tier required (0 = by hand)
+	tier: number, -- panel ordering (0 = by hand)
+	station: string?, -- Config.Craft.Stations key required nearby (nil = by hand)
 	inputs: { { id: string, count: number } },
 	output: { id: string, count: number },
 }
@@ -32,6 +33,7 @@ export type StructureDef = {
 	sizeY: number,
 	sizeZ: number,
 	tier: number?, -- workbench tier
+	station: string?, -- Config.Craft.Stations key this structure provides
 }
 
 export type NodeDef = {
@@ -46,7 +48,7 @@ export type NodeDef = {
 
 local ItemCatalog = {}
 
-ItemCatalog.WorkbenchTag = "Workbench" -- CollectionService tag for placed workbenches
+ItemCatalog.WorkbenchTag = Config.Craft.Stations.workbench.Tag -- CollectionService tag for placed workbenches
 ItemCatalog.WorkbenchTierAttribute = "WorkbenchTier" -- optional Number attribute (default 1)
 ItemCatalog.NodeKindAttribute = "NodeKind"
 ItemCatalog.NodeHitsAttribute = "HitsLeft"
@@ -142,6 +144,7 @@ ItemCatalog.Recipes = {
 	Spear = {
 		id = "Spear",
 		tier = 1,
+		station = "workbench",
 		inputs = { { id = "Wood", count = 3 }, { id = "Stone", count = 1 } },
 		output = { id = "Spear", count = 1 },
 	},
@@ -156,6 +159,7 @@ ItemCatalog.Structures = {
 		sizeY = 3,
 		sizeZ = 4,
 		tier = 1,
+		station = "workbench",
 	},
 	Campfire = {
 		id = "Campfire",

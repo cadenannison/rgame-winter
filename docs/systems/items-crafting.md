@@ -5,7 +5,7 @@ Owner files: src/server/Items/{InventoryService,GatherService,CraftingService}.l
 Public API:
 - InventoryService: get, count, add(player,id,n)->leftover, remove(player,id,n)->bool, getSelected, getSelectedSlot, wearSelected, setUseHandler(fn), sync. Remotes: SelectSlotRequest(slot), UseItemRequest(slot), InventoryUpdate (server->client snapshot).
 - GatherService.registerNode(instance, "Tree"|"Rock") / unregisterNode (for ChunkService). Remote: GatherRequest(node).
-- CraftingService.registerWorkbench(instance, tier?), availableTier(player). Remote: CraftRequest(recipeId). CraftingService.start() also starts InventoryService and GatherService.
+- CraftingService.registerStation(instance, station, tier?) / registerWorkbench, nearStations(player) -> {[station]: true} (Config.Craft.Stations Tag+Range; server re-checks at CraftRequest), availableTier (legacy). Remote: CraftRequest(recipeId). CraftingService.start() also starts InventoryService and GatherService.
 - Items: Wood, Stone, Axe, Pickaxe, Spear, Workbench, Campfire, RawMeat, Hide. Recipes: Axe, Pickaxe, Workbench, Campfire (tier 0); Spear (tier 1).
 Data touched: Tags ResourceNode (Config.Gather.NodeTag), Workbench; node Attributes NodeKind, HitsLeft, Depleted; Player attribute SelectedSlot. No persistence (inventory resets on join until DataService integration).
 Invariants:
@@ -14,14 +14,14 @@ Invariants:
 - Tools never stack and lose durability per gather hit; broken tools are removed.
 - A node yields only when depleted after HitsToDeplete hits, then respawns after RespawnSeconds.
 - Wrong tool or tool below node tier never harvests.
-Exploit surface: Handlers check type, then tag/range, then Guard rate limit, then state (depleted, tool, tier, workbench proximity from tagged instances). Client sends only ids/slots/instances; counts, yields, tiers and durability are server-computed. Slot numbers range-checked.
+Recipe.station (ItemCatalog) names the required Config.Craft.Stations entry; Crafting.craft/status take the near-stations table and fail with NeedStation. Exploit surface: Handlers check type, then tag/range, then Guard rate limit, then state (depleted, tool, tier, workbench proximity from tagged instances). Client sends only ids/slots/instances; counts, yields, tiers and durability are server-computed. Slot numbers range-checked.
 Playtest checklist: 1. Hand gather on a tree is refused. 2. Craft Axe with 3 Wood succeeds, with 2 fails. 3. Axe on tree x4 yields wood, node hides, respawns later. 4. Spear fails away from a workbench, succeeds beside a tagged one.
 Status: in progress (server, placement, food, client senders and tests done)
 
 ## Placement (PlacementService)
 - Owner files: src/server/Items/PlacementService.luau, src/shared/logic/Placement.luau, tests/PlacementTests.luau, ItemCatalog.Structures, Config.Build.
 - Remote PlaceRequest(structureId: string, position: Vector3, rotationY: number). Order: type-check -> sanity (known structure, finite vector, rotation bound) -> Guard rate limit (Net.PlaceRateInterval) -> state (alive, not downed, Placement.check: range, MinSpacing, per-player cap, Fire.MaxPerTeam, holds the item; ground raycast into Workspace.Chunks) -> act (remove 1 item, then build).
-- Snapping: XZ to Build.GridStep, rotation to Build.RotationStep. Workbench -> CraftingService.registerWorkbench(part, tier); Campfire -> tag Config.Fire.Tag + FireService.register. Structures live in Workspace.Structures with attrs StructureId, OwnerUserId.
+- Build range: Placement.check also needs the snapped point inside the BuildRadius of a lit fire (FireService.getLitFires) unless Config.Build.RangeExempt[structure] (Campfire, SleepingBag); refusal OutOfBuildRange -> toast "Too far from the fire". Snapping: XZ to Build.GridStep, rotation to Build.RotationStep. Workbench -> CraftingService.registerWorkbench(part, tier); Campfire -> tag Config.Fire.Tag + FireService.register. Structures live in Workspace.Structures with attrs StructureId, OwnerUserId.
 
 ## Integration points
 - Exposes: InventoryService.{count, add, remove, getSelected, wearSelected} (used by FireService wood spender, MobService weapon damage/drops, PlacementService cost); GatherService.registerNode (ChunkService); CraftingService.registerWorkbench (PlacementService); handleGather/handleCraft/handlePlace (QA/server path, full validation).

@@ -3,6 +3,7 @@
 local Players = game:GetService("Players")
 
 local HudController = require(script.HUD.HudController)
+local NightFeedback = require(script.HUD.NightFeedback)
 
 local player = Players.LocalPlayer
 
@@ -10,3 +11,4 @@ local player = Players.LocalPlayer
 print(`Client ready: {player.Name}`)
 
 HudController.start()
+NightFeedback.start()

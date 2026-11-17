@@ -12,11 +12,13 @@ Three meters drive survival: health, warmth and hunger. Warmth and hunger tick d
 
 **Campfire.** It needs wood as fuel and goes out without it. Upgrades widen the warm radius and extend burn time. Most hostiles are repelled at the edge of the radius, though ranged and heavy mobs can break through. Extra campfires can be built elsewhere.
 
+**Campfire tiers and build range.** Tiers are data (Config.Fire.Tiers): each raises warm radius, burn time (fuel cap and burn per wood), build radius and light range. A fire carries Attributes Tier, WarmRadius, BuildRadius, LightRange; wolves repel at the warm radius. Structures can only be placed within the build radius of a lit campfire (server-checked at the place action; toast "Too far from the fire"). Exempt by Config.Build.RangeExempt: extra campfire (starts a new camp) and sleeping bag (travel). Upgrade: stand at the fire and use the context action "Upgrade fire"; if the materials are missing the prompt and a toast show the cost. A soft dotted ring on the ground marks the warm radius (and the build radius while a placeable is selected).
+
 **Food.** Players hunt animals and forage for raw food. Cooking at a campfire or cooking station restores more hunger and adds a short buff. Raw food restores little or carries a downside.
 
 **Gathering.** Trees, rocks and ore are resource nodes that need the right tool tier. Nodes respawn slowly. Far biomes hold higher-tier nodes.
 
-**Crafting.** Crafting runs in workbench tiers: tier 0 by hand, tier 1 at the workbench, tier 2 at the forge. Recipes are shared by the whole party. Clothing comes in tiers that cut warmth drain, and the far biomes are cold enough that low tiers cannot survive there.
+**Crafting.** Crafting runs in workbench tiers: tier 0 by hand, tier 1 at the workbench, tier 2 at the forge. A recipe's station field (Config.Craft.Stations) must be within range of the player, checked by the server when crafting; near a station the context action reads "Craft", away the recipes are greyed with "needs workbench". Recipes are shared by the whole party. Clothing comes in tiers that cut warmth drain, and the far biomes are cold enough that low tiers cannot survive there.
 
 **Durability.** Tools and weapons wear out with use. Repair at a workbench costs materials.
 

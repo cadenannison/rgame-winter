@@ -21,6 +21,7 @@ local function placeholderSystem(): Sim.System
 end
 
 return function(check: (string, boolean) -> ())
+	Sim.fireBuildChecks(check)
 	local ok, a, b = Sim.determinism(12345, 100, function(sim)
 		sim:addSystem(placeholderSystem())
 	end)

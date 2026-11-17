@@ -73,13 +73,13 @@ return function(check: (string, boolean) -> ())
 		wood += harvest(inv, "Tree", "Axe")
 	end
 	check("flow gather wood", wood == 6 * Config.Gather.TreeYield)
-	check("flow craft pickaxe (wood only)", (Crafting.craft(inv, "Pickaxe", 0)))
+	check("flow craft pickaxe (wood only)", (Crafting.craft(inv, "Pickaxe", {})))
 	local stone = 0
 	for _ = 1, 2 do
 		stone += harvest(inv, "Rock", "Pickaxe")
 	end
 	check("flow mine stone", stone == 2 * Config.Gather.RockYield)
-	check("flow craft workbench", (Crafting.craft(inv, "Workbench", 0)))
+	check("flow craft workbench", (Crafting.craft(inv, "Workbench", {})))
 
 	local x = Placement.snap(13.7, Config.Build.GridStep)
 	local z = Placement.snap(-6.1, Config.Build.GridStep)
@@ -95,6 +95,8 @@ return function(check: (string, boolean) -> ())
 		fireCount = 1,
 		maxFires = Config.Fire.MaxPerTeam,
 		itemCount = Inventory.count(inv, "Workbench"),
+		litFires = { { x = 0, z = 0, buildRadius = Config.Fire.Tiers[1].BuildRadius } },
+		buildExempt = false,
 	})
 	check(
 		"flow place workbench snapped",
@@ -102,7 +104,7 @@ return function(check: (string, boolean) -> ())
 	)
 	give(inv, "Wood", 3)
 	give(inv, "Stone", 1)
-	check("flow spear needs bench tier", (Crafting.craft(inv, "Spear", 1)))
+	check("flow spear needs bench tier", (Crafting.craft(inv, "Spear", { workbench = true })))
 
 	-- Three days by the camp fire: refuel from gathered wood, eat hare meat, meters stay sane.
 	local flow: Flow = {

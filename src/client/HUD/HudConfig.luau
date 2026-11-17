@@ -61,7 +61,8 @@ local HudConfig = {
 	-- Server Notify reason codes -> player text (unknown text is shown as-is).
 	NotifyText = {
 		MissingMaterials = "Not enough materials.",
-		NeedWorkbench = "Needs a workbench nearby.",
+		NeedStation = "Needs a crafting station nearby.",
+		OutOfBuildRange = "Too far from the fire",
 		InventoryFull = "Inventory full.",
 		UnknownRecipe = "Unknown recipe.",
 		Full = "You are full.",
@@ -77,7 +78,7 @@ local HudConfig = {
 		BadPosition = "Cannot place there.",
 	} :: { [string]: string },
 	-- Notify kinds that mean "refused" (deny sound).
-	DenyKinds = { gather = true, craft = true, build = true } :: { [string]: boolean },
+	DenyKinds = { gather = true, craft = true, build = true, fire = true } :: { [string]: boolean },
 	MobNames = { ArcticHare = "Hare", Caribou = "Caribou", Wolf = "Wolf" } :: { [string]: string },
 	CraftKey = Enum.KeyCode.C,
 	ActionKey = Enum.KeyCode.E,

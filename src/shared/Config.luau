@@ -52,6 +52,43 @@ export type MeterConfig = {
 	HungerAttribute: string,
 }
 
+export type FireCost = { { id: string, count: number } }
+
+-- One campfire tier (index = tier). UpgradeCost is what it costs to reach this tier from the one below.
+export type FireTier = {
+	WarmRadius: number, -- studs where warmth regenerates and wolves are repelled
+	MaxFuelSeconds: number, -- burn-time cap
+	WoodFuelSeconds: number, -- burn time added per wood
+	BuildRadius: number, -- studs around the fire where structures may be placed
+	LightRange: number, -- studs of PointLight range
+	UpgradeCost: FireCost,
+}
+
+-- Client-only radius ring (soft dots on the ground). Visual only.
+export type FireRingConfig = {
+	FolderName: string,
+	DotDiameter: number,
+	DotThickness: number,
+	Spacing: number, -- studs between dots along the circle
+	MinDots: number,
+	MaxDotsPerLayer: number,
+	MaxDotsTotal: number, -- cap across every ring (mobile)
+	FadeStart: number, -- studs from the player to a dot where fading begins
+	FadeEnd: number, -- studs from the player to a dot where it is invisible
+	WarmTransparencyDay: number,
+	WarmTransparencyNight: number,
+	BuildTransparencyDay: number,
+	BuildTransparencyNight: number,
+	WarmColor: { number }, -- {r, g, b} 0-255
+	BuildColor: { number },
+	GroundLift: number, -- studs above the ground hit
+	RayHeight: number,
+	RayLength: number,
+	RaysPerStep: number,
+	UpdateInterval: number,
+	AllocateInterval: number,
+}
+
 export type FireConfig = {
 	WarmRadius: number,
 	RepelRadius: number,
@@ -64,6 +101,14 @@ export type FireConfig = {
 	Tag: string,
 	FuelAttribute: string,
 	LitAttribute: string,
+	TierAttribute: string,
+	WarmRadiusAttribute: string,
+	BuildRadiusAttribute: string,
+	LightRangeAttribute: string,
+	UpgradeRange: number,
+	UpgradeRateInterval: number,
+	Tiers: { FireTier },
+	Ring: FireRingConfig,
 }
 
 export type ScalingConfig = {
@@ -139,9 +184,15 @@ export type FoodConfig = {
 	RawMeatHunger: number,
 }
 
-export type CraftConfig = {
+-- A crafting station: tagged instances within Range studs of the player unlock recipes with this station.
+export type CraftStation = {
+	Tag: string,
 	Range: number,
-	WorkbenchRange: number,
+	Label: string, -- player-facing name ("workbench")
+}
+
+export type CraftConfig = {
+	Stations: { [string]: CraftStation },
 	MaxTier: number,
 }
 
@@ -156,6 +207,7 @@ export type BuildConfig = {
 	FolderName: string,
 	StructureAttribute: string,
 	OwnerAttribute: string,
+	RangeExempt: { [string]: boolean }, -- structure ids placeable anywhere (no lit-fire build radius)
 }
 
 export type MobStats = {
@@ -250,6 +302,46 @@ export type FeedbackConfig = {
 	ItemNameSeconds: number,
 }
 
+-- Night danger: wolf attack telegraph, dawn exit, bite feedback, campfire light. Owned by the night-danger work.
+export type NightConfig = {
+	WindupSeconds: number, -- wolf growl/telegraph before a bite lands
+	StrikeLeeway: number, -- studs beyond AttackRange a target may stand when the bite lands (dodge margin)
+	RepelMargin: number, -- studs added to a fire's WarmRadius for the wolf repel edge (wolves never enter WarmRadius)
+	DawnLeaveSeconds: number, -- seconds a wolf runs off at dawn before it despawns
+	WindupAttribute: string, -- mob model attribute: true during the growl windup (client plays sound/tint)
+	BiteAttribute: string, -- Player attribute: counter bumped on every mob bite (client flash + sound)
+	FlashColor: { number }, -- {r, g, b} 0-255 screen flash on a bite
+	FlashTransparency: number, -- starting transparency of the bite flash
+	FlashSeconds: number, -- fade-out length of the bite flash
+	TelegraphColor: { number }, -- {r, g, b} wolf tint during windup (client only)
+	WarmRadiusAttribute: string, -- fire attribute: warm radius studs (owned by the fire code; Fire.WarmRadius if absent)
+	FireLightRange: number, -- fallback warm light range = WarmRadius * this (clamped to FireLightMaxRange)
+	FireLightMaxRange: number, -- Roblox PointLight range cap
+	FireLightBrightness: number,
+	FireLightColor: { number }, -- {r, g, b} 0-255
+	FireLightName: string, -- name of the client-made PointLight
+	CueVolume: number, -- dusk/dawn cue volume
+}
+
+export type LightingConfig = {
+	TwilightPhase: number, -- share of a day that dusk (before night) and dawn (before day) ramp over
+	UpdateInterval: number, -- seconds between Lighting writes
+	DayClockTime: number,
+	NightClockTime: number,
+	DayAmbient: { number }, -- {r, g, b} 0-255
+	NightAmbient: { number },
+	DayOutdoorAmbient: { number },
+	NightOutdoorAmbient: { number },
+	DayBrightness: number,
+	NightBrightness: number,
+	DayFogColor: { number },
+	NightFogColor: { number },
+	DayFogStart: number,
+	NightFogStart: number,
+	DayFogEnd: number,
+	NightFogEnd: number,
+}
+
 export type NetConfig = {
 	CraftRateInterval: number,
 	PlaceRateInterval: number,
@@ -272,6 +364,8 @@ export type Config = {
 	Food: FoodConfig,
 	Build: BuildConfig,
 	Mobs: MobConfig,
+	Night: NightConfig,
+	Lighting: LightingConfig,
 	Combat: CombatConfig,
 	Downed: DownedConfig,
 	Net: NetConfig,
@@ -371,6 +465,62 @@ local Config: Config = {
 		Tag = "Campfire", -- CollectionService tag
 		FuelAttribute = "FuelSeconds", -- campfire attribute: replicated burn seconds left
 		LitAttribute = "Lit", -- campfire attribute: replicated lit flag
+		TierAttribute = "Tier", -- campfire attribute: current tier (1-based)
+		WarmRadiusAttribute = "WarmRadius", -- campfire attribute: warm radius studs (follows tier)
+		BuildRadiusAttribute = "BuildRadius", -- campfire attribute: build radius studs (follows tier)
+		LightRangeAttribute = "LightRange", -- campfire attribute: light range studs (follows tier)
+		UpgradeRange = 10, -- max studs from player to fire to upgrade it
+		UpgradeRateInterval = 0.5, -- UpgradeFireRequest rate limit (seconds)
+		-- Tier 1 equals the base WarmRadius/MaxFuelSeconds/WoodFuelSeconds above (tested). Index = tier.
+		Tiers = {
+			{
+				WarmRadius = 18,
+				MaxFuelSeconds = 600,
+				WoodFuelSeconds = 120,
+				BuildRadius = 30,
+				LightRange = 24,
+				UpgradeCost = {},
+			},
+			{
+				WarmRadius = 26,
+				MaxFuelSeconds = 900,
+				WoodFuelSeconds = 150,
+				BuildRadius = 45,
+				LightRange = 34,
+				UpgradeCost = { { id = "Wood", count = 15 }, { id = "Stone", count = 6 } },
+			},
+			{
+				WarmRadius = 34,
+				MaxFuelSeconds = 1200,
+				WoodFuelSeconds = 180,
+				BuildRadius = 60,
+				LightRange = 44,
+				UpgradeCost = { { id = "Wood", count = 30 }, { id = "Stone", count = 12 } },
+			},
+		},
+		Ring = {
+			FolderName = "FireRings", -- client-local folder under Workspace
+			DotDiameter = 0.7,
+			DotThickness = 0.1,
+			Spacing = 3.4,
+			MinDots = 16,
+			MaxDotsPerLayer = 56,
+			MaxDotsTotal = 110,
+			FadeStart = 12,
+			FadeEnd = 38,
+			WarmTransparencyDay = 0.84,
+			WarmTransparencyNight = 0.66,
+			BuildTransparencyDay = 0.72,
+			BuildTransparencyNight = 0.55,
+			WarmColor = { 255, 190, 110 },
+			BuildColor = { 150, 205, 255 },
+			GroundLift = 0.12,
+			RayHeight = 40,
+			RayLength = 120,
+			RaysPerStep = 24,
+			UpdateInterval = 0.1,
+			AllocateInterval = 0.5,
+		},
 	},
 	Scaling = {
 		MobBudgetPerDay = 0.05, -- fractional mob budget added per day survived
@@ -436,9 +586,11 @@ local Config: Config = {
 		NodeTag = "ResourceNode", -- CollectionService tag
 	},
 	Craft = {
-		Range = 14, -- max studs from player to workbench for tier 1 recipes
-		WorkbenchRange = 14, -- studs counted as "at a workbench"
-		MaxTier = 1, -- highest workbench tier in Phase 1 (0 = by hand)
+		-- Recipes with a station field unlock only within Range studs of a tagged station (server checks at craft).
+		Stations = {
+			workbench = { Tag = "Workbench", Range = 14, Label = "workbench" },
+		},
+		MaxTier = 1, -- highest recipe tier listed in the panel (0 = by hand)
 	},
 	Food = {
 		RawMeatHunger = 25, -- hunger restored by eating one Raw Meat (ItemCatalog food rows read this)
@@ -454,6 +606,8 @@ local Config: Config = {
 		FolderName = "Structures", -- Workspace folder for placed structures
 		StructureAttribute = "StructureId", -- structure attribute: ItemCatalog.Structures id
 		OwnerAttribute = "OwnerUserId", -- structure attribute: placer's UserId
+		-- Exempt from the lit-fire build radius: extra campfires start a new camp, sleeping bags are for travel.
+		RangeExempt = { Campfire = true, SleepingBag = true },
 	},
 	Mobs = {
 		Budget = 12, -- base max live mobs near players (before scaling)
@@ -517,7 +671,7 @@ local Config: Config = {
 			FleeSpeed = 20, -- chase speed
 			AggroRange = 50, -- studs at which it starts hunting
 			AttackRange = 4, -- studs to bite
-			AttackCooldown = 1.2, -- seconds between bites
+			AttackCooldown = 2, -- seconds between bites (windup included)
 			FleeRange = 0, -- does not flee (retreats only at fire edge)
 			FleeBurstSeconds = 0, -- unused (no flee)
 			FleeRestSeconds = 0, -- unused (no flee)
@@ -527,6 +681,44 @@ local Config: Config = {
 			DropId = "Hide", -- drop on kill
 			DropCount = 1, -- drop amount
 		},
+	},
+	Night = {
+		WindupSeconds = 0.7,
+		StrikeLeeway = 2,
+		RepelMargin = 6,
+		DawnLeaveSeconds = 8,
+		WindupAttribute = "Windup",
+		BiteAttribute = "BiteSeq",
+		FlashColor = { 200, 20, 20 },
+		FlashTransparency = 0.45,
+		FlashSeconds = 0.45,
+		TelegraphColor = { 200, 50, 40 },
+		WarmRadiusAttribute = "WarmRadius",
+		FireLightRange = 1.4,
+		FireLightMaxRange = 60,
+		FireLightBrightness = 1.6,
+		FireLightColor = { 255, 150, 70 },
+		FireLightName = "WarmLight",
+		CueVolume = 0.4,
+	},
+	-- Day/night lighting (DayNightService writes Lighting from the day phase). Dark but readable on a phone.
+	Lighting = {
+		TwilightPhase = 0.06,
+		UpdateInterval = 0.25,
+		DayClockTime = 13,
+		NightClockTime = 0,
+		DayAmbient = { 120, 120, 128 },
+		NightAmbient = { 52, 60, 84 },
+		DayOutdoorAmbient = { 150, 150, 160 },
+		NightOutdoorAmbient = { 70, 80, 110 },
+		DayBrightness = 2,
+		NightBrightness = 0.8,
+		DayFogColor = { 200, 215, 230 },
+		NightFogColor = { 20, 28, 48 },
+		DayFogStart = 200,
+		NightFogStart = 60,
+		DayFogEnd = 1500,
+		NightFogEnd = 380,
 	},
 	Combat = {
 		MeleeRange = 8, -- base studs player to target center for a hit (plus MobStats.HitRadius and LagCompensation)

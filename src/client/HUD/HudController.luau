@@ -21,6 +21,9 @@ local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 local Logic = Shared:WaitForChild("logic")
 local HudMath = require(Logic:WaitForChild("HudMath"))
 local ActionPick = require(Logic:WaitForChild("ActionPick"))
+local FireTiers = require(Logic:WaitForChild("FireTiers"))
+local Crafting = require(Logic:WaitForChild("Crafting"))
+local RadiusRing = require(script.Parent.Parent:WaitForChild("Fire"):WaitForChild("RadiusRing"))
 local ItemsGather = require(Logic:WaitForChild("ItemsGather"))
 local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
 local DebugChat = require(script.Parent:WaitForChild("DebugChat"))
@@ -367,6 +370,9 @@ function HudController.start()
 	local targetKind = "none"
 	local targetInstance: Instance? = nil
 	local fireInstance: Instance? = nil
+	local fireDist = math.huge
+	local benchInstance: Instance? = nil -- nearest crafting station in range
+	local benchDist = math.huge
 	local recent: { [string]: number } = {} -- our last request time per intent (onboarding credit)
 	local watches: { [Instance]: Watch } = {}
 
@@ -387,21 +393,24 @@ function HudController.start()
 		return if stack then ItemCatalog.Items[stack.id] else nil
 	end
 
-	local function workbenchTier(): number
+	-- Stations in range (display only; the server re-checks at the craft action).
+	local function nearStations(): Crafting.Near
+		local near: Crafting.Near = {}
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if not root or not root:IsA("BasePart") then
-			return 0
+			return near
 		end
-		local best = 0
-		for _, bench in CollectionService:GetTagged(ItemCatalog.WorkbenchTag) do
-			local pos = positionOf(bench)
-			if pos and (pos - root.Position).Magnitude <= Config.Craft.WorkbenchRange then
-				local tier = bench:GetAttribute(ItemCatalog.WorkbenchTierAttribute)
-				best = math.max(best, if type(tier) == "number" then tier else 1)
+		for name, station in Config.Craft.Stations do
+			for _, inst in CollectionService:GetTagged(station.Tag) do
+				local pos = positionOf(inst)
+				if pos and (pos - root.Position).Magnitude <= station.Range then
+					near[name] = true
+					break
+				end
 			end
 		end
-		return math.min(best, Config.Craft.MaxTier)
+		return near
 	end
 
 	local craftPanel: CraftPanel.Panel
@@ -413,9 +422,28 @@ function HudController.start()
 		Toast.show(text)
 	end, function()
 		hints.complete("openCraft")
-		craftPanel.refresh(counts, workbenchTier())
+		craftPanel.refresh(counts, nearStations())
 	end)
 	addCleanup(cleanups, craftPanel.destroy)
+
+	-- Soft radius rings; the build ring shows while a build-limited placeable is selected.
+	addCleanup(
+		cleanups,
+		RadiusRing.start({
+			isPlacing = function(): boolean
+				local def = selectedDef()
+				return def ~= nil
+					and def.kind == "placeable"
+					and def.structureId ~= nil
+					and Config.Build.RangeExempt[def.structureId] ~= true
+			end,
+			onUpgraded = function(fire: Instance, _tier: number)
+				local pos = positionOf(fire)
+				Feedback.sound("CraftSound", pos)
+				Feedback.burst(pos or Vector3.zero)
+			end,
+		})
+	)
 
 	local function showItemName()
 		local def = selectedDef()
@@ -510,6 +538,7 @@ function HudController.start()
 	-- within ActionRange. Tagged instances only; never scans Workspace.
 	local function pickTarget()
 		targetKind, targetInstance, fireInstance = "none", nil, nil
+		fireDist, benchInstance, benchDist = math.huge, nil, math.huge
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if not root or not root:IsA("BasePart") then
@@ -562,13 +591,43 @@ function HudController.start()
 			local pos = positionOf(inst)
 			if pos and (pos - root.Position).Magnitude <= fireBest then
 				fireBest, fireInstance = (pos - root.Position).Magnitude, inst
+				fireDist = fireBest
+			end
+		end
+		for _, station in Config.Craft.Stations do
+			for _, inst in CollectionService:GetTagged(station.Tag) do
+				local pos = positionOf(inst)
+				if pos then
+					local d = (pos - root.Position).Magnitude
+					if d <= station.Range and d < benchDist then
+						benchDist, benchInstance = d, inst
+					end
+				end
 			end
 		end
 	end
 
+	-- The fire in reach if it can still be upgraded (top tier fires offer no upgrade).
+	local function upgradableFire(): Instance?
+		local fire = fireInstance
+		if fire == nil or fireDist > Config.Fire.UpgradeRange then
+			return nil
+		end
+		local tier = FireTiers.clamp(fire:GetAttribute(Config.Fire.TierAttribute))
+		return if FireTiers.nextCost(tier) ~= nil then fire else nil
+	end
+
+	local function itemName(id: string): string
+		local def = ItemCatalog.Items[id]
+		return if def then def.name else id
+	end
+
 	local function currentAction(): string
 		local def = selectedDef()
+		local canUpgrade = upgradableFire() ~= nil
 		return ActionPick.choose({
+			craftStation = benchInstance ~= nil and not (canUpgrade and fireDist < benchDist),
+			upgradeAvailable = canUpgrade,
 			fireInRange = fireInstance ~= nil,
 			hasWood = (counts["Wood"] or 0) > 0,
 			targetKind = targetKind,
@@ -664,6 +723,26 @@ function HudController.start()
 			Remotes.event(Remotes.AddFuelRequest):FireServer(target)
 		end
 	end
+	-- Upgrade: affordable -> request; otherwise a toast with the cost (the server re-checks both).
+	local function upgradeFire(fire: Instance?)
+		local target = fire or upgradableFire()
+		if target == nil then
+			return
+		end
+		local tier = FireTiers.clamp(target:GetAttribute(Config.Fire.TierAttribute))
+		local cost = FireTiers.nextCost(tier)
+		if cost == nil then
+			Toast.show("Fire is fully upgraded")
+			return
+		end
+		if not FireTiers.canAfford(counts, cost) then
+			Feedback.sound("DenySound", nil)
+			Toast.show(`Upgrade needs {FireTiers.costText(cost, itemName)}`)
+			return
+		end
+		recent["upgrade"] = os.clock()
+		Remotes.event(Remotes.UpgradeFireRequest):FireServer(target)
+	end
 	local function place()
 		local def = selectedDef()
 		local character = player.Character
@@ -693,6 +772,10 @@ function HudController.start()
 			eat()
 		elseif action == "place" then
 			place()
+		elseif action == "craft" then
+			craftPanel.setOpen(true)
+		elseif action == "upgrade" then
+			upgradeFire(nil)
 		else
 			local def = selectedDef()
 			if def and (def.kind == "tool" or def.kind == "weapon") then
@@ -800,7 +883,7 @@ function HudController.start()
 				renderSelection()
 			end
 			if craftPanel.isOpen() then
-				craftPanel.refresh(counts, workbenchTier())
+				craftPanel.refresh(counts, nearStations())
 			end
 		end)
 	end)
@@ -868,6 +951,23 @@ function HudController.start()
 		local action = currentAction()
 		if action == "fuel" and fireInstance then
 			return fireInstance, `Add wood {inputHint}`, nil, false
+		end
+		if action == "craft" and benchInstance then
+			return benchInstance, `Craft {inputHint}`, nil, false
+		elseif action == "upgrade" then
+			local fire = upgradableFire()
+			local cost = if fire
+				then FireTiers.nextCost(
+					FireTiers.clamp(fire:GetAttribute(Config.Fire.TierAttribute))
+				)
+				else nil
+			if fire and cost then
+				local affordable = FireTiers.canAfford(counts, cost)
+				return fire,
+					`Upgrade fire ({FireTiers.costText(cost, itemName)}) {inputHint}`,
+					nil,
+					not affordable
+			end
 		end
 		local target = targetInstance
 		if target == nil then
@@ -954,7 +1054,7 @@ function HudController.start()
 			itemLabel.Visible = false
 		end
 		if craftPanel.isOpen() then
-			craftPanel.refresh(counts, workbenchTier())
+			craftPanel.refresh(counts, nearStations())
 		end
 		if hintLabel.Visible and now >= hintUntil then
 			hintLabel.Visible = false
@@ -1034,6 +1134,13 @@ function HudController.start()
 			fuel = function(fire: Instance?)
 				fuel(fire)
 			end,
+			upgrade = function(fire: Instance?)
+				upgradeFire(fire)
+			end,
+			craftStatus = function(recipeId: string): string
+				craftPanel.refresh(counts, nearStations())
+				return craftPanel.statusOf(recipeId)
+			end,
 			state = function(): { [string]: any }
 				pickTarget()
 				local character = player.Character
@@ -1050,6 +1157,7 @@ function HudController.start()
 					prompt = ptext,
 					action = currentAction(),
 					craftOpen = craftPanel.isOpen(),
+					benchNear = nearStations().workbench == true,
 					onboarding = hints.current(),
 					hunger = meters.hunger,
 				}

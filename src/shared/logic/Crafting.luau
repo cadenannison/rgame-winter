@@ -6,18 +6,23 @@ local ItemCatalog = require("../ItemCatalog")
 
 local Crafting = {}
 
--- Returns (ok, reason). reason: "UnknownRecipe" | "NeedWorkbench" | "MissingMaterials" | "InventoryFull".
-function Crafting.craft(
-	inv: Inventory.Inv,
-	recipeId: string,
-	availableTier: number
-): (boolean, string)
+-- Stations the player is near, keyed by Config.Craft.Stations name (computed by the caller).
+export type Near = { [string]: boolean }
+
+-- Station a recipe needs (nil = by hand).
+function Crafting.requiredStation(recipeId: string): string?
+	local recipe = ItemCatalog.Recipes[recipeId]
+	return if recipe then recipe.station else nil
+end
+
+-- Returns (ok, reason). reason: "UnknownRecipe" | "NeedStation" | "MissingMaterials" | "InventoryFull".
+function Crafting.craft(inv: Inventory.Inv, recipeId: string, near: Near): (boolean, string)
 	local recipe = ItemCatalog.Recipes[recipeId]
 	if recipe == nil then
 		return false, "UnknownRecipe"
 	end
-	if recipe.tier > availableTier then
-		return false, "NeedWorkbench"
+	if recipe.station ~= nil and not near[recipe.station] then
+		return false, "NeedStation"
 	end
 	for _, input in recipe.inputs do
 		if Inventory.count(inv, input.id) < input.count then
@@ -41,18 +46,14 @@ function Crafting.craft(
 end
 
 -- Display check from item counts (client panel greys out what this rejects; server still decides).
--- Returns "Ok" | "UnknownRecipe" | "NeedWorkbench" | "MissingMaterials".
-function Crafting.status(
-	counts: { [string]: number },
-	recipeId: string,
-	availableTier: number
-): string
+-- Returns "Ok" | "UnknownRecipe" | "NeedStation" | "MissingMaterials".
+function Crafting.status(counts: { [string]: number }, recipeId: string, near: Near): string
 	local recipe = ItemCatalog.Recipes[recipeId]
 	if recipe == nil then
 		return "UnknownRecipe"
 	end
-	if recipe.tier > availableTier then
-		return "NeedWorkbench"
+	if recipe.station ~= nil and not near[recipe.station] then
+		return "NeedStation"
 	end
 	for _, input in recipe.inputs do
 		if (counts[input.id] or 0) < input.count then
