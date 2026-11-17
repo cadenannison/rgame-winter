@@ -9,6 +9,7 @@ Players.CharacterAutoLoads = false
 local Guard = require(script.Net.Guard)
 local DataService = require(script.Data.DataService)
 local Spawn = require(script.Spawn.SpawnService)
+local DebugService = require(script.Debug.DebugService)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 -- Make sure the remote folder and every remote exist before clients connect.
@@ -17,6 +18,7 @@ Remotes.createAll()
 -- Start systems here, each exactly once. DataService first, SpawnService last.
 DataService.start()
 Spawn.start()
+DebugService.start() -- no-op outside Studio
 
 local function onPlayerAdded(player: Player)
 	-- Per-player setup goes here.

@@ -1,6 +1,22 @@
 --!strict
 
+export type DebugConfig = {
+	CommandRateInterval: number,
+	MaxDay: number,
+	MaxClockSpeed: number,
+	RingCount: number,
+	WorldDayAttribute: string,
+	WorldClockSpeedAttribute: string,
+	WorldBlizzardAttribute: string,
+	WorldDarkEventAttribute: string,
+	WorldStalkerAttribute: string,
+	PlayerInvincibleAttribute: string,
+	PlayerRingAttribute: string,
+	DarkEvents: { string },
+}
+
 export type Config = {
+	Debug: DebugConfig,
 	RemoteFolderName: string,
 	DefaultRateLimitInterval: number,
 	ProfileStoreName: string,
@@ -30,6 +46,21 @@ export type Config = {
 }
 
 local Config: Config = {
+	-- Studio-only DebugService. Attributes live on Workspace (world state) or the Player.
+	Debug = {
+		CommandRateInterval = 0.2,
+		MaxDay = 1000,
+		MaxClockSpeed = 1000,
+		RingCount = 4,
+		WorldDayAttribute = "DebugDay",
+		WorldClockSpeedAttribute = "DebugClockSpeed",
+		WorldBlizzardAttribute = "DebugForceBlizzard",
+		WorldDarkEventAttribute = "DebugForceDarkEvent",
+		WorldStalkerAttribute = "DebugStalkerSummoned",
+		PlayerInvincibleAttribute = "DebugInvincible",
+		PlayerRingAttribute = "DebugTeleportRing",
+		DarkEvents = { "FalseNight", "TheQuiet", "DeepFreeze" },
+	},
 	RemoteFolderName = "Remotes",
 	DefaultRateLimitInterval = 0.1,
 	ProfileStoreName = "PlayerProfiles",

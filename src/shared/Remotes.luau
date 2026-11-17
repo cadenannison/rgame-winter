@@ -9,6 +9,7 @@ local Remotes = {}
 
 -- Remote names (one RemoteEvent per intent). Document payload types and direction here.
 Remotes.Notify = "Notify" -- server -> client (kind: string, text: string)
+Remotes.DebugCommand = "DebugCommand" -- client -> server, Studio only (command: string, arg: any); not in Remotes.all
 
 -- Every remote the server creates eagerly at startup (so clients never wait on a missing folder).
 Remotes.all = {

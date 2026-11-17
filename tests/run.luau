@@ -22,6 +22,7 @@ check("format small", NumberFormat.format(999) == "999")
 check("format thousand", NumberFormat.format(1500) == "1.5K")
 
 require("./ProfileTests")(check)
+require("./SimTests")(check)
 
 if failures > 0 then
 	error(`{failures} test(s) failed`)

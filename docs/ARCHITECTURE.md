@@ -9,6 +9,7 @@ World and art are built by idempotent scripts in tools/ (the place file is not i
 | DataService | full | session-locked profile load/save (ProfileStore), schema validation, load timeout kick | src/server/Data/DataService.luau |
 | SpawnService | full | gated character spawn, respawn, void kill, Ready signal | src/server/Spawn/SpawnService.luau |
 | Guard | full | rate limits and payload validators for remote handlers | src/server/Net/Guard.luau |
+| DebugService | standard | Studio-only debug commands (day, clock, blizzard, dark event, Stalker, god mode, ring teleport) with a plug-in registry; inert when published | src/server/Debug/DebugService.luau |
 | LoadingScreen | light | ReplicatedFirst loading screen with failure message | src/first/LoadingScreen.client.luau |
 
 ## Data model

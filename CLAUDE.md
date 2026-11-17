@@ -3,7 +3,7 @@ Roblox game. Luau + Rojo + Wally. A PM/orchestrator assigns one task at a time; 
 
 ## Hard rules
 - Do NOT commit or push. Never edit .git or hooks.
-- Load only this file + docs/systems/<system>.md for the system you touch.
+- Load only this file + docs/systems/<system>.md for the system you touch (design intent: docs/specs/<system>.md, index in docs/GDD.md; read only if the brief says so).
 - Scripts live in src/ and sync via Rojo. Never write script Source through MCP. UI is built in code.
 - Every Luau file starts with --!strict. No warnings.
 - Done = scripts/check.sh passes. If behavior changed: scripted playtest (tools/qa), local player, filtered output, no errors.
@@ -18,7 +18,7 @@ Roblox game. Luau + Rojo + Wally. A PM/orchestrator assigns one task at a time; 
 
 ## Layout
 src/server -> ServerScriptService.Server | src/client -> StarterPlayerScripts.Client | src/shared -> ReplicatedStorage.Shared | src/first -> ReplicatedFirst.Loading
-Pure logic (no Roblox APIs) -> src/shared/logic/. System index: docs/ARCHITECTURE.md. One spec per system: docs/systems/.
+Pure logic (no Roblox APIs) -> src/shared/logic/. System index: docs/ARCHITECTURE.md. Implementation specs: docs/systems/. Design specs: docs/specs/.
 
 ## Luau conventions
 - PascalCase modules/classes/methods; camelCase locals; UPPER_SNAKE constants.
