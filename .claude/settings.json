@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scripts/check.sh:*)",
+      "Bash(rojo:*)",
+      "Bash(stylua:*)",
+      "Bash(selene:*)",
+      "Bash(wally:*)",
+      "Bash(lune:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)"
+    ],
+    "deny": ["Bash(git commit:*)", "Bash(git push:*)"]
+  }
+}

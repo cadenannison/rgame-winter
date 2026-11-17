@@ -1,0 +1,19 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: CompeyDev/setup-rokit@v0.2.1
+        with:
+          cache: true
+      - run: selene generate-roblox-std
+      - run: wally install
+      - run: scripts/check.sh
+        env:
+          KIT_TIER: full

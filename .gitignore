@@ -1,0 +1,13 @@
+Packages/*
+!Packages/.gitkeep
+ServerPackages/*
+!ServerPackages/.gitkeep
+sourcemap.json
+build/
+.luau-types/
+*.rbxl
+*.rbxl.lock
+*.rbxlx
+roblox.yml
+node_modules/
+.DS_Store

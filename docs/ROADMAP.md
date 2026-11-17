@@ -1,0 +1,11 @@
+# Roadmap
+- M0 prereqs (human, ROBLOX_KIT.md Part A)
+- M1 pure logic + tests (catalog, math, number format)
+- M2 data + core economy (full tier, reviewed)
+- M3 world greybox via tools/map builder
+- M4 core loop (placement/purchase flow + HUD)
+- M5 income/progress loop
+- M6 leaderboard/social
+- M7 retention features (daily rewards etc.)
+- M8 hardening (security review of every remote, multi-player test, performance)
+- Then expansions built on shared systems rather than one-off activities.
