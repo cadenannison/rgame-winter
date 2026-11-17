@@ -11,9 +11,13 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
+local ItemCatalog = require(Shared.ItemCatalog)
 local MobAI = require(Shared.logic.MobAI)
 local MobRules = require(Shared.logic.MobRules)
-local Guard = require(script.Parent.Parent.Net.Guard)
+local Server = script.Parent.Parent
+local Guard = require(Server.Net.Guard)
+local FireService = require(Server.Survival.FireService)
+local InventoryService = require(Server.Items.InventoryService)
 
 type MobKind = {
 	name: string,
@@ -32,6 +36,7 @@ type MobRow = {
 	damage: number,
 	nextAttackAt: number,
 	wanderUntil: number,
+	lastAction: string?,
 }
 
 type PlayerInfo = { player: Player, root: BasePart, humanoid: Humanoid }
@@ -61,17 +66,8 @@ local KINDS: { MobKind } = {
 	},
 }
 
--- Local tuning not yet in Config (reported to PM).
-local MOBS_FOLDER_NAME = "Mobs"
-local WANDER_RADIUS = 18
-local WANDER_INTERVAL = 4
-local FLEE_STEP = 24
-local RETREAT_STEP = 20
-local SPAWN_RAY_HEIGHT = 120
-local SPAWN_RAY_LENGTH = 300
-local SPAWN_LIFT = 1
-local KIND_ATTRIBUTE = "MobKind"
-local HEALTH_ATTRIBUTE = "MobHealth"
+local MOBS = Config.Mobs
+local HEALTH_ATTRIBUTE = MOBS.HealthAttribute
 
 local MobService = {}
 
@@ -119,15 +115,6 @@ local function toPoint(position: Vector3): MobRules.Point
 	return { x = position.X, z = position.Z }
 end
 
-local function pivotOf(instance: Instance): Vector3?
-	if instance:IsA("BasePart") then
-		return instance.Position
-	elseif instance:IsA("Model") then
-		return instance:GetPivot().Position
-	end
-	return nil
-end
-
 local function removeMob(model: Model)
 	local row = rows[model]
 	if row then
@@ -139,10 +126,10 @@ local function removeMob(model: Model)
 	end
 end
 
-local function createMob(kind: MobKind, position: Vector3)
+local function createMob(kind: MobKind, position: Vector3): Model?
 	local parent = folder
 	if not parent then
-		return
+		return nil
 	end
 	local day = getDay()
 	local health = MobRules.scaledStat(
@@ -167,7 +154,7 @@ local function createMob(kind: MobKind, position: Vector3)
 	root.Material = Enum.Material.SmoothPlastic
 	root.CanCollide = true
 	root.Anchored = false
-	root.CFrame = CFrame.new(position + Vector3.new(0, kind.size.Y / 2 + SPAWN_LIFT, 0))
+	root.CFrame = CFrame.new(position + Vector3.new(0, kind.size.Y / 2 + MOBS.SpawnLift, 0))
 	root.Parent = model
 	local humanoid = Instance.new("Humanoid")
 	humanoid.WalkSpeed = kind.stats.WalkSpeed
@@ -177,7 +164,7 @@ local function createMob(kind: MobKind, position: Vector3)
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	humanoid.Parent = model
 	model.PrimaryPart = root
-	model:SetAttribute(KIND_ATTRIBUTE, kind.name)
+	model:SetAttribute(MOBS.KindAttribute, kind.name)
 	model:SetAttribute(HEALTH_ATTRIBUTE, health)
 
 	local row: MobRow = {
@@ -189,6 +176,7 @@ local function createMob(kind: MobKind, position: Vector3)
 		damage = damage,
 		nextAttackAt = 0,
 		wanderUntil = 0,
+		lastAction = nil,
 	}
 	rows[model] = row
 	rowCount += 1
@@ -201,6 +189,7 @@ local function createMob(kind: MobKind, position: Vector3)
 	end)
 	model.Parent = parent
 	root:SetNetworkOwner(nil)
+	return model
 end
 
 local function groundAt(x: number, z: number, originY: number): Vector3?
@@ -217,8 +206,8 @@ local function groundAt(x: number, z: number, originY: number): Vector3?
 	end
 	params.FilterDescendantsInstances = exclude
 	local hit = Workspace:Raycast(
-		Vector3.new(x, originY + SPAWN_RAY_HEIGHT, z),
-		Vector3.new(0, -SPAWN_RAY_LENGTH, 0),
+		Vector3.new(x, originY + MOBS.SpawnRayHeight, z),
+		Vector3.new(0, -MOBS.SpawnRayLength, 0),
 		params
 	)
 	return if hit then hit.Position else nil
@@ -237,7 +226,7 @@ local function trySpawn(infos: { PlayerInfo })
 		Config.Scaling.MobBudgetPerDay,
 		Config.Scaling.MobBudgetPerExtraPlayer,
 		Config.Mobs.NightBudgetMultiplier,
-		Config.Scaling.MaxMobHealthMultiplier
+		Config.Scaling.MaxMobBudgetMultiplier
 	)
 	if rowCount >= budget then
 		return
@@ -286,7 +275,7 @@ local function horizontalDir(from: Vector3, to: Vector3): Vector3
 	return if d.Magnitude > 0.001 then d.Unit else Vector3.new(1, 0, 0)
 end
 
--- Nearest active campfire whose repel radius contains pos.
+-- Lit campfire (FireService state) whose repel radius contains pos.
 local function repellingFire(pos: Vector3, fires: { Vector3 }): Vector3?
 	for _, f in fires do
 		if MobRules.distance(toPoint(pos), toPoint(f)) <= Config.Fire.RepelRadius then
@@ -326,14 +315,15 @@ local function stepMob(
 		inFireRepel = fire ~= nil,
 		canAttack = now >= row.nextAttackAt,
 	})
+	row.lastAction = action
 
 	local humanoid = row.humanoid
 	if action == "Flee" and nearestInfo then
 		humanoid.WalkSpeed = stats.FleeSpeed
-		humanoid:MoveTo(pos + horizontalDir(nearestInfo.root.Position, pos) * FLEE_STEP)
+		humanoid:MoveTo(pos + horizontalDir(nearestInfo.root.Position, pos) * MOBS.FleeStep)
 	elseif action == "Retreat" and fire then
 		humanoid.WalkSpeed = stats.FleeSpeed
-		humanoid:MoveTo(pos + horizontalDir(fire, pos) * RETREAT_STEP)
+		humanoid:MoveTo(pos + horizontalDir(fire, pos) * MOBS.RetreatStep)
 	elseif action == "Chase" and nearestInfo then
 		humanoid.WalkSpeed = stats.FleeSpeed
 		humanoid:MoveTo(nearestInfo.root.Position)
@@ -349,9 +339,11 @@ local function stepMob(
 	else
 		humanoid.WalkSpeed = stats.WalkSpeed
 		if now >= row.wanderUntil then
-			row.wanderUntil = now + WANDER_INTERVAL * (0.5 + rng:NextNumber())
+			row.wanderUntil = now + MOBS.WanderInterval * (0.5 + rng:NextNumber())
 			local angle = rng:NextNumber(0, math.pi * 2)
-			humanoid:MoveTo(pos + Vector3.new(math.cos(angle), 0, math.sin(angle)) * WANDER_RADIUS)
+			humanoid:MoveTo(
+				pos + Vector3.new(math.cos(angle), 0, math.sin(angle)) * MOBS.WanderRadius
+			)
 		end
 	end
 end
@@ -384,13 +376,7 @@ local function aiPass(infos: { PlayerInfo })
 	if #active == 0 then
 		return
 	end
-	local fires: { Vector3 } = {}
-	for _, fire in CollectionService:GetTagged(Config.Fire.Tag) do
-		local p = pivotOf(fire)
-		if p then
-			table.insert(fires, p)
-		end
-	end
+	local fires = FireService.getLitPositions()
 	local isNight = getIsNight()
 	local now = os.clock()
 	for _, index in active do
@@ -467,11 +453,47 @@ local function onAttack(player: Player, target: unknown)
 		return
 	end
 	lastMeleeAt[player] = now
-	row.health -= Config.Combat.MeleeBaseDamage
+	-- Damage from the equipped weapon's item data (fist / non-weapon = MeleeBaseDamage).
+	local held = InventoryService.getSelected(player)
+	local def = if held then ItemCatalog.Items[held.id] else nil
+	local isWeapon = def ~= nil and def.kind == "weapon" and def.damage ~= nil
+	local damage = if isWeapon
+			and def
+			and def.damage
+		then def.damage
+		else Config.Combat.MeleeBaseDamage
+	if isWeapon then
+		InventoryService.wearSelected(player, Config.Combat.WeaponDurabilityPerHit)
+	end
+	row.health -= damage
 	row.model:SetAttribute(HEALTH_ATTRIBUTE, math.max(0, row.health))
 	if row.health <= 0 then
+		local stats = row.kind.stats
 		removeMob(row.model)
+		-- Drop goes straight to the killer's inventory (no world pickups yet).
+		if stats.DropId and stats.DropCount > 0 then
+			InventoryService.add(player, stats.DropId, stats.DropCount)
+		end
 	end
+end
+
+-- Same path as AttackRequest (QA and server callers); runs the full validation.
+MobService.handleAttack = onAttack
+
+-- Server/QA: spawn one mob of a kind ("ArcticHare" | "Caribou" | "Wolf") at a ground position.
+function MobService.spawn(kindName: string, position: Vector3): Model?
+	for _, kind in KINDS do
+		if kind.name == kindName then
+			return createMob(kind, position)
+		end
+	end
+	return nil
+end
+
+-- Last AI action of a mob ("Wander" | "Flee" | "Chase" | "Attack" | "Retreat"), nil before its first step.
+function MobService.getLastAction(model: Model): string?
+	local row = rows[model]
+	return if row then row.lastAction else nil
 end
 
 function MobService.start()
@@ -480,7 +502,7 @@ function MobService.start()
 	end
 	started = true
 	local mobsFolder = Instance.new("Folder")
-	mobsFolder.Name = MOBS_FOLDER_NAME
+	mobsFolder.Name = MOBS.FolderName
 	mobsFolder.Parent = Workspace
 	folder = mobsFolder
 

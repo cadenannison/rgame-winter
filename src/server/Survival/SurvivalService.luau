@@ -17,8 +17,8 @@ local DebugService = require(script.Parent.Parent.Debug.DebugService)
 
 local M = Config.Meters
 local D = Config.Downed
-local WARMTH_ATTRIBUTE = "Warmth" -- replicated rounded meters (health is on the Humanoid)
-local HUNGER_ATTRIBUTE = "Hunger"
+local WARMTH_ATTRIBUTE = M.WarmthAttribute -- replicated rounded meters (health is on the Humanoid)
+local HUNGER_ATTRIBUTE = M.HungerAttribute
 local RATE_KEY = "Revive"
 local HEALTH_EPSILON = 0.01 -- ignore Humanoid health differences below this
 

@@ -27,6 +27,8 @@ require("./WorldTests")(check)
 require("./SurvivalTests")(check)
 require("./ItemTests")(check)
 require("./MobTests")(check)
+require("./PlacementTests")(check)
+require("./FlowTests")(check)
 
 if failures > 0 then
 	error(`{failures} test(s) failed`)

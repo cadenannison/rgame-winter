@@ -6,6 +6,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local DataService = require(script.Parent.Parent.Data.DataService)
@@ -20,10 +21,53 @@ local disconnectLoaded: (() -> ())? = nil
 local playerRemovingConn: RBXScriptConnection? = nil
 local voidThread: thread? = nil
 local started = false
+local spawnProvider: (() -> Vector3?)? = nil
+local spawnPad: SpawnLocation? = nil
 
--- Per-player setup that must finish before the character loads (spawn point, starting state).
--- Set Player.RespawnLocation here if the game has per-player spawns.
-local function prepare(_player: Player) end
+local SPAWN_PAD_SIZE = Vector3.new(6, 1, 6)
+
+-- Ground position players spawn at (init wires ChunkService.getCampSpawnPosition). Set before start().
+function Spawn.setSpawnProvider(fn: () -> Vector3?)
+	spawnProvider = fn
+end
+
+-- The shared camp spawn pad, created on first use from the provider. Nil if the world is not ready.
+local function getSpawnPad(): SpawnLocation?
+	local existing = spawnPad
+	if existing ~= nil and existing.Parent ~= nil then
+		return existing
+	end
+	local provider = spawnProvider
+	if provider == nil then
+		return nil
+	end
+	local ok, pos = pcall(provider)
+	if not ok or typeof(pos) ~= "Vector3" then
+		return nil
+	end
+	local pad = Instance.new("SpawnLocation")
+	pad.Name = Config.SpawnPointName
+	pad.Size = SPAWN_PAD_SIZE
+	pad.Position = pos + Vector3.new(0, SPAWN_PAD_SIZE.Y / 2, 0)
+	pad.Anchored = true
+	pad.Neutral = true
+	pad.Duration = 0
+	pad.Transparency = 1
+	pad.Parent = Workspace
+	spawnPad = pad
+	return pad
+end
+
+-- Per-player setup that must finish before the character loads: spawn at camp (also on respawn).
+local function prepare(player: Player): boolean
+	local pad = getSpawnPad()
+	if pad == nil then
+		warn(`[Spawn] world not ready; no camp spawn for {player.Name}`)
+		return false
+	end
+	player.RespawnLocation = pad
+	return true
+end
 
 local function loadCharacter(player: Player)
 	if inFlight[player] then
@@ -33,6 +77,7 @@ local function loadCharacter(player: Player)
 		return
 	end
 	inFlight[player] = true
+	prepare(player) -- respawns too: re-point at the camp pad if it was rebuilt
 	local loaded = false
 	for attempt = 0, Config.SPAWN_LOAD_RETRIES do
 		if player.Parent ~= Players or not started then
@@ -111,7 +156,6 @@ local function onProfileLoaded(player: Player, _profile: DataService.Profile)
 			task.spawn(watchCharacter, player, character)
 		end)
 	end
-	prepare(player)
 	loadCharacter(player)
 end
 
@@ -174,10 +218,14 @@ function Spawn.stop()
 		task.cancel(voidThread)
 		voidThread = nil
 	end
+	if spawnPad ~= nil then
+		spawnPad:Destroy()
+		spawnPad = nil
+	end
 	started = false -- also makes any in-progress load-retry loop exit
 end
 
--- Requires DataService.start() to have run. Fires for already-loaded players too.
+-- Requires DataService.start() (and the spawn provider's world) to have run. Fires for already-loaded players too.
 function Spawn.start()
 	if started then
 		return

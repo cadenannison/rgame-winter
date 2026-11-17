@@ -39,7 +39,14 @@ local function setup(player: Player)
 	if inventories[player] then
 		return
 	end
-	inventories[player] = Inventory.new(TOTAL_SLOTS)
+	local inv = Inventory.new(TOTAL_SLOTS)
+	for _, starter in Config.Inventory.StarterItems do
+		local def = ItemCatalog.Items[starter.id]
+		if def then
+			Inventory.add(inv, def.id, starter.count, def.maxStack, def.durability)
+		end
+	end
+	inventories[player] = inv
 	selected[player] = 1
 	player:SetAttribute(Config.Inventory.SlotAttribute, 1)
 	sync(player)

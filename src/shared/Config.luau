@@ -13,6 +13,7 @@ export type DebugConfig = {
 	PlayerInvincibleAttribute: string,
 	PlayerRingAttribute: string,
 	DarkEvents: { string },
+	BridgeName: string,
 }
 
 export type TimeConfig = {
@@ -42,6 +43,8 @@ export type MeterConfig = {
 	RegenMinWarmth: number,
 	TickInterval: number,
 	ReplicateInterval: number,
+	WarmthAttribute: string,
+	HungerAttribute: string,
 }
 
 export type FireConfig = {
@@ -54,6 +57,8 @@ export type FireConfig = {
 	MaxPerTeam: number,
 	CookRadius: number,
 	Tag: string,
+	FuelAttribute: string,
+	LitAttribute: string,
 }
 
 export type ScalingConfig = {
@@ -63,6 +68,7 @@ export type ScalingConfig = {
 	MobBudgetPerExtraPlayer: number,
 	MaxMobHealthMultiplier: number,
 	MaxMobDamageMultiplier: number,
+	MaxMobBudgetMultiplier: number,
 }
 
 export type WorldConfig = {
@@ -81,6 +87,19 @@ export type WorldConfig = {
 	RocksPerChunk: number,
 	SpawnZonesPerChunk: number,
 	ChunkTag: string,
+	SeedAttribute: string,
+	CampAttribute: string,
+	ChunkFolderName: string,
+	CampFolderName: string,
+	CampSpawnOffset: number,
+	SlotTags: SlotTags,
+}
+
+export type SlotTags = {
+	Tree: string,
+	Rock: string,
+	Food: string,
+	SpawnZone: string,
 }
 
 export type InventoryConfig = {
@@ -89,6 +108,7 @@ export type InventoryConfig = {
 	MaxStack: number,
 	DropPickupRange: number,
 	SlotAttribute: string,
+	StarterItems: { { id: string, count: number } },
 }
 
 export type ToolTierConfig = {
@@ -114,14 +134,19 @@ export type CraftConfig = {
 	Range: number,
 	WorkbenchRange: number,
 	MaxTier: number,
-	Cooldown: number,
 }
 
 export type BuildConfig = {
 	GridStep: number,
+	RotationStep: number,
 	PlaceRange: number,
-	Cooldown: number,
+	MinSpacing: number,
 	MaxStructuresPerPlayer: number,
+	GroundRayHeight: number,
+	GroundRayLength: number,
+	FolderName: string,
+	StructureAttribute: string,
+	OwnerAttribute: string,
 }
 
 export type MobStats = {
@@ -135,6 +160,8 @@ export type MobStats = {
 	FleeRange: number,
 	NightOnly: boolean,
 	Weight: number,
+	DropId: string?, -- item given to the killer (ItemCatalog id)
+	DropCount: number,
 }
 
 export type MobConfig = {
@@ -147,6 +174,16 @@ export type MobConfig = {
 	SpawnInterval: number,
 	NightBudgetMultiplier: number,
 	Tag: string,
+	FolderName: string,
+	KindAttribute: string,
+	HealthAttribute: string,
+	WanderRadius: number,
+	WanderInterval: number,
+	FleeStep: number,
+	RetreatStep: number,
+	SpawnRayHeight: number,
+	SpawnRayLength: number,
+	SpawnLift: number,
 	Hare: MobStats,
 	Caribou: MobStats,
 	Wolf: MobStats,
@@ -160,7 +197,6 @@ export type CombatConfig = {
 	SpearRange: number,
 	LagCompensation: number,
 	WeaponDurabilityPerHit: number,
-	AttackRateLimit: number,
 }
 
 export type DownedConfig = {
@@ -241,6 +277,7 @@ local Config: Config = {
 		PlayerInvincibleAttribute = "DebugInvincible",
 		PlayerRingAttribute = "DebugTeleportRing",
 		DarkEvents = { "FalseNight", "TheQuiet", "DeepFreeze" },
+		BridgeName = "DebugBridge", -- Studio-only ServerStorage BindableFunction for tools/qa (another VM)
 	},
 	-- Time and day/night. Replicated via Workspace attributes below.
 	Time = {
@@ -270,6 +307,8 @@ local Config: Config = {
 		RegenMinWarmth = 50, -- warmth needed for health regen
 		TickInterval = 0.5, -- server simulation step (seconds), one loop for all players
 		ReplicateInterval = 0.5, -- min seconds between MetersUpdate sends per player
+		WarmthAttribute = "Warmth", -- Player attribute: rounded warmth (health is on the Humanoid)
+		HungerAttribute = "Hunger", -- Player attribute: rounded hunger
 	},
 	Fire = {
 		WarmRadius = 18, -- studs where warmth regenerates
@@ -281,6 +320,8 @@ local Config: Config = {
 		MaxPerTeam = 6, -- max active campfires per run
 		CookRadius = 6, -- studs within which food can be cooked
 		Tag = "Campfire", -- CollectionService tag
+		FuelAttribute = "FuelSeconds", -- campfire attribute: replicated burn seconds left
+		LitAttribute = "Lit", -- campfire attribute: replicated lit flag
 	},
 	Scaling = {
 		MobBudgetPerDay = 0.05, -- fractional mob budget added per day survived
@@ -289,6 +330,7 @@ local Config: Config = {
 		MobBudgetPerExtraPlayer = 0.35, -- fractional budget added per player beyond the first
 		MaxMobHealthMultiplier = 4, -- cap on health scaling
 		MaxMobDamageMultiplier = 3, -- cap on damage scaling
+		MaxMobBudgetMultiplier = 3, -- cap on day scaling of the mob budget
 	},
 	World = {
 		GridSize = 8, -- chunks per side (8x8 = 64)
@@ -306,6 +348,18 @@ local Config: Config = {
 		RocksPerChunk = 5, -- rock slots per start-forest chunk
 		SpawnZonesPerChunk = 2, -- mob spawn zone slots per chunk
 		ChunkTag = "Chunk", -- CollectionService tag
+		SeedAttribute = "WorldSeed", -- Workspace attribute: run seed (number); set before start to force a seed
+		CampAttribute = "CampPosition", -- Workspace attribute: camp position (Vector3, y = 0)
+		ChunkFolderName = "Chunks", -- Workspace folder for streamed chunk models
+		CampFolderName = "Camp", -- Workspace folder for the camp campfire (never streamed out)
+		CampSpawnOffset = 8, -- studs from the camp fire to the player spawn pad (inside WarmRadius)
+		-- CollectionService tags on chunk slot parts (WorldLayout.SlotKinds mirrors these).
+		SlotTags = {
+			Tree = "TreeSlot",
+			Rock = "RockSlot",
+			Food = "FoodSlot",
+			SpawnZone = "SpawnZoneSlot",
+		},
 	},
 	Inventory = {
 		HotbarSize = 6, -- hotbar slots (indices 1..HotbarSize)
@@ -313,6 +367,7 @@ local Config: Config = {
 		MaxStack = 50, -- default max items per stack
 		DropPickupRange = 10, -- studs to pick up a dropped item
 		SlotAttribute = "SelectedSlot", -- Player attribute: selected hotbar slot
+		StarterItems = { { id = "Axe", count = 1 } }, -- given on join (trees need an axe; default, flagged)
 	},
 	ToolTier = {
 		Hand = 0, -- no tool
@@ -335,13 +390,18 @@ local Config: Config = {
 		Range = 14, -- max studs from player to workbench for tier 1 recipes
 		WorkbenchRange = 14, -- studs counted as "at a workbench"
 		MaxTier = 1, -- highest workbench tier in Phase 1 (0 = by hand)
-		Cooldown = 0.3, -- seconds between craft requests
 	},
 	Build = {
 		GridStep = 4, -- snap grid size in studs
+		RotationStep = 90, -- rotation snaps to multiples of this many degrees
 		PlaceRange = 30, -- max studs from player to placement point
-		Cooldown = 0.5, -- seconds between place requests
+		MinSpacing = 4, -- min studs between two structures (centers)
 		MaxStructuresPerPlayer = 40, -- cap on placed structures
+		GroundRayHeight = 20, -- ground raycast starts this far above the snapped point
+		GroundRayLength = 60, -- ground raycast length (no ground hit = rejected)
+		FolderName = "Structures", -- Workspace folder for placed structures
+		StructureAttribute = "StructureId", -- structure attribute: ItemCatalog.Structures id
+		OwnerAttribute = "OwnerUserId", -- structure attribute: placer's UserId
 	},
 	Mobs = {
 		Budget = 12, -- base max live mobs near players (before scaling)
@@ -353,6 +413,16 @@ local Config: Config = {
 		SpawnInterval = 3, -- seconds between spawn attempts
 		NightBudgetMultiplier = 1.5, -- budget multiplier at night
 		Tag = "Mob", -- CollectionService tag
+		FolderName = "Mobs", -- Workspace folder for mob models
+		KindAttribute = "MobKind", -- mob model attribute: kind name
+		HealthAttribute = "MobHealth", -- mob model attribute: replicated health
+		WanderRadius = 18, -- studs per wander step
+		WanderInterval = 4, -- mean seconds between wander targets
+		FleeStep = 24, -- studs per flee step
+		RetreatStep = 20, -- studs per retreat step away from a fire
+		SpawnRayHeight = 120, -- spawn ground raycast starts this far above the anchor
+		SpawnRayLength = 300, -- spawn ground raycast length
+		SpawnLift = 1, -- studs above ground a mob spawns
 		Hare = {
 			Health = 8, -- hit points
 			Damage = 0, -- passive
@@ -364,6 +434,8 @@ local Config: Config = {
 			FleeRange = 30, -- flees when a player is closer than this
 			NightOnly = false, -- active during the day
 			Weight = 5, -- relative spawn weight
+			DropId = "RawMeat", -- drop on kill
+			DropCount = 1, -- drop amount
 		},
 		Caribou = {
 			Health = 40, -- hit points
@@ -376,6 +448,8 @@ local Config: Config = {
 			FleeRange = 40, -- flees when a player is closer than this
 			NightOnly = false, -- active during the day
 			Weight = 2, -- relative spawn weight
+			DropId = "RawMeat", -- drop on kill
+			DropCount = 3, -- drop amount
 		},
 		Wolf = {
 			Health = 35, -- hit points
@@ -388,17 +462,18 @@ local Config: Config = {
 			FleeRange = 0, -- does not flee (retreats only at fire edge)
 			NightOnly = true, -- hunts at night
 			Weight = 3, -- relative spawn weight
+			DropId = "Hide", -- drop on kill
+			DropCount = 1, -- drop amount
 		},
 	},
 	Combat = {
 		MeleeRange = 7, -- max studs player to target for a hit (server check, includes latency slack)
 		MeleeCooldown = 0.5, -- seconds between swings
-		MeleeBaseDamage = 4, -- fist damage
+		MeleeBaseDamage = 4, -- fist / non-weapon damage (weapons use ItemCatalog damage)
 		SpearDamage = 12, -- spear damage
 		SpearRange = 9, -- spear reach in studs
 		LagCompensation = 3, -- extra studs of tolerance for latency
 		WeaponDurabilityPerHit = 1, -- durability lost per hit
-		AttackRateLimit = 0.25, -- min seconds between accepted attack requests
 	},
 	Downed = {
 		BleedoutSeconds = 60, -- time downed before death
@@ -414,7 +489,7 @@ local Config: Config = {
 		CraftRateInterval = 0.3, -- CraftRequest
 		PlaceRateInterval = 0.5, -- PlaceRequest
 		GatherRateInterval = 0.5, -- GatherRequest
-		AttackRateInterval = 0.25, -- AttackRequest
+		AttackRateInterval = 0.25, -- AttackRequest (single source; Combat.MeleeCooldown is the swing gate)
 		UseRateInterval = 0.3, -- UseItemRequest, AddFuelRequest, ReviveRequest
 		SelectRateInterval = 0.1, -- SelectSlotRequest
 	},

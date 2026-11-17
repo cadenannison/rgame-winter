@@ -1,11 +1,15 @@
 --!strict
 -- HUD-local constants (visual layout, hints). Gameplay numbers stay in shared/Config.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+
 export type Hint = { id: string, kind: string, threshold: number?, text: string }
 
 local HudConfig = {
-	-- Workspace attribute (Vector3) the server publishes for the camp position. Not in Config.World yet.
-	CampAttribute = "CampPosition",
+	-- Workspace attribute (Vector3) the server publishes for the camp position.
+	CampAttribute = Config.World.CampAttribute,
 	GuiName = "Hud",
 	DisplayOrder = 5,
 	-- Phone-safe: bars/hotbar scale with an aspect-locked, size-capped container.

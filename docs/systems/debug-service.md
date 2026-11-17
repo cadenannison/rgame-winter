@@ -8,3 +8,7 @@ Invariants: nothing runs and the remote is never created when RunService:IsStudi
 Exploit surface: published servers have no remote and run() rejects; in Studio the remote is rate limited (Guard) and validated.
 Playtest checklist: 1. Studio play, fire DebugService.run from server console for each command. 2. Confirm attributes change and invalid args are rejected. Script: tools/qa/runner.luau (scenario debug).
 Status: in progress
+
+## Integration points
+- Exposes: register(command, handler) (DayNight setDay/clockSpeed, Chunk teleportRing, Survival invincible), run, expose(name, api).
+- QA bridge (Studio only): ServerStorage[Config.Debug.BridgeName] BindableFunction, Invoke(service, fn, ...) calls a live exposed service. Needed because MCP execute_luau runs in another VM and gets fresh module copies. init.server exposes Debug, Chunk, Fire, Gather, Inventory, Crafting, Placement, Mobs. Not created on published servers; ServerStorage is not client-visible.

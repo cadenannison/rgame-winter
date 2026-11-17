@@ -48,15 +48,12 @@ export type Layout = {
 	camp: Camp,
 }
 
+local Config = require("../Config")
+
 local WorldLayout = {}
 
 WorldLayout.VARIANT_COUNT = 3
-WorldLayout.SlotKinds = {
-	Tree = "TreeSlot",
-	Rock = "RockSlot",
-	Food = "FoodSlot",
-	SpawnZone = "SpawnZoneSlot",
-}
+WorldLayout.SlotKinds = Config.World.SlotTags -- slot tag names live in Config
 
 local LCG_MOD = 4294967296
 local LCG_MUL = 1664525

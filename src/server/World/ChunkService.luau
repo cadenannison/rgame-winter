@@ -12,17 +12,33 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local WorldLayout = require(Shared:WaitForChild("logic"):WaitForChild("WorldLayout"))
-local DebugService = require(
-	ServerScriptService:WaitForChild("Server"):WaitForChild("Debug"):WaitForChild("DebugService")
-)
+local Server = ServerScriptService:WaitForChild("Server")
+local DebugService = require(Server:WaitForChild("Debug"):WaitForChild("DebugService"))
+local GatherService = require(Server:WaitForChild("Items"):WaitForChild("GatherService"))
 
 local WORLD = Config.World
-local CHUNK_FOLDER_NAME = "Chunks"
-local SEED_ATTRIBUTE = "WorldSeed"
-local CAMP_ATTRIBUTE = "CampPosition"
+local SLOT_TAGS = WORLD.SlotTags
 local GROUND_THICKNESS = 1
 local SLOT_SIZE = Vector3.new(2, 2, 2)
 local TELEPORT_HEIGHT = 5
+-- Block-out visuals for gatherable slots (Phase 4 replaces with art). Kind = ItemCatalog.Nodes key.
+local NODE_SLOTS: { [string]: { kind: string, size: Vector3, color: Color3, material: Enum.Material } } =
+	{
+		[SLOT_TAGS.Tree] = {
+			kind = "Tree",
+			size = Vector3.new(2, 10, 2),
+			color = Color3.fromRGB(96, 70, 48),
+			material = Enum.Material.Wood,
+		},
+		[SLOT_TAGS.Rock] = {
+			kind = "Rock",
+			size = Vector3.new(4, 3, 4),
+			color = Color3.fromRGB(128, 132, 140),
+			material = Enum.Material.Slate,
+		},
+	}
+local CAMPFIRE_SIZE = Vector3.new(4, 1, 4)
+local CAMPFIRE_COLOR = Color3.fromRGB(230, 120, 40)
 local VARIANT_COLORS = {
 	Color3.fromRGB(226, 234, 240),
 	Color3.fromRGB(214, 225, 235),
@@ -38,19 +54,33 @@ local keep: { [number]: boolean } = {}
 local accumulator = 0
 local heartbeatConn: RBXScriptConnection? = nil
 local unregisterDebug: (() -> ())? = nil
+local campFolder: Folder? = nil
+local campFire: BasePart? = nil
 
+-- Tree/rock slots are visible gather nodes registered with GatherService (tier and respawn come
+-- from Config via ItemCatalog.Nodes); other slots are invisible markers.
 local function newSlot(parent: Instance, tag: string, pos: WorldLayout.Vec2)
+	local node = NODE_SLOTS[tag]
+	local size = if node then node.size else SLOT_SIZE
 	local part = Instance.new("Part")
 	part.Name = tag
-	part.Size = SLOT_SIZE
-	part.Position = Vector3.new(pos.x, SLOT_SIZE.Y / 2, pos.z)
+	part.Size = size
+	part.Position = Vector3.new(pos.x, size.Y / 2, pos.z)
 	part.Anchored = true
 	part.CanCollide = false
 	part.CanQuery = false
 	part.CanTouch = false
-	part.Transparency = 1
+	if node then
+		part.Color = node.color
+		part.Material = node.material
+	else
+		part.Transparency = 1
+	end
 	CollectionService:AddTag(part, tag)
 	part.Parent = parent
+	if node then
+		GatherService.registerNode(part, node.kind)
+	end
 end
 
 local function buildChunk(chunk: WorldLayout.Chunk, root: Folder)
@@ -72,16 +102,16 @@ local function buildChunk(chunk: WorldLayout.Chunk, root: Folder)
 	ground.Parent = model
 
 	for _, p in chunk.trees do
-		newSlot(model, WorldLayout.SlotKinds.Tree, p)
+		newSlot(model, SLOT_TAGS.Tree, p)
 	end
 	for _, p in chunk.rocks do
-		newSlot(model, WorldLayout.SlotKinds.Rock, p)
+		newSlot(model, SLOT_TAGS.Rock, p)
 	end
 	for _, p in chunk.food do
-		newSlot(model, WorldLayout.SlotKinds.Food, p)
+		newSlot(model, SLOT_TAGS.Food, p)
 	end
 	for _, p in chunk.spawnZones do
-		newSlot(model, WorldLayout.SlotKinds.SpawnZone, p)
+		newSlot(model, SLOT_TAGS.SpawnZone, p)
 	end
 
 	CollectionService:AddTag(model, WORLD.ChunkTag)
@@ -136,6 +166,20 @@ function ChunkService.getCampPosition(): Vector3?
 	return Vector3.new(l.camp.position.x, TELEPORT_HEIGHT, l.camp.position.z)
 end
 
+-- Ground-level spawn point beside the camp fire (inside its warm radius). Nil until start().
+function ChunkService.getCampSpawnPosition(): Vector3?
+	local l = layout
+	if not l then
+		return nil
+	end
+	return Vector3.new(l.camp.position.x + WORLD.CampSpawnOffset, 0, l.camp.position.z)
+end
+
+-- The camp campfire (tagged Config.Fire.Tag; FireService registers it from the tag).
+function ChunkService.getCampFire(): BasePart?
+	return campFire
+end
+
 function ChunkService.getSeed(): number?
 	return if layout then layout.seed else nil
 end
@@ -158,23 +202,42 @@ function ChunkService.start()
 	if layout then
 		return
 	end
-	local attr = Workspace:GetAttribute(SEED_ATTRIBUTE)
+	local attr = Workspace:GetAttribute(WORLD.SeedAttribute)
 	local seed = if type(attr) == "number"
 		then attr
 		elseif RunService:IsStudio() then WORLD.DefaultSeed
 		else os.time()
 	local l = WorldLayout.generate(seed, WORLD)
 	layout = l
-	Workspace:SetAttribute(SEED_ATTRIBUTE, seed)
+	Workspace:SetAttribute(WORLD.SeedAttribute, seed)
 
 	local root = Instance.new("Folder")
-	root.Name = CHUNK_FOLDER_NAME
+	root.Name = WORLD.ChunkFolderName
 	root.Parent = Workspace
 	folder = root
 
 	keep[l.camp.chunkIndex] = true
-	Workspace:SetAttribute(CAMP_ATTRIBUTE, Vector3.new(l.camp.position.x, 0, l.camp.position.z))
+	Workspace:SetAttribute(
+		WORLD.CampAttribute,
+		Vector3.new(l.camp.position.x, 0, l.camp.position.z)
+	)
 	ChunkService.ensureLoadedAround(l.camp.position.x, l.camp.position.z)
+
+	-- Camp campfire: outside the chunk models so streaming never removes it.
+	local camp = Instance.new("Folder")
+	camp.Name = WORLD.CampFolderName
+	local fire = Instance.new("Part")
+	fire.Name = Config.Fire.Tag
+	fire.Size = CAMPFIRE_SIZE
+	fire.Position = Vector3.new(l.camp.position.x, CAMPFIRE_SIZE.Y / 2, l.camp.position.z)
+	fire.Anchored = true
+	fire.Color = CAMPFIRE_COLOR
+	fire.Material = Enum.Material.Neon
+	CollectionService:AddTag(fire, Config.Fire.Tag)
+	fire.Parent = camp
+	camp.Parent = Workspace
+	campFolder = camp
+	campFire = fire
 
 	heartbeatConn = RunService.Heartbeat:Connect(function(dt)
 		accumulator += dt
@@ -206,6 +269,11 @@ function ChunkService.stop()
 	if folder then
 		folder:Destroy()
 		folder = nil
+	end
+	if campFolder then
+		campFolder:Destroy()
+		campFolder = nil
+		campFire = nil
 	end
 	layout = nil
 end

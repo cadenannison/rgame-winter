@@ -196,7 +196,7 @@ function HudController.start()
 		Vector2.new(0.5, 0)
 	)
 	constrain(compass, Vector2.new(48, 48), Vector2.new(84, 84))
-	make("UIAspectRatio", { AspectRatio = 1 }, compass)
+	make("UIAspectRatioConstraint", { AspectRatio = 1 }, compass)
 	make("UICorner", { CornerRadius = UDim.new(1, 0) }, compass)
 	local arrowHolder = make("Frame", {
 		Name = "ArrowHolder",
@@ -228,7 +228,7 @@ function HudController.start()
 		Vector2.new(HudConfig.MaxWidth, math.huge)
 	)
 	make(
-		"UIAspectRatio",
+		"UIAspectRatioConstraint",
 		{ AspectRatio = slotCount * 1.0, DominantAxis = Enum.DominantAxis.Width },
 		hotbar
 	)
@@ -301,7 +301,7 @@ function HudController.start()
 			Vector2.new(72, 72),
 			Vector2.new(HudConfig.ActionButtonSize + 24, HudConfig.ActionButtonSize + 24)
 		)
-		make("UIAspectRatio", { AspectRatio = 1 }, b)
+		make("UIAspectRatioConstraint", { AspectRatio = 1 }, b)
 		make("UICorner", { CornerRadius = UDim.new(1, 0) }, b)
 		make("UITextSizeConstraint", { MaxTextSize = 26, MinTextSize = 10 }, b)
 		actionButton = b

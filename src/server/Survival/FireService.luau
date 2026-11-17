@@ -15,8 +15,8 @@ local FireLogic = require(Shared.logic.FireLogic)
 local Guard = require(script.Parent.Parent.Net.Guard)
 
 local F = Config.Fire
-local FUEL_ATTRIBUTE = "FuelSeconds" -- replicated burn time left
-local LIT_ATTRIBUTE = "Lit" -- replicated lit flag
+local FUEL_ATTRIBUTE = F.FuelAttribute
+local LIT_ATTRIBUTE = F.LitAttribute
 local RATE_KEY = "AddFuel"
 
 export type WoodSpender = (player: Player, amount: number) -> boolean
@@ -62,6 +62,37 @@ end
 
 local function unregister(fire: Instance)
 	fires[fire] = nil
+end
+
+-- Registers a campfire now (placement code calls this after tagging and parenting). Idempotent;
+-- the tag signal also registers it, so either path alone is enough.
+function FireService.register(fire: Instance)
+	if fire:IsDescendantOf(Workspace) and CollectionService:HasTag(fire, F.Tag) then
+		register(fire)
+	end
+end
+
+-- Number of registered campfires (lit or not), for the per-run cap.
+function FireService.count(): number
+	local n = 0
+	for _ in fires do
+		n += 1
+	end
+	return n
+end
+
+-- Positions of every lit campfire (mobs use these for the repel edge).
+function FireService.getLitPositions(): { Vector3 }
+	local out: { Vector3 } = {}
+	for fire in fires do
+		if readFuel(fire) > 0 then
+			local p = pivotPosition(fire)
+			if p then
+				table.insert(out, p)
+			end
+		end
+	end
+	return out
 end
 
 -- Server hook: Inventory code installs the function that removes wood from a player; returns true if spent.
@@ -153,6 +184,9 @@ local function onAddFuel(player: Player, fire: unknown)
 	end
 	FireService.addFuel(target, F.WoodFuelSeconds)
 end
+
+-- Same path as AddFuelRequest (QA and server callers); runs the full validation.
+FireService.handleAddFuel = onAddFuel
 
 function FireService.start()
 	if started then

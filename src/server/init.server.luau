@@ -16,23 +16,42 @@ local SurvivalService = require(script.Survival.SurvivalService)
 local FireService = require(script.Survival.FireService)
 local InventoryService = require(script.Items.InventoryService)
 local CraftingService = require(script.Items.CraftingService)
+local PlacementService = require(script.Items.PlacementService)
 local MobService = require(script.Mobs.MobService)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 -- Make sure the remote folder and every remote exist before clients connect.
 Remotes.createAll()
 
--- Start systems here, each exactly once. DataService first, SpawnService last.
+-- Cross-system wiring (set before start so no request can arrive unwired).
+FireService.setWoodSpender(function(player: Player, amount: number): boolean
+	return InventoryService.remove(player, "Wood", amount)
+end)
+Spawn.setSpawnProvider(ChunkService.getCampSpawnPosition)
+
+-- Studio-only QA bridge targets (the bridge itself exists only in Studio; see DebugService).
+DebugService.expose("Debug", DebugService)
+DebugService.expose("Chunk", ChunkService)
+DebugService.expose("Fire", FireService)
+DebugService.expose("Gather", require(script.Items.GatherService))
+DebugService.expose("Inventory", InventoryService)
+DebugService.expose("Crafting", CraftingService)
+DebugService.expose("Placement", PlacementService)
+DebugService.expose("Mobs", MobService)
+
+-- Start systems here, each exactly once. ChunkService before Spawn so the camp exists before any
+-- LoadCharacter; Spawn starts after every gameplay system so characters never load unwired.
 DataService.start()
-Spawn.start()
 DebugService.start() -- no-op outside Studio
-ChunkService.start()
+ChunkService.start() -- builds the camp chunk, camp fire, and registers tree/rock gather nodes
 DayNightService.start()
 SurvivalService.start()
 FireService.start()
 InventoryService.start()
-CraftingService.start()
+CraftingService.start() -- also starts GatherService
+PlacementService.start()
 MobService.start()
+Spawn.start()
 
 local function onPlayerAdded(player: Player)
 	-- Per-player setup goes here.

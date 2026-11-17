@@ -10,3 +10,7 @@ Exploit surface: AddFuelRequest and ReviveRequest are type-checked, rate limited
 Playtest checklist: 1. Local player stands outside a fire at night, warmth falls; inside the radius it rises. 2. Add wood near a campfire, FuelSeconds rises; far away it is rejected. 3. DebugService setDay/clockSpeed/invincible change the clock and block damage. 4. Two players: one downed, the other revives within ReviveSeconds. Script: tools/qa (survival scenario, not yet written).
 Status: in progress
 Notes: outside damage dealt directly to the Humanoid is absorbed as health loss (Dead state is disabled; the service kills explicitly). Clothing tier, bed/sleeping bag and blizzards are not wired yet.
+
+## Integration points
+- Exposes: FireService.register(fire) (placement), count() (fire cap), getLitPositions() (mobs repel edge), isLit, isWarm, addFuel, handleAddFuel (QA/server path, full validation). Attribute names Config.Fire.FuelAttribute/LitAttribute, Config.Meters.WarmthAttribute/HungerAttribute.
+- Consumes: wood spender wired in init.server to InventoryService.remove(player, "Wood", n); camp campfire built by ChunkService; placed campfires from PlacementService; DayNightService debug handlers (setDay, clockSpeed).

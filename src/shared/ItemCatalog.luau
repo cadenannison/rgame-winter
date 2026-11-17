@@ -6,7 +6,7 @@ local Config = require("./Config")
 export type ItemDef = {
 	id: string,
 	name: string,
-	kind: string, -- "resource" | "tool" | "weapon" | "placeable"
+	kind: string, -- "resource" | "tool" | "weapon" | "placeable" | "food"
 	maxStack: number,
 	toolType: string?, -- "axe" | "pickaxe" (gather tools)
 	toolTier: number?,
@@ -20,6 +20,17 @@ export type Recipe = {
 	tier: number, -- workbench tier required (0 = by hand)
 	inputs: { { id: string, count: number } },
 	output: { id: string, count: number },
+}
+
+-- Placeable structure (placed via PlaceRequest; costs one item of itemId). Size in studs.
+export type StructureDef = {
+	id: string,
+	itemId: string,
+	role: string, -- "workbench" | "campfire"
+	sizeX: number,
+	sizeY: number,
+	sizeZ: number,
+	tier: number?, -- workbench tier
 }
 
 export type NodeDef = {
@@ -40,7 +51,6 @@ ItemCatalog.NodeDepletedAttribute = "Depleted"
 
 local TOOL_DURABILITY = 60
 local WEAPON_DURABILITY = 45
-local SPEAR_DAMAGE = 12
 
 ItemCatalog.Items = {
 	Wood = { id = "Wood", name = "Wood", kind = "resource", maxStack = Config.Inventory.MaxStack },
@@ -73,7 +83,7 @@ ItemCatalog.Items = {
 		name = "Spear",
 		kind = "weapon",
 		maxStack = 1,
-		damage = SPEAR_DAMAGE,
+		damage = Config.Combat.SpearDamage,
 		durability = WEAPON_DURABILITY,
 	},
 	Workbench = {
@@ -83,6 +93,20 @@ ItemCatalog.Items = {
 		maxStack = 1,
 		structureId = "Workbench",
 	},
+	Campfire = {
+		id = "Campfire",
+		name = "Campfire",
+		kind = "placeable",
+		maxStack = 1,
+		structureId = "Campfire",
+	},
+	RawMeat = {
+		id = "RawMeat",
+		name = "Raw Meat",
+		kind = "food",
+		maxStack = Config.Inventory.MaxStack,
+	},
+	Hide = { id = "Hide", name = "Hide", kind = "resource", maxStack = Config.Inventory.MaxStack },
 } :: { [string]: ItemDef }
 
 ItemCatalog.Recipes = {
@@ -92,10 +116,11 @@ ItemCatalog.Recipes = {
 		inputs = { { id = "Wood", count = 3 } },
 		output = { id = "Axe", count = 1 },
 	},
+	-- Wood only: stone needs a pickaxe, so a stone input would make stone unobtainable.
 	Pickaxe = {
 		id = "Pickaxe",
 		tier = 0,
-		inputs = { { id = "Wood", count = 2 }, { id = "Stone", count = 2 } },
+		inputs = { { id = "Wood", count = 4 } },
 		output = { id = "Pickaxe", count = 1 },
 	},
 	Workbench = {
@@ -104,6 +129,12 @@ ItemCatalog.Recipes = {
 		inputs = { { id = "Wood", count = 10 }, { id = "Stone", count = 4 } },
 		output = { id = "Workbench", count = 1 },
 	},
+	Campfire = {
+		id = "Campfire",
+		tier = 0,
+		inputs = { { id = "Wood", count = 5 }, { id = "Stone", count = 2 } },
+		output = { id = "Campfire", count = 1 },
+	},
 	Spear = {
 		id = "Spear",
 		tier = 1,
@@ -111,6 +142,26 @@ ItemCatalog.Recipes = {
 		output = { id = "Spear", count = 1 },
 	},
 } :: { [string]: Recipe }
+
+ItemCatalog.Structures = {
+	Workbench = {
+		id = "Workbench",
+		itemId = "Workbench",
+		role = "workbench",
+		sizeX = 6,
+		sizeY = 3,
+		sizeZ = 4,
+		tier = 1,
+	},
+	Campfire = {
+		id = "Campfire",
+		itemId = "Campfire",
+		role = "campfire",
+		sizeX = 4,
+		sizeY = 1,
+		sizeZ = 4,
+	},
+} :: { [string]: StructureDef }
 
 ItemCatalog.Nodes = {
 	Tree = {

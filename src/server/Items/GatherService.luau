@@ -1,6 +1,6 @@
 --!strict
 -- Resource nodes: tagged instances gated by tool tier, depleting after N hits, slow respawn.
--- Started by CraftingService.start() (init.server is not editable by this slice).
+-- Started by CraftingService.start(). ChunkService registers tree/rock slots via registerNode.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -168,6 +168,9 @@ local function onGather(player: Player, node: unknown)
 	end
 	setDepleted(target, true)
 end
+
+-- Same path as GatherRequest (QA and server callers); runs the full validation.
+GatherService.handleGather = onGather
 
 function GatherService.start()
 	if started then

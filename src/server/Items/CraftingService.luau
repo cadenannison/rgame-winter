@@ -71,6 +71,9 @@ local function onCraft(player: Player, recipeId: unknown)
 	end
 end
 
+-- Same path as CraftRequest (QA and server callers); runs the full validation.
+CraftingService.handleCraft = onCraft
+
 function CraftingService.start()
 	if started then
 		return

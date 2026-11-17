@@ -5,6 +5,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -22,6 +23,8 @@ local registry: { [string]: { Handler } } = {}
 local connections: { RBXScriptConnection } = {}
 local ownedForceFields: { [Player]: ForceField } = {}
 local playerConnections: { [Player]: RBXScriptConnection } = {}
+local exposed: { [string]: { [string]: any } } = {}
+local bridge: BindableFunction? = nil
 local started = false
 
 local limits: DebugCommands.Limits = {
@@ -50,6 +53,24 @@ function DebugService.register(command: string, handler: Handler): () -> ()
 			table.remove(l, i)
 		end
 	end
+end
+
+-- Registers a service API for the Studio-only QA bridge (MCP/command-bar code runs in another VM
+-- and gets fresh module copies, so it must call the live services through this bridge).
+function DebugService.expose(name: string, api: { [string]: any })
+	exposed[name] = api
+end
+
+local function onBridgeInvoke(service: unknown, fn: unknown, ...: any): ...any
+	if type(service) ~= "string" or type(fn) ~= "string" then
+		error("bridge: service and fn must be strings")
+	end
+	local api = exposed[service]
+	local f = api and api[fn]
+	if type(f) ~= "function" then
+		error(`bridge: unknown {service}.{fn}`)
+	end
+	return f(...)
 end
 
 local function setInvincible(player: Player, on: boolean)
@@ -177,6 +198,12 @@ function DebugService.start()
 	for _, player in Players:GetPlayers() do
 		onPlayerAdded(player)
 	end
+	-- Studio-only QA bridge: ServerStorage[D.BridgeName]:Invoke(service, fn, ...) -> results.
+	local b = Instance.new("BindableFunction")
+	b.Name = D.BridgeName
+	b.OnInvoke = onBridgeInvoke
+	b.Parent = ServerStorage
+	bridge = b
 end
 
 function DebugService.stop()
@@ -195,6 +222,10 @@ function DebugService.stop()
 		setInvincible(player, false)
 	end
 	clearWorldState()
+	if bridge then
+		bridge:Destroy()
+		bridge = nil
+	end
 	started = false
 end
 
