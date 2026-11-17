@@ -22,3 +22,5 @@ Status: in progress
 - CraftPanel: C or the always-visible Craft button; recipes up to Config.Craft.MaxTier (Crafting.listForTier), have/need counts, greyed with reason (Crafting.status, client-side tier from tagged workbenches), inventory counts. Row click = CraftRequest.
 - OnboardingHints: shared/logic/Onboarding.STEPS equipAxe, chop, openCraft, craftCampfire, placeCampfire, addWood, eat; credited from confirmed selection and inventory deltas following our own request (2 s window). Per session (KNOWN_ISSUES).
 - QABridge (Studio only): PlayerScripts[Config.Debug.ClientBridgeName] BindableFunction; Invoke(fn, ...) with fn in selectSlot, selectItem, wheel, toggleCraft, craft, action, gather, attack, place, eat, fuel, state. Same functions as the inputs.
+
+- Round 3: HudController starts FireMeter and PlacementGhost; place() uses ghost.target(). See docs/systems/items-crafting.md and survival.md.

@@ -32,3 +32,8 @@ Status: in progress (server, placement, food, client senders and tests done)
 - Inventory: HotbarSize 9 (keys 1-9), BackpackSize 15 (total unchanged at 24).
 - Gather refusal toast: "<verb>: needs <tool>" from ItemCatalog.Nodes verb/toolId (Chop/Axe, Mine/Pickaxe).
 - Studio debug: "give <itemId>" grants Config.Debug.GiveCount (handler in init.server).
+
+## Placement ghost and shared validator (round 3)
+- shared/logic/Placement.validate(Check) -> {ok, reason} is the only rule set (snap, reach, lit-fire build radius, RangeExempt, spacing/overlap, caps, item). PlacementService calls it with server data; the client ghost (src/client/HUD/PlacementGhost.luau) calls it with client-visible data for tint and reason. Placement.check is the tuple wrapper. Server still re-validates at the place action.
+- Ghost: Part copy of the structure (Config.Build.Ghost), no collision/scripts, CanQuery false, snapped aim from mouse ray (PC) or screen centre (touch) against the chunk ground, green/red tint, reason text from Ghost.ReasonText, R / Rotate button rotates by Build.RotationStep, destroyed on deselect. HUD place() sends the ghost position and rotation; QA bridge: ghostAim, ghostState, ghostRotate.
+- QA: tools/qa/placement-preview.luau (client, 9 lines).

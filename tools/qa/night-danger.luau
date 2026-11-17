@@ -81,9 +81,13 @@ local function scenario(chk)
 		return
 	end
 	local bite0 = P:GetAttribute(N.BiteAttribute) or 0
-	chk("wolf_windup", waitFor(function()
-		return wolf.Parent and wolf:GetAttribute(N.WindupAttribute) == true
-	end, 6), "no Windup attribute within 6s")
+	chk(
+		"wolf_windup",
+		waitFor(function()
+			return wolf.Parent and wolf:GetAttribute(N.WindupAttribute) == true
+		end, 6),
+		"no Windup attribute within 6s"
+	)
 	chk("wolf_bites", waitFor(function()
 		return (P:GetAttribute(N.BiteAttribute) or 0) > bite0
 	end, 6) and hum.Health < hum.MaxHealth and hum.Health > 0, "hp " .. math.floor(hum.Health))
@@ -101,9 +105,13 @@ local function scenario(chk)
 
 	-- dawn: the wolf runs off and despawns
 	chk("dawn_set", setNight(false), "IsNight never false")
-	chk("wolf_leaves_at_dawn", waitFor(function()
-		return not wolf.Parent
-	end, N.DawnLeaveSeconds + 4), "wolf still present")
+	chk(
+		"wolf_leaves_at_dawn",
+		waitFor(function()
+			return not wolf.Parent
+		end, N.DawnLeaveSeconds + 4),
+		"wolf still present"
+	)
 end
 
 local lines, fails, passes = {}, {}, {}

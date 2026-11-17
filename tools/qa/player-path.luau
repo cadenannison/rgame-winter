@@ -22,7 +22,11 @@ end
 local function scenario(chk)
 	local P = Players.LocalPlayer
 	for _ = 1, 40 do
-		if P:GetAttribute(Config.ReadyAttribute) and P.Character and P.Character:FindFirstChild("HumanoidRootPart") then
+		if
+			P:GetAttribute(Config.ReadyAttribute)
+			and P.Character
+			and P.Character:FindFirstChild("HumanoidRootPart")
+		then
 			break
 		end
 		task.wait(0.5)
@@ -31,7 +35,11 @@ local function scenario(chk)
 	local remotes = RS:WaitForChild(Config.RemoteFolderName)
 	local debugRemote = remotes:FindFirstChild("DebugCommand")
 	if not (bridge and debugRemote and P.Character) then
-		chk("setup", false, "bridge " .. tostring(bridge ~= nil) .. " debug " .. tostring(debugRemote ~= nil))
+		chk(
+			"setup",
+			false,
+			"bridge " .. tostring(bridge ~= nil) .. " debug " .. tostring(debugRemote ~= nil)
+		)
 		return
 	end
 	local function C(fn, ...)
@@ -60,14 +68,28 @@ local function scenario(chk)
 	local st = C("state")
 	chk(
 		"select_axe",
-		axeSlot ~= nil and wheeled ~= axeSlot and st.selected == axeSlot and st.held == "Axe" and st.itemName ~= "",
-		"slot " .. tostring(axeSlot) .. " wheel " .. tostring(wheeled) .. " sel " .. tostring(st.selected) .. " held " .. tostring(st.held)
+		axeSlot ~= nil
+			and wheeled ~= axeSlot
+			and st.selected == axeSlot
+			and st.held == "Axe"
+			and st.itemName ~= "",
+		"slot "
+			.. tostring(axeSlot)
+			.. " wheel "
+			.. tostring(wheeled)
+			.. " sel "
+			.. tostring(st.selected)
+			.. " held "
+			.. tostring(st.held)
 	)
 
 	-- 2. go to the nearest live tree; empty hand shows "needs Axe", axe shows Chop
 	local tree, best = nil, math.huge
 	for _, n in CollectionService:GetTagged(Config.Gather.NodeTag) do
-		if n:GetAttribute(Catalog.NodeKindAttribute) == "Tree" and n:GetAttribute(Catalog.NodeDepletedAttribute) ~= true then
+		if
+			n:GetAttribute(Catalog.NodeKindAttribute) == "Tree"
+			and n:GetAttribute(Catalog.NodeDepletedAttribute) ~= true
+		then
 			local d = flat(n.Position, hrp.Position)
 			if d < best then
 				tree, best = n, d
@@ -89,7 +111,8 @@ local function scenario(chk)
 	local okPrompt = C("state").prompt
 	chk(
 		"prompt_tool",
-		string.find(needs, "needs Axe", 1, true) ~= nil and string.find(okPrompt, "Chop", 1, true) ~= nil,
+		string.find(needs, "needs Axe", 1, true) ~= nil
+			and string.find(okPrompt, "Chop", 1, true) ~= nil,
 		"empty '" .. tostring(needs) .. "' axe '" .. tostring(okPrompt) .. "'"
 	)
 
@@ -102,7 +125,11 @@ local function scenario(chk)
 	end
 	task.wait(0.3)
 	local gained = count("Wood") - wood0
-	chk("chop", gained == Config.Gather.TreeYield, "gained " .. gained .. " actions " .. table.concat(actions, ","))
+	chk(
+		"chop",
+		gained == Config.Gather.TreeYield,
+		"gained " .. gained .. " actions " .. table.concat(actions, ",")
+	)
 
 	-- 4. open crafting (C path), craft a campfire (row click path)
 	dbg("give", "Wood")
@@ -112,7 +139,11 @@ local function scenario(chk)
 	local open = C("state").craftOpen
 	C("craft", "Campfire")
 	task.wait(0.6)
-	chk("craft_campfire", open and count("Campfire") == 1, "open " .. tostring(open) .. " campfires " .. count("Campfire"))
+	chk(
+		"craft_campfire",
+		open and count("Campfire") == 1,
+		"open " .. tostring(open) .. " campfires " .. count("Campfire")
+	)
 	C("toggleCraft")
 
 	-- 5. place it (selected placeable -> context action = place)
@@ -126,7 +157,11 @@ local function scenario(chk)
 			mine = f
 		end
 	end
-	chk("place_campfire", act == "place" and mine ~= nil and count("Campfire") == 0, "action " .. tostring(act) .. " fire " .. tostring(mine ~= nil))
+	chk(
+		"place_campfire",
+		act == "place" and mine ~= nil and count("Campfire") == 0,
+		"action " .. tostring(act) .. " fire " .. tostring(mine ~= nil)
+	)
 
 	-- 6. add wood to it (wood in hand next to the fire)
 	if mine then
@@ -137,7 +172,16 @@ local function scenario(chk)
 		local fact = C("action")
 		task.wait(0.6)
 		local fuel1 = mine:GetAttribute(Config.Fire.FuelAttribute) or 0
-		chk("add_wood", fact == "fuel" and fuel1 > fuel0 + Config.Fire.WoodFuelSeconds / 2, "action " .. tostring(fact) .. " fuel " .. math.floor(fuel0) .. "->" .. math.floor(fuel1))
+		chk(
+			"add_wood",
+			fact == "fuel" and fuel1 > fuel0 + Config.Fire.WoodFuelSeconds / 2,
+			"action "
+				.. tostring(fact)
+				.. " fuel "
+				.. math.floor(fuel0)
+				.. "->"
+				.. math.floor(fuel1)
+		)
 	end
 
 	-- 7. catch a hare with the axe (attack handler; server recomputes reach and damage)
@@ -156,7 +200,12 @@ local function scenario(chk)
 		end
 	end
 	local swings = 0
-	while hare and hare.Parent and CollectionService:HasTag(hare, Config.Mobs.Tag) and swings < 10 do
+	while
+		hare
+		and hare.Parent
+		and CollectionService:HasTag(hare, Config.Mobs.Tag)
+		and swings < 10
+	do
 		local hp = hare:GetPivot().Position
 		tp(Vector3.new(hp.X + 4, hrp.Position.Y, hp.Z))
 		C("attack", hare)
@@ -164,7 +213,11 @@ local function scenario(chk)
 		task.wait(Config.Combat.MeleeCooldown + 0.15)
 	end
 	task.wait(0.4)
-	chk("catch_hare", count("RawMeat") >= meat0 + Config.Mobs.Hare.DropCount, "hare " .. tostring(hare ~= nil) .. " swings " .. swings .. " meat " .. count("RawMeat"))
+	chk(
+		"catch_hare",
+		count("RawMeat") >= meat0 + Config.Mobs.Hare.DropCount,
+		"hare " .. tostring(hare ~= nil) .. " swings " .. swings .. " meat " .. count("RawMeat")
+	)
 
 	-- 8. eat it (food in hand -> context action = eat)
 	C("selectItem", "RawMeat")
@@ -172,7 +225,18 @@ local function scenario(chk)
 	local meatBefore = count("RawMeat")
 	local eact = C("action")
 	task.wait(0.6)
-	chk("eat", eact == "eat" and count("RawMeat") == meatBefore - 1, "action " .. tostring(eact) .. " meat " .. meatBefore .. "->" .. count("RawMeat") .. " hunger " .. tostring(C("state").hunger))
+	chk(
+		"eat",
+		eact == "eat" and count("RawMeat") == meatBefore - 1,
+		"action "
+			.. tostring(eact)
+			.. " meat "
+			.. meatBefore
+			.. "->"
+			.. count("RawMeat")
+			.. " hunger "
+			.. tostring(C("state").hunger)
+	)
 
 	-- 9. onboarding chain finished by the real actions above
 	local ob = C("state").onboarding

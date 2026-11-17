@@ -24,6 +24,7 @@ local ActionPick = require(Logic:WaitForChild("ActionPick"))
 local FireTiers = require(Logic:WaitForChild("FireTiers"))
 local Crafting = require(Logic:WaitForChild("Crafting"))
 local RadiusRing = require(script.Parent.Parent:WaitForChild("Fire"):WaitForChild("RadiusRing"))
+local FireMeter = require(script.Parent.Parent:WaitForChild("Fire"):WaitForChild("FireMeter"))
 local ItemsGather = require(Logic:WaitForChild("ItemsGather"))
 local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
 local DebugChat = require(script.Parent:WaitForChild("DebugChat"))
@@ -33,6 +34,7 @@ local CraftPanel = require(script.Parent:WaitForChild("CraftPanel"))
 local TargetPrompt = require(script.Parent:WaitForChild("TargetPrompt"))
 local OnboardingHints = require(script.Parent:WaitForChild("OnboardingHints"))
 local QABridge = require(script.Parent:WaitForChild("QABridge"))
+local PlacementGhost = require(script.Parent:WaitForChild("PlacementGhost"))
 
 local HOTBAR_KEYS: { Enum.KeyCode } = {
 	Enum.KeyCode.One,
@@ -445,6 +447,22 @@ function HudController.start()
 		})
 	)
 
+	-- World-space burn-time bars above every campfire.
+	addCleanup(cleanups, FireMeter.start())
+
+	-- Placement preview (shared validator; the server re-validates at the place action).
+	local ghost = PlacementGhost.start({
+		selectedStructure = function(): string?
+			local def = selectedDef()
+			return if def ~= nil and def.kind == "placeable" then def.structureId else nil
+		end,
+		itemCount = function(structureId: string): number
+			local def = ItemCatalog.Structures[structureId]
+			return if def then counts[def.itemId] or 0 else 0
+		end,
+	})
+	addCleanup(cleanups, ghost.destroy)
+
 	local function showItemName()
 		local def = selectedDef()
 		if def == nil then
@@ -748,6 +766,14 @@ function HudController.start()
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if def and def.structureId and root and root:IsA("BasePart") then
+			-- Aim at the ghost when it is up; the server snaps and re-validates either way.
+			local t = ghost.target()
+			if t and t.structureId == def.structureId then
+				recent["place"] = os.clock()
+				Remotes.event(Remotes.PlaceRequest)
+					:FireServer(t.structureId, t.position, t.rotation)
+				return
+			end
 			local look = root.CFrame.LookVector
 			local _, yaw, _ = root.CFrame:ToOrientation()
 			recent["place"] = os.clock()
@@ -1126,7 +1152,23 @@ function HudController.start()
 				attack(mob)
 			end,
 			place = function()
+				-- Legacy QA semantics: aim PlaceDistance ahead of the player (no cursor in a script).
+				local character = player.Character
+				local root = character and character:FindFirstChild("HumanoidRootPart")
+				if root and root:IsA("BasePart") then
+					ghost.setAim(root.Position + root.CFrame.LookVector * HudConfig.PlaceDistance)
+				end
 				place()
+				ghost.setAim(nil)
+			end,
+			ghostAim = function(point: Vector3?)
+				ghost.setAim(point)
+			end,
+			ghostState = function(): { [string]: any }
+				return ghost.state()
+			end,
+			ghostRotate = function()
+				ghost.rotate()
 			end,
 			eat = function()
 				eat()

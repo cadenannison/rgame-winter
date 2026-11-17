@@ -34,6 +34,7 @@ local fires: { [Instance]: boolean } = {}
 local woodSpender: WoodSpender? = nil
 local connections: { RBXScriptConnection } = {}
 local accumulator = 0
+local meterAccumulator = 0
 local started = false
 
 local function pivotPosition(fire: Instance): Vector3?
@@ -50,13 +51,23 @@ local function readFuel(fire: Instance): number
 	return if type(v) == "number" then v else 0
 end
 
+local function tierOf(fire: Instance): number
+	return FireTiers.clamp(fire:GetAttribute(F.TierAttribute))
+end
+
+-- Publishes fuel / tier max as FuelFraction (clients draw the world-space meter from it). Called on
+-- events (register, add fuel, upgrade) and, while burning, at most every F.Meter.UpdateInterval.
+local function publishFraction(fire: Instance)
+	local row = FireTiers.get(tierOf(fire))
+	fire:SetAttribute(
+		F.FuelFractionAttribute,
+		FireLogic.fraction(readFuel(fire), row.MaxFuelSeconds)
+	)
+end
+
 local function writeFire(fire: Instance, fuel: number)
 	fire:SetAttribute(FUEL_ATTRIBUTE, fuel)
 	fire:SetAttribute(LIT_ATTRIBUTE, fuel > 0)
-end
-
-local function tierOf(fire: Instance): number
-	return FireTiers.clamp(fire:GetAttribute(F.TierAttribute))
 end
 
 -- Server recomputes every tier-derived attribute from the tier row (replicates to clients and mobs).
@@ -66,6 +77,7 @@ local function applyTier(fire: Instance, tier: number)
 	fire:SetAttribute(F.WarmRadiusAttribute, row.WarmRadius)
 	fire:SetAttribute(F.BuildRadiusAttribute, row.BuildRadius)
 	fire:SetAttribute(F.LightRangeAttribute, row.LightRange)
+	publishFraction(fire) -- the cap changed with the tier
 end
 
 local function register(fire: Instance)
@@ -79,6 +91,7 @@ local function register(fire: Instance)
 	else
 		fire:SetAttribute(LIT_ATTRIBUTE, readFuel(fire) > 0)
 	end
+	publishFraction(fire)
 end
 
 local function unregister(fire: Instance)
@@ -157,6 +170,7 @@ function FireService.addFuel(fire: Instance, seconds: number): number
 	local state = FireLogic.new(readFuel(fire))
 	local added = FireLogic.addFuel(state, seconds, FireTiers.get(tierOf(fire)).MaxFuelSeconds)
 	writeFire(fire, state.fuel)
+	publishFraction(fire)
 	return added
 end
 
@@ -183,12 +197,20 @@ function FireService.isWarm(position: Vector3): boolean
 end
 
 local function burnAll(dt: number)
+	meterAccumulator += dt
+	local publish = meterAccumulator >= F.Meter.UpdateInterval
+	if publish then
+		meterAccumulator = 0
+	end
 	for fire in fires do
 		local fuel = readFuel(fire)
 		if fuel > 0 then
 			local state = FireLogic.new(fuel)
-			FireLogic.burn(state, dt)
+			local wentOut = FireLogic.burn(state, dt)
 			writeFire(fire, state.fuel)
+			if publish or wentOut then
+				publishFraction(fire)
+			end
 		end
 	end
 end

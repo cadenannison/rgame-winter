@@ -19,7 +19,11 @@ local F = Config.Fire
 local function scenario(chk)
 	local P = Players.LocalPlayer
 	for _ = 1, 40 do
-		if P:GetAttribute(Config.ReadyAttribute) and P.Character and P.Character:FindFirstChild("HumanoidRootPart") then
+		if
+			P:GetAttribute(Config.ReadyAttribute)
+			and P.Character
+			and P.Character:FindFirstChild("HumanoidRootPart")
+		then
 			break
 		end
 		task.wait(0.5)
@@ -78,7 +82,11 @@ local function scenario(chk)
 
 	-- 1-2. build radius (tier 1)
 	local farGain = placeBench(row1.BuildRadius + 30)
-	chk("place_refused_outside", farGain == 0 and lastNotify == "OutOfBuildRange", "gain " .. farGain .. " notify " .. lastNotify)
+	chk(
+		"place_refused_outside",
+		farGain == 0 and lastNotify == "OutOfBuildRange",
+		"gain " .. farGain .. " notify " .. lastNotify
+	)
 	local nearGain = placeBench(10)
 	chk("place_allowed_inside", nearGain == 1, "gain " .. nearGain .. " notify " .. lastNotify)
 	local bench
@@ -104,7 +112,16 @@ local function scenario(chk)
 	C("craft", "Spear")
 	task.wait(Config.Net.CraftRateInterval + 0.6)
 	C("toggleCraft")
-	chk("craft_refused_away", awayOk, "spears " .. count("Spear") .. " client " .. tostring(clientAway) .. " notify " .. lastNotify)
+	chk(
+		"craft_refused_away",
+		awayOk,
+		"spears "
+			.. count("Spear")
+			.. " client "
+			.. tostring(clientAway)
+			.. " notify "
+			.. lastNotify
+	)
 	chk("craft_allowed_at_bench", count("Spear") == 1, "spears " .. count("Spear"))
 	chk("bench_context_action", act == "craft", "action " .. tostring(act))
 
@@ -124,26 +141,56 @@ local function scenario(chk)
 	end
 	local affordable = count("Wood") >= needWood and count("Stone") >= needStone
 	local prompt = C("state").prompt
-	chk("upgrade_prompt_cost", tier0 == 1 and string.find(prompt, "Upgrade fire", 1, true) ~= nil and string.find(prompt, tostring(needWood), 1, true) ~= nil, "prompt '" .. prompt .. "' tier " .. tostring(tier0))
+	chk(
+		"upgrade_prompt_cost",
+		tier0 == 1
+			and string.find(prompt, "Upgrade fire", 1, true) ~= nil
+			and string.find(prompt, tostring(needWood), 1, true) ~= nil,
+		"prompt '" .. prompt .. "' tier " .. tostring(tier0)
+	)
 
 	-- 5. upgrade (real action) raises every radius
 	give("Wood", needWood)
 	give("Stone", needStone)
-	local before = { fire:GetAttribute(F.WarmRadiusAttribute), fire:GetAttribute(F.BuildRadiusAttribute), fire:GetAttribute(F.LightRangeAttribute) }
+	local before = {
+		fire:GetAttribute(F.WarmRadiusAttribute),
+		fire:GetAttribute(F.BuildRadiusAttribute),
+		fire:GetAttribute(F.LightRangeAttribute),
+	}
 	local uact = C("action")
 	task.wait(F.UpgradeRateInterval + 0.6)
-	local after = { fire:GetAttribute(F.WarmRadiusAttribute), fire:GetAttribute(F.BuildRadiusAttribute), fire:GetAttribute(F.LightRangeAttribute) }
+	local after = {
+		fire:GetAttribute(F.WarmRadiusAttribute),
+		fire:GetAttribute(F.BuildRadiusAttribute),
+		fire:GetAttribute(F.LightRangeAttribute),
+	}
 	chk(
 		"upgrade_raises_radii",
-		uact == "upgrade" and fire:GetAttribute(F.TierAttribute) == 2 and after[1] == row2.WarmRadius and after[2] == row2.BuildRadius and after[3] == row2.LightRange and after[1] > before[1] and after[2] > before[2] and after[3] > before[3],
-		"action " .. tostring(uact) .. " tier " .. tostring(fire:GetAttribute(F.TierAttribute)) .. " affordable-before " .. tostring(affordable)
+		uact == "upgrade"
+			and fire:GetAttribute(F.TierAttribute) == 2
+			and after[1] == row2.WarmRadius
+			and after[2] == row2.BuildRadius
+			and after[3] == row2.LightRange
+			and after[1] > before[1]
+			and after[2] > before[2]
+			and after[3] > before[3],
+		"action "
+			.. tostring(uact)
+			.. " tier "
+			.. tostring(fire:GetAttribute(F.TierAttribute))
+			.. " affordable-before "
+			.. tostring(affordable)
 	)
 
 	-- 6. build radius grew; mob repel edge follows the fire's WarmRadius attribute
 	local mid = (row1.BuildRadius + row2.BuildRadius) / 2
 	local gain = placeBench(mid)
 	chk("place_extends_after_upgrade", gain == 1, "gain " .. gain .. " notify " .. lastNotify)
-	chk("repel_follows_warm_radius", fire:GetAttribute(F.WarmRadiusAttribute) == row2.WarmRadius, "WarmRadius " .. tostring(fire:GetAttribute(F.WarmRadiusAttribute)))
+	chk(
+		"repel_follows_warm_radius",
+		fire:GetAttribute(F.WarmRadiusAttribute) == row2.WarmRadius,
+		"WarmRadius " .. tostring(fire:GetAttribute(F.WarmRadiusAttribute))
+	)
 	conn:Disconnect()
 end
 

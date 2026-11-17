@@ -7,6 +7,13 @@ Every client-facing brief must pass all of these before it is done. Check them i
 - [ ] Buttons are at least 44 px on a phone and nothing overlaps the Roblox jump button or thumbstick.
 - [ ] Default CoreGui that fights our input (for example the Backpack) is disabled.
 
+## Placement ghost (any placeable)
+- [ ] While a placeable is selected a transparent ghost of the structure shows on the ground, grid-snapped, following the mouse (PC) or screen centre (mobile).
+- [ ] Green when valid, red when not, with the reason as text ("Too far from the fire", "Blocked").
+- [ ] Rotate: R on PC, an on-screen Rotate button (>= 44 px, clear of the Act and jump buttons) on mobile. Confirm: click / E / Act.
+- [ ] Ghost has no collision, no scripts, CanQuery false, and is destroyed on deselect.
+- [ ] Server stays authoritative: the ghost and PlacementService both call shared/logic/Placement.validate; the server re-validates at the place action.
+
 ## Prompt (the player can see what to do)
 - [ ] Every interactable shows a prompt when it is in range or aimed at: the verb plus the input ("Chop [Click/E]" / "[Act]").
 - [ ] When a requirement is missing, the prompt says so before the attempt ("Chop: needs Axe", "needs workbench").

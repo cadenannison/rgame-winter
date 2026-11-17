@@ -52,6 +52,56 @@ return function(check: (string, boolean) -> ())
 	c.itemCount = 0
 	check("place needs item", select(2, Placement.check(c)) == "MissingItem")
 
+	-- Shared validator ({ok, reason}) used by the client ghost and the server handler.
+	check(
+		"validate ok table",
+		Placement.validate(base()).ok and Placement.validate(base()).reason == "Ok"
+	)
+	c = base()
+	c.structureId = "Workbench"
+	c.target = { x = Config.Fire.Tiers[1].BuildRadius + 4, z = 0 }
+	c.player = c.target
+	check("validate build radius", Placement.validate(c).reason == "OutOfBuildRange")
+	c.buildExempt = true
+	check("validate range exempt", Placement.validate(c).ok)
+	c = base()
+	c.litFires = {}
+	check("validate needs lit fire", Placement.validate(c).reason == "OutOfBuildRange")
+	c.buildExempt = Config.Build.RangeExempt.Campfire == true
+	check("campfire exempt from build radius", Placement.validate(c).ok)
+	local snapped = Placement.snapPoint(5.9, -6.1, Config.Build.GridStep)
+	check("snapPoint grid", snapped.x == 4 and snapped.z == -8)
+	local reasons = { "OutOfRange", "OutOfBuildRange", "TooClose" }
+	local textOk = true
+	for _, r in reasons do
+		textOk = textOk and Config.Build.Ghost.ReasonText[r] ~= nil
+	end
+	check("ghost reason text for red reasons", textOk)
+	check(
+		"ghost text matches spec",
+		Config.Build.Ghost.ReasonText.OutOfBuildRange == "Too far from the fire"
+			and Config.Build.Ghost.ReasonText.TooClose == "Blocked"
+	)
+
+	-- Ring visibility by day (QA asserts the same threshold on the live dots).
+	local ring = Config.Fire.Ring
+	check("ring day visible", ring.WarmTransparencyDay <= ring.DayVisibilityMaxTransparency)
+	check("ring day darker than snow", ring.WarmColorDay[1] < 200 and ring.WarmColorDay[3] < 200)
+
+	-- Fire meter fraction math.
+	local FireLogic = require("../src/shared/logic/FireLogic")
+	check(
+		"fuel fraction",
+		FireLogic.fraction(300, 600) == 0.5
+			and FireLogic.fraction(0, 600) == 0
+			and FireLogic.fraction(9999, 600) == 1
+	)
+	check("fuel fraction zero cap", FireLogic.fraction(5, 0) == 0)
+	check(
+		"meter low fraction sane",
+		Config.Fire.Meter.LowFraction > 0 and Config.Fire.Meter.LowFraction < 1
+	)
+
 	-- Catalog wiring: every structure has a placeable item and recipe; mob drops are real items.
 	local rowsOk = true
 	for id, def in ItemCatalog.Structures do

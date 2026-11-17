@@ -79,8 +79,11 @@ export type FireRingConfig = {
 	WarmTransparencyNight: number,
 	BuildTransparencyDay: number,
 	BuildTransparencyNight: number,
-	WarmColor: { number }, -- {r, g, b} 0-255
-	BuildColor: { number },
+	WarmColorDay: { number }, -- {r, g, b} 0-255; cool and slightly dark so dots read on white snow
+	WarmColorNight: { number }, -- warm glow
+	BuildColorDay: { number },
+	BuildColorNight: { number },
+	DayVisibilityMaxTransparency: number, -- by day the warm dots (near the player) must stay at or below this (QA asserts it)
 	GroundLift: number, -- studs above the ground hit
 	RayHeight: number,
 	RayLength: number,
@@ -109,6 +112,25 @@ export type FireConfig = {
 	UpgradeRateInterval: number,
 	Tiers: { FireTier },
 	Ring: FireRingConfig,
+	Meter: FireMeterConfig,
+	FuelFractionAttribute: string, -- campfire attribute: fuel / tier max fuel, 0-1, throttled by Meter.UpdateInterval
+}
+
+-- Client-only world-space burn-time bar above each campfire (BillboardGui). Visual only.
+export type FireMeterConfig = {
+	GuiName: string,
+	UpdateInterval: number, -- server: min seconds between FuelFraction attribute writes while burning
+	ShowRange: number, -- studs from the local player within which a meter is shown
+	WidthPx: number,
+	HeightPx: number,
+	OffsetY: number, -- studs above the fire's pivot
+	LowFraction: number, -- at or below this the bar pulses
+	PulseSeconds: number, -- pulse period
+	PulseMinAlpha: number, -- lowest bar opacity (0-1) during the pulse
+	FullColor: { number }, -- {r, g, b} warm colour at full fuel
+	LowColor: { number }, -- red at empty
+	BackColor: { number },
+	BackTransparency: number,
 }
 
 export type ScalingConfig = {
@@ -208,6 +230,24 @@ export type BuildConfig = {
 	StructureAttribute: string,
 	OwnerAttribute: string,
 	RangeExempt: { [string]: boolean }, -- structure ids placeable anywhere (no lit-fire build radius)
+	Ghost: GhostConfig,
+}
+
+-- Client-only placement preview (transparent copy of the structure on the ground). Visual only.
+export type GhostConfig = {
+	Name: string,
+	PickRange: number, -- studs: max cursor/screen-centre ray length to the ground
+	Transparency: number,
+	ValidColor: { number }, -- {r, g, b} 0-255
+	InvalidColor: { number },
+	RotateKeyName: string, -- Enum.KeyCode member name
+	RotateButtonSize: number, -- px, mobile rotate button (>= 44)
+	RotateButtonOffsetPx: number, -- px left of the right screen edge (sits beside the Act button)
+	LabelOffsetY: number, -- studs above the ghost top for the reason label
+	LabelWidthPx: number,
+	LabelHeightPx: number,
+	UpdateInterval: number, -- seconds between ghost refreshes
+	ReasonText: { [string]: string }, -- validator reason code -> player text
 }
 
 export type MobStats = {
@@ -500,7 +540,7 @@ local Config: Config = {
 		},
 		Ring = {
 			FolderName = "FireRings", -- client-local folder under Workspace
-			DotDiameter = 0.7,
+			DotDiameter = 0.9,
 			DotThickness = 0.1,
 			Spacing = 3.4,
 			MinDots = 16,
@@ -508,18 +548,37 @@ local Config: Config = {
 			MaxDotsTotal = 110,
 			FadeStart = 12,
 			FadeEnd = 38,
-			WarmTransparencyDay = 0.84,
-			WarmTransparencyNight = 0.66,
-			BuildTransparencyDay = 0.72,
-			BuildTransparencyNight = 0.55,
-			WarmColor = { 255, 190, 110 },
-			BuildColor = { 150, 205, 255 },
+			WarmTransparencyDay = 0.35,
+			WarmTransparencyNight = 0.5,
+			BuildTransparencyDay = 0.3,
+			BuildTransparencyNight = 0.5,
+			DayVisibilityMaxTransparency = 0.5,
+			WarmColorDay = { 150, 120, 80 },
+			WarmColorNight = { 255, 190, 110 },
+			BuildColorDay = { 60, 120, 190 },
+			BuildColorNight = { 150, 205, 255 },
 			GroundLift = 0.12,
 			RayHeight = 40,
 			RayLength = 120,
 			RaysPerStep = 24,
 			UpdateInterval = 0.1,
 			AllocateInterval = 0.5,
+		},
+		FuelFractionAttribute = "FuelFraction",
+		Meter = {
+			GuiName = "FireMeter",
+			UpdateInterval = 1,
+			ShowRange = 60,
+			WidthPx = 80,
+			HeightPx = 10,
+			OffsetY = 4,
+			LowFraction = 0.2,
+			PulseSeconds = 0.8,
+			PulseMinAlpha = 0.35,
+			FullColor = { 255, 190, 70 },
+			LowColor = { 220, 50, 40 },
+			BackColor = { 20, 20, 24 },
+			BackTransparency = 0.4,
 		},
 	},
 	Scaling = {
@@ -608,6 +667,30 @@ local Config: Config = {
 		OwnerAttribute = "OwnerUserId", -- structure attribute: placer's UserId
 		-- Exempt from the lit-fire build radius: extra campfires start a new camp, sleeping bags are for travel.
 		RangeExempt = { Campfire = true, SleepingBag = true },
+		Ghost = {
+			Name = "PlacementGhost",
+			PickRange = 80,
+			Transparency = 0.55,
+			ValidColor = { 90, 220, 110 },
+			InvalidColor = { 230, 70, 60 },
+			RotateKeyName = "R",
+			RotateButtonSize = 56,
+			RotateButtonOffsetPx = 150,
+			LabelOffsetY = 3,
+			LabelWidthPx = 200,
+			LabelHeightPx = 26,
+			UpdateInterval = 0.05,
+			ReasonText = {
+				OutOfRange = "Too far away",
+				OutOfBuildRange = "Too far from the fire",
+				TooClose = "Blocked",
+				StructureCap = "Too many structures",
+				FireCap = "Too many campfires",
+				MissingItem = "You do not have that item",
+				BadPosition = "Cannot place there",
+				UnknownStructure = "Cannot place that",
+			},
+		},
 	},
 	Mobs = {
 		Budget = 12, -- base max live mobs near players (before scaling)

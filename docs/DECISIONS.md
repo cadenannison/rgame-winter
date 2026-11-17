@@ -10,3 +10,4 @@
 2026-11-17 — Held item is a server-built visual Tool in the character; CoreGui Backpack disabled — replicates to everyone with the default hold pose while gameplay keeps reading the server's selected slot.
 2026-11-17 — Client QA bridge is a Studio-only BindableFunction in PlayerScripts exposing the HUD input handlers — MCP Client execute_luau runs in another VM, and QA must exercise the real client path, not raw remotes.
 2026-11-17 — Hit confirms come from replicated attributes (HitsLeft/Depleted/MobHealth), no new remote; killed mobs linger Mobs.DeathRemoveDelay so the confirm is seen.
+2026-11-17 — Placement rules live in one pure shared module (shared/logic/Placement.validate -> {ok, reason}) used by the client ghost and the server place handler — the preview and the authority cannot disagree; server still re-validates with its own data.

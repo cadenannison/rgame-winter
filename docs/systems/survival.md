@@ -14,3 +14,8 @@ Notes: outside damage dealt directly to the Humanoid is absorbed as health loss 
 ## Integration points
 - Exposes: FireService.register(fire) (placement), count() (fire cap), getLitPositions() (mobs repel edge), isLit, isWarm, addFuel, handleAddFuel (QA/server path, full validation). Attribute names Config.Fire.FuelAttribute/LitAttribute, Config.Meters.WarmthAttribute/HungerAttribute.
 - Consumes: wood spender wired in init.server to InventoryService.remove(player, "Wood", n); camp campfire built by ChunkService; placed campfires from PlacementService; DayNightService debug handlers (setDay, clockSpeed).
+
+## Fire meter and ring (round 3)
+- Server: FireService publishes attribute Config.Fire.FuelFractionAttribute (FireLogic.fraction(fuel, tier max), 0.01 steps) on register, add fuel, upgrade, going out, and while burning at most every Config.Fire.Meter.UpdateInterval (inside the existing burn loop). Works for every tagged fire (upgraded, extra).
+- Client: src/client/Fire/FireMeter.luau, one RenderStepped loop, a BillboardGui per tagged fire (PlayerGui, name Meter.GuiName), shown within Meter.ShowRange, colour FullColor -> LowColor, pulses at or under Meter.LowFraction; cleaned on fire Destroying/untag.
+- RadiusRing: day colours (WarmColorDay/BuildColorDay, cool and darker than snow) vs night glow; day transparency must stay <= Ring.DayVisibilityMaxTransparency (tests + placement-preview assert it).

@@ -59,12 +59,13 @@ function RadiusRing.start(opts: Options): () -> ()
 	local conns: { RBXScriptConnection } = {}
 	local folder = Instance.new("Folder")
 	folder.Name = R.FolderName
-	local warmColor, buildColor = color(R.WarmColor), color(R.BuildColor)
+	local warmDay, warmNight = color(R.WarmColorDay), color(R.WarmColorNight)
+	local buildDay, buildNight = color(R.BuildColorDay), color(R.BuildColorNight)
 	local lastNight: boolean? = nil
 	local allocAccum, stepAccum = R.AllocateInterval, 0.0
 	local destroyed = false
 
-	local function setCount(layer: Layer, count: number, c: Color3)
+	local function setCount(layer: Layer, count: number)
 		while #layer.dots > count do
 			local dot = table.remove(layer.dots) :: Part
 			dot:Destroy()
@@ -79,7 +80,6 @@ function RadiusRing.start(opts: Options): () -> ()
 			dot.CanQuery = false
 			dot.CanTouch = false
 			dot.CastShadow = false
-			dot.Color = c
 			dot.Transparency = 1
 			dot.Parent = folder
 			table.insert(layer.dots, dot)
@@ -99,8 +99,8 @@ function RadiusRing.start(opts: Options): () -> ()
 		for _, c in ring.conns do
 			c:Disconnect()
 		end
-		setCount(ring.warm, 0, warmColor)
-		setCount(ring.build, 0, buildColor)
+		setCount(ring.warm, 0)
+		setCount(ring.build, 0)
 	end
 
 	local function track(fire: Instance)
@@ -173,7 +173,7 @@ function RadiusRing.start(opts: Options): () -> ()
 		for _, ring in order do
 			local fire = ring.fire
 			local lit = fire:GetAttribute(F.LitAttribute) == true
-			local function size(layer: Layer, attr: string, wanted: boolean, c: Color3)
+			local function size(layer: Layer, attr: string, wanted: boolean)
 				local radius = fire:GetAttribute(attr)
 				local n = 0
 				if wanted and lit and type(radius) == "number" and radius > 0 then
@@ -192,14 +192,21 @@ function RadiusRing.start(opts: Options): () -> ()
 					end
 				end
 				budget -= n
-				setCount(layer, n, c)
+				setCount(layer, n)
 			end
-			size(ring.warm, F.WarmRadiusAttribute, true, warmColor)
-			size(ring.build, F.BuildRadiusAttribute, placing, buildColor)
+			size(ring.warm, F.WarmRadiusAttribute, true)
+			size(ring.build, F.BuildRadiusAttribute, placing)
 		end
 	end
 
-	local function paint(ring: Ring, layer: Layer, rootPos: Vector3, base: number, night: boolean)
+	local function paint(
+		ring: Ring,
+		layer: Layer,
+		rootPos: Vector3,
+		base: number,
+		night: boolean,
+		tint: Color3
+	)
 		local center = pivot(ring.fire)
 		if not center or layer.count == 0 then
 			return
@@ -221,6 +228,7 @@ function RadiusRing.start(opts: Options): () -> ()
 				local d = math.sqrt(dx * dx + dz * dz)
 				local fade = math.clamp((d - R.FadeStart) / (R.FadeEnd - R.FadeStart), 0, 1)
 				dot.Transparency = base + (1 - base) * fade
+				dot.Color = tint
 				dot.Material = if night then Enum.Material.Neon else Enum.Material.SmoothPlastic
 			else
 				dot.Transparency = 1 -- ground not loaded yet; retried next step
@@ -252,9 +260,16 @@ function RadiusRing.start(opts: Options): () -> ()
 		local warmBase = if night then R.WarmTransparencyNight else R.WarmTransparencyDay
 		local buildBase = if night then R.BuildTransparencyNight else R.BuildTransparencyDay
 		for _, ring in rings do
-			paint(ring, ring.warm, rootPos, warmBase, night)
+			paint(ring, ring.warm, rootPos, warmBase, night, if night then warmNight else warmDay)
 			-- The build layer only has dots while placing (allocate runs on selection change below).
-			paint(ring, ring.build, rootPos, buildBase, night)
+			paint(
+				ring,
+				ring.build,
+				rootPos,
+				buildBase,
+				night,
+				if night then buildNight else buildDay
+			)
 		end
 	end
 

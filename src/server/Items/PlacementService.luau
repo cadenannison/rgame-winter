@@ -176,16 +176,17 @@ local function onPlace(player: Player, structureId: unknown, position: unknown, 
 	if player:GetAttribute(Config.Downed.StateAttribute) == true then
 		return
 	end
-	local x = Placement.snap(pos.X, B.GridStep)
-	local z = Placement.snap(pos.Z, B.GridStep)
+	local snapped = Placement.snapPoint(pos.X, pos.Z, B.GridStep)
+	local x, z = snapped.x, snapped.z
 	local rotation = Placement.snapRotation(rotationY :: number, B.RotationStep)
 	local litFires: { Placement.BuildFire } = {}
 	for _, fire in FireService.getLitFires() do
 		table.insert(litFires, { x = fire.x, z = fire.z, buildRadius = fire.buildRadius })
 	end
-	local ok, reason = Placement.check({
+	-- The same validator the client ghost runs; the server's inputs are its own data, never the client's.
+	local result = Placement.validate({
 		structureId = id,
-		target = { x = x, z = z },
+		target = snapped,
 		player = { x = root.Position.X, z = root.Position.Z },
 		placeRange = B.PlaceRange,
 		minSpacing = B.MinSpacing,
@@ -198,8 +199,8 @@ local function onPlace(player: Player, structureId: unknown, position: unknown, 
 		litFires = litFires,
 		buildExempt = B.RangeExempt[def.id] == true,
 	})
-	if not ok then
-		notify(player, reason)
+	if not result.ok then
+		notify(player, result.reason)
 		return
 	end
 	local y = groundY(x, z, root.Position.Y)

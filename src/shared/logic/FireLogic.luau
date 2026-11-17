@@ -30,6 +30,17 @@ function FireLogic.addFuel(fire: Fire, seconds: number, maxFuel: number): number
 	return added
 end
 
+-- Remaining burn as a 0-1 fraction of the cap, rounded to FRACTION_STEPS so the replicated attribute
+-- changes only when the bar visibly moves.
+local FRACTION_STEPS = 100
+function FireLogic.fraction(fuel: number, maxFuel: number): number
+	if maxFuel <= 0 then
+		return 0
+	end
+	local f = math.clamp(fuel / maxFuel, 0, 1)
+	return math.floor(f * FRACTION_STEPS + 0.5) / FRACTION_STEPS
+end
+
 -- Horizontal (XZ) distance test against the warm radius.
 function FireLogic.inRadius(fx: number, fz: number, px: number, pz: number, radius: number): boolean
 	local dx, dz = px - fx, pz - fz
