@@ -7,6 +7,7 @@ Roblox game. Luau + Rojo + Wally. A PM/orchestrator assigns one task at a time; 
 - Scripts live in src/ and sync via Rojo. Never write script Source through MCP. UI is built in code.
 - Every Luau file starts with --!strict. No warnings.
 - Done = scripts/check.sh passes. If behavior changed: scripted playtest (tools/qa), local player, filtered output, no errors.
+- Client-facing work must also pass docs/PLAYABILITY.md (PC + mobile input, prompt, hint, feedback).
 - After any MCP instance work, end your report with SAVE NEEDED (agents cannot save the place).
 - Final report <=10 lines: files changed, check result, playtest result, open issues.
 

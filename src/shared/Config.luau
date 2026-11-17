@@ -14,6 +14,11 @@ export type DebugConfig = {
 	PlayerRingAttribute: string,
 	DarkEvents: { string },
 	BridgeName: string,
+	ClientBridgeName: string,
+	GiveCount: number,
+	MobKinds: { string },
+	SpawnMobDistance: number,
+	SpawnMobDrop: number,
 }
 
 export type TimeConfig = {
@@ -162,6 +167,9 @@ export type MobStats = {
 	AttackRange: number,
 	AttackCooldown: number,
 	FleeRange: number,
+	FleeBurstSeconds: number, -- flee runs in bursts of this length...
+	FleeRestSeconds: number, -- ...separated by pauses of this length (0 = no pauses)
+	HitRadius: number, -- extra melee reach for this mob (body size + generosity)
 	NightOnly: boolean,
 	Weight: number,
 	DropId: string?, -- item given to the killer (ItemCatalog id)
@@ -185,6 +193,7 @@ export type MobConfig = {
 	WanderInterval: number,
 	FleeStep: number,
 	RetreatStep: number,
+	DeathRemoveDelay: number,
 	SpawnRayHeight: number,
 	SpawnRayLength: number,
 	SpawnLift: number,
@@ -199,6 +208,7 @@ export type CombatConfig = {
 	MeleeBaseDamage: number,
 	SpearDamage: number,
 	SpearRange: number,
+	ToolDamage: number,
 	LagCompensation: number,
 	WeaponDurabilityPerHit: number,
 }
@@ -211,6 +221,33 @@ export type DownedConfig = {
 	DownedWalkSpeed: number,
 	DisconnectHoldSeconds: number,
 	StateAttribute: string,
+}
+
+-- Size {x, y, z} studs and Color {r, g, b} 0-255 as plain numbers (Config is also loaded by Lune tests).
+export type HeldVisual = { Size: { number }, Color: { number }, GripOffset: number }
+
+-- Held item visuals (server builds a Tool in the character hand for the selected slot).
+export type HeldConfig = {
+	ToolName: string,
+	Default: HeldVisual,
+	Visuals: { [string]: HeldVisual },
+}
+
+-- Client feedback for actions (swing, hit, prompts). Visual only; never gameplay.
+export type FeedbackConfig = {
+	SwingSeconds: number,
+	SwingAngle: number,
+	SoundVolume: number,
+	HitParticleCount: number,
+	HitParticleColor: { number }, -- {r, g, b} 0-255
+	HitParticleSpeed: number,
+	HitParticleLifetime: number,
+	FlashSeconds: number,
+	FlashColor: { number }, -- {r, g, b} 0-255
+	PromptRange: number,
+	AimSlack: number,
+	PromptOffsetY: number,
+	ItemNameSeconds: number,
 }
 
 export type NetConfig = {
@@ -238,6 +275,8 @@ export type Config = {
 	Combat: CombatConfig,
 	Downed: DownedConfig,
 	Net: NetConfig,
+	Held: HeldConfig,
+	Feedback: FeedbackConfig,
 	Debug: DebugConfig,
 	RemoteFolderName: string,
 	DefaultRateLimitInterval: number,
@@ -283,6 +322,11 @@ local Config: Config = {
 		PlayerRingAttribute = "DebugTeleportRing",
 		DarkEvents = { "FalseNight", "TheQuiet", "DeepFreeze" },
 		BridgeName = "DebugBridge", -- Studio-only ServerStorage BindableFunction for tools/qa (another VM)
+		ClientBridgeName = "ClientQABridge", -- Studio-only PlayerScripts BindableFunction: real client input handlers
+		GiveCount = 10, -- items granted by the Studio-only "give" command
+		MobKinds = { "ArcticHare", "Caribou", "Wolf" }, -- valid "spawnMob" args (MobService kind names)
+		SpawnMobDistance = 10, -- studs in front of the player a "spawnMob" mob appears
+		SpawnMobDrop = 3, -- studs below the player root used as the spawn ground height
 	},
 	-- Time and day/night. Replicated via Workspace attributes below.
 	Time = {
@@ -367,8 +411,8 @@ local Config: Config = {
 		},
 	},
 	Inventory = {
-		HotbarSize = 6, -- hotbar slots (indices 1..HotbarSize)
-		BackpackSize = 18, -- extra slots after the hotbar
+		HotbarSize = 9, -- hotbar slots (indices 1..HotbarSize), keys 1-9
+		BackpackSize = 15, -- extra slots after the hotbar
 		MaxStack = 50, -- default max items per stack
 		DropPickupRange = 10, -- studs to pick up a dropped item
 		SlotAttribute = "SelectedSlot", -- Player attribute: selected hotbar slot
@@ -428,32 +472,39 @@ local Config: Config = {
 		WanderInterval = 4, -- mean seconds between wander targets
 		FleeStep = 24, -- studs per flee step
 		RetreatStep = 20, -- studs per retreat step away from a fire
+		DeathRemoveDelay = 0.4, -- seconds a killed mob stays (unattackable) so clients see the hit confirm
 		SpawnRayHeight = 120, -- spawn ground raycast starts this far above the anchor
 		SpawnRayLength = 300, -- spawn ground raycast length
 		SpawnLift = 1, -- studs above ground a mob spawns
 		Hare = {
 			Health = 8, -- hit points
 			Damage = 0, -- passive
-			WalkSpeed = 8, -- wander speed
-			FleeSpeed = 24, -- flee speed
+			WalkSpeed = 6, -- wander speed
+			FleeSpeed = 12, -- flee speed (below player WALK_SPEED 16, so a hare is catchable)
 			AggroRange = 0, -- never aggroes
 			AttackRange = 0, -- no attack
 			AttackCooldown = 0, -- no attack
-			FleeRange = 30, -- flees when a player is closer than this
+			FleeRange = 18, -- flees when a player is closer than this
+			FleeBurstSeconds = 1.2, -- seconds of each flee sprint
+			FleeRestSeconds = 1.4, -- seconds it freezes between sprints
+			HitRadius = 4, -- extra melee reach (generous: small target)
 			NightOnly = false, -- active during the day
 			Weight = 5, -- relative spawn weight
 			DropId = "RawMeat", -- drop on kill
 			DropCount = 1, -- drop amount
 		},
 		Caribou = {
-			Health = 40, -- hit points
+			Health = 24, -- hit points (3 axe hits on day 1)
 			Damage = 0, -- passive
-			WalkSpeed = 10, -- wander speed
-			FleeSpeed = 28, -- flee speed
+			WalkSpeed = 8, -- wander speed
+			FleeSpeed = 13, -- flee speed (below player WALK_SPEED 16)
 			AggroRange = 0, -- never aggroes
 			AttackRange = 0, -- no attack
 			AttackCooldown = 0, -- no attack
-			FleeRange = 40, -- flees when a player is closer than this
+			FleeRange = 22, -- flees when a player is closer than this
+			FleeBurstSeconds = 1.6, -- seconds of each flee sprint
+			FleeRestSeconds = 1.0, -- seconds it stops between sprints
+			HitRadius = 4, -- extra melee reach (large body)
 			NightOnly = false, -- active during the day
 			Weight = 2, -- relative spawn weight
 			DropId = "RawMeat", -- drop on kill
@@ -468,6 +519,9 @@ local Config: Config = {
 			AttackRange = 4, -- studs to bite
 			AttackCooldown = 1.2, -- seconds between bites
 			FleeRange = 0, -- does not flee (retreats only at fire edge)
+			FleeBurstSeconds = 0, -- unused (no flee)
+			FleeRestSeconds = 0, -- unused (no flee)
+			HitRadius = 2, -- extra melee reach
 			NightOnly = true, -- hunts at night
 			Weight = 3, -- relative spawn weight
 			DropId = "Hide", -- drop on kill
@@ -475,11 +529,12 @@ local Config: Config = {
 		},
 	},
 	Combat = {
-		MeleeRange = 7, -- max studs player to target for a hit (server check, includes latency slack)
+		MeleeRange = 8, -- base studs player to target center for a hit (plus MobStats.HitRadius and LagCompensation)
 		MeleeCooldown = 0.5, -- seconds between swings
 		MeleeBaseDamage = 4, -- fist / non-weapon damage (weapons use ItemCatalog damage)
 		SpearDamage = 12, -- spear damage
 		SpearRange = 9, -- spear reach in studs
+		ToolDamage = 8, -- damage of a gather tool (axe/pickaxe) used as a melee weapon
 		LagCompensation = 3, -- extra studs of tolerance for latency
 		WeaponDurabilityPerHit = 1, -- durability lost per hit
 	},
@@ -500,6 +555,76 @@ local Config: Config = {
 		AttackRateInterval = 0.25, -- AttackRequest (single source; Combat.MeleeCooldown is the swing gate)
 		UseRateInterval = 0.3, -- UseItemRequest, AddFuelRequest, ReviveRequest
 		SelectRateInterval = 0.1, -- SelectSlotRequest
+	},
+	Held = {
+		ToolName = "HeldItem", -- name of the server-built Tool in the character (visual only)
+		Default = {
+			Size = { 0.8, 0.8, 0.8 },
+			Color = { 200, 200, 200 },
+			GripOffset = 0,
+		},
+		Visuals = {
+			Axe = {
+				Size = { 0.4, 3, 0.4 },
+				Color = { 150, 110, 70 },
+				GripOffset = 1,
+			},
+			Pickaxe = {
+				Size = { 0.4, 3, 0.4 },
+				Color = { 120, 120, 130 },
+				GripOffset = 1,
+			},
+			Spear = {
+				Size = { 0.3, 5, 0.3 },
+				Color = { 170, 140, 90 },
+				GripOffset = 1.5,
+			},
+			Wood = {
+				Size = { 0.8, 0.8, 2 },
+				Color = { 130, 90, 55 },
+				GripOffset = 0,
+			},
+			Stone = {
+				Size = { 1, 0.8, 1 },
+				Color = { 130, 130, 135 },
+				GripOffset = 0,
+			},
+			RawMeat = {
+				Size = { 1, 0.6, 1 },
+				Color = { 190, 70, 70 },
+				GripOffset = 0,
+			},
+			Campfire = {
+				Size = { 1.4, 0.6, 1.4 },
+				Color = { 230, 120, 40 },
+				GripOffset = 0,
+			},
+			Workbench = {
+				Size = { 1.6, 0.8, 1.2 },
+				Color = { 140, 100, 60 },
+				GripOffset = 0,
+			},
+			Hide = {
+				Size = { 1.2, 0.2, 1.2 },
+				Color = { 110, 110, 120 },
+				GripOffset = 0,
+			},
+		},
+	},
+	Feedback = {
+		SwingSeconds = 0.25, -- procedural swing length (used when Assets.SwingAnimation is empty)
+		SwingAngle = 70, -- degrees the arm swings
+		SoundVolume = 0.6, -- volume of action sounds
+		HitParticleCount = 10, -- particles per hit burst
+		HitParticleColor = { 235, 225, 200 }, -- chips/snow burst color
+		HitParticleSpeed = 12, -- studs/s burst speed
+		HitParticleLifetime = 0.5, -- seconds a hit particle lives
+		FlashSeconds = 0.15, -- mob hit flash length
+		FlashColor = { 255, 80, 80 }, -- mob hit flash color
+		PromptRange = 12, -- studs: target pick and prompt range (server re-validates its own ranges)
+		AimSlack = 4, -- studs from the mouse ray within which a target counts as aimed at (PC)
+		PromptOffsetY = 3, -- studs above the target the prompt floats
+		ItemNameSeconds = 1.5, -- seconds the selected item name shows above the hotbar
 	},
 	RemoteFolderName = "Remotes",
 	DefaultRateLimitInterval = 0.1,

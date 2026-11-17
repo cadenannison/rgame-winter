@@ -7,3 +7,6 @@
 2026-11-17 — Studio-only QA bridge (BindableFunction in ServerStorage, DebugService.expose) — MCP execute_luau runs in another VM, so required modules are fresh copies without live state.
 2026-11-17 — Placement lives in the items system (PlacementService), structures cost one crafted placeable item — reuses crafting for material cost; no separate BuildingService until more structures land.
 2026-11-17 — Mob drops go straight to the killer's inventory — no world pickup system yet.
+2026-11-17 — Held item is a server-built visual Tool in the character; CoreGui Backpack disabled — replicates to everyone with the default hold pose while gameplay keeps reading the server's selected slot.
+2026-11-17 — Client QA bridge is a Studio-only BindableFunction in PlayerScripts exposing the HUD input handlers — MCP Client execute_luau runs in another VM, and QA must exercise the real client path, not raw remotes.
+2026-11-17 — Hit confirms come from replicated attributes (HitsLeft/Depleted/MobHealth), no new remote; killed mobs linger Mobs.DeathRemoveDelay so the confirm is seen.

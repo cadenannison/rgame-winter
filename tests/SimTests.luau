@@ -46,7 +46,13 @@ return function(check: (string, boolean) -> ())
 		maxClockSpeed = D.MaxClockSpeed,
 		ringCount = D.RingCount,
 		darkEvents = D.DarkEvents,
+		itemIds = { "Wood" },
+		mobKinds = D.MobKinds,
 	}
+	check("debug give known item", (DebugCommands.validate("give", "Wood", limits)))
+	check("debug give rejects unknown", not DebugCommands.validate("give", "Gold", limits))
+	check("debug spawnMob hare", (DebugCommands.validate("spawnMob", "ArcticHare", limits)))
+	check("debug spawnMob rejects number", not DebugCommands.validate("spawnMob", 3, limits))
 	check("debug setDay valid", (DebugCommands.validate("setDay", 5, limits)))
 	check("debug setDay rejects nan", not DebugCommands.validate("setDay", 0 / 0, limits))
 	check("debug setDay rejects fraction", not DebugCommands.validate("setDay", 1.5, limits))

@@ -42,4 +42,32 @@ function MobAI.decide(input: Input): Action
 	return "Chase"
 end
 
+export type Burst = { burstEnd: number, restEnd: number }
+
+-- Flee in sprints with pauses. Call each AI step while the mob is fleeing; mutates and returns
+-- whether the mob should move this step. A finished sprint starts a rest; a finished rest starts a
+-- sprint. restSeconds <= 0 means it never rests.
+function MobAI.fleeBurst(
+	state: Burst,
+	now: number,
+	burstSeconds: number,
+	restSeconds: number
+): boolean
+	if restSeconds <= 0 then
+		return true
+	end
+	if now < state.burstEnd then
+		return true
+	end
+	if now < state.restEnd then
+		return false
+	end
+	if state.burstEnd > 0 and state.restEnd < state.burstEnd then
+		state.restEnd = now + restSeconds
+		return false
+	end
+	state.burstEnd = now + burstSeconds
+	return true
+end
+
 return MobAI

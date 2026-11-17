@@ -40,6 +40,8 @@ export type NodeDef = {
 	minTier: number,
 	yieldId: string,
 	yieldCount: number,
+	verb: string, -- prompt / toast verb ("Chop", "Mine")
+	toolId: string, -- item that harvests it (prompt "Chop: needs Axe")
 }
 
 local ItemCatalog = {}
@@ -172,6 +174,8 @@ ItemCatalog.Nodes = {
 		minTier = Config.Gather.TreeTier,
 		yieldId = "Wood",
 		yieldCount = Config.Gather.TreeYield,
+		verb = "Chop",
+		toolId = "Axe",
 	},
 	Rock = {
 		kind = "Rock",
@@ -179,6 +183,8 @@ ItemCatalog.Nodes = {
 		minTier = Config.Gather.RockTier,
 		yieldId = "Stone",
 		yieldCount = Config.Gather.RockYield,
+		verb = "Mine",
+		toolId = "Pickaxe",
 	},
 } :: { [string]: NodeDef }
 

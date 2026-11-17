@@ -6,6 +6,8 @@ export type Limits = {
 	maxClockSpeed: number,
 	ringCount: number,
 	darkEvents: { string },
+	itemIds: { string }?, -- valid "give" args (ItemCatalog ids)
+	mobKinds: { string }?, -- valid "spawnMob" args
 }
 
 local DebugCommands = {}
@@ -18,7 +20,12 @@ DebugCommands.NAMES = {
 	"stalker",
 	"invincible",
 	"teleportRing",
+	"give",
+	"spawnMob",
 }
+
+-- Commands that only call registered handlers (no attribute is written by DebugService).
+DebugCommands.ACTION_ONLY = { give = true, spawnMob = true } :: { [string]: boolean }
 
 local function isNumber(v: unknown): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
@@ -59,6 +66,12 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 	elseif name == "teleportRing" then
 		if not isInt(arg, 1, limits.ringCount) then
 			return false, "ring out of range"
+		end
+		return true, arg
+	elseif name == "give" or name == "spawnMob" then
+		local list = if name == "give" then limits.itemIds else limits.mobKinds
+		if type(arg) ~= "string" or list == nil or not table.find(list, arg) then
+			return false, `unknown {name} arg`
 		end
 		return true, arg
 	end

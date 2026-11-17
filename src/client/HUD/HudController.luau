@@ -1,26 +1,35 @@
 --!strict
 -- Client HUD built in code. Read-only: displays MetersUpdate / InventoryUpdate / Workspace + Player
 -- Attributes; sends intent only (SelectSlotRequest, GatherRequest, AttackRequest, UseItemRequest,
--- PlaceRequest, AddFuelRequest). Server validates everything.
+-- PlaceRequest, AddFuelRequest, CraftRequest). Server validates everything.
+-- Input: hotbar keys 1-9 / click / tap / mouse wheel; click, E or the mobile Act button = context action;
+-- C or the Craft button = crafting panel. Feedback: swing, sounds, hit bursts, prompts, onboarding chain.
 
 local CollectionService = game:GetService("CollectionService")
+local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
-local HudMath = require(Shared:WaitForChild("logic"):WaitForChild("HudMath"))
+local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
+local Logic = Shared:WaitForChild("logic")
+local HudMath = require(Logic:WaitForChild("HudMath"))
+local ActionPick = require(Logic:WaitForChild("ActionPick"))
+local ItemsGather = require(Logic:WaitForChild("ItemsGather"))
 local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
 local DebugChat = require(script.Parent:WaitForChild("DebugChat"))
 local Toast = require(script.Parent:WaitForChild("Toast"))
-local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
-local ActionPick = require(Shared:WaitForChild("logic"):WaitForChild("ActionPick"))
-
-local ACTION_KEY = Enum.KeyCode.E -- PC key for the context action (mobile uses the on-screen button)
+local Feedback = require(script.Parent:WaitForChild("Feedback"))
+local CraftPanel = require(script.Parent:WaitForChild("CraftPanel"))
+local TargetPrompt = require(script.Parent:WaitForChild("TargetPrompt"))
+local OnboardingHints = require(script.Parent:WaitForChild("OnboardingHints"))
+local QABridge = require(script.Parent:WaitForChild("QABridge"))
 
 local HOTBAR_KEYS: { Enum.KeyCode } = {
 	Enum.KeyCode.One,
@@ -33,13 +42,16 @@ local HOTBAR_KEYS: { Enum.KeyCode } = {
 	Enum.KeyCode.Eight,
 	Enum.KeyCode.Nine,
 }
+local WHEEL_ACTION = "ArcticHotbarWheel"
+local RECENT_SECONDS = 2 -- window in which an inventory change is credited to our own request (onboarding)
+local WATCH_SECONDS = 2 -- how long a hit target's attributes are watched for the confirm
 
 local HudController = {}
 
 local started = false
 
-type Bar = { fill: Frame, label: TextLabel, name: string }
 type Slot = { button: TextButton, name: TextLabel, count: TextLabel, stroke: UIStroke }
+type Watch = { conns: { RBXScriptConnection }, expires: number }
 
 local function addCleanup(list: { () -> () }, fn: () -> ())
 	table.insert(list, fn)
@@ -120,6 +132,15 @@ local function panel(
 	return f
 end
 
+local function positionOf(inst: Instance): Vector3?
+	if inst:IsA("BasePart") then
+		return inst.Position
+	elseif inst:IsA("Model") then
+		return inst:GetPivot().Position
+	end
+	return nil
+end
+
 function HudController.start()
 	if started then
 		return
@@ -129,6 +150,13 @@ function HudController.start()
 	local player = Players.LocalPlayer
 	local cleanups: { () -> () } = {}
 	local destroyed = false
+	local touchOnly = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	local inputHint = if touchOnly then "[Act]" else "[Click/E]"
+
+	-- Our hotbar replaces the default backpack (it would fight over keys 1-9 and the held Tool).
+	pcall(function()
+		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+	end)
 
 	local playerGui = player:WaitForChild("PlayerGui") :: PlayerGui
 	local gui = make("ScreenGui", {
@@ -155,6 +183,7 @@ function HudController.start()
 		SortOrder = Enum.SortOrder.LayoutOrder,
 	}, stats)
 
+	type Bar = { fill: Frame, label: TextLabel, name: string }
 	local bars: { [string]: Bar } = {}
 	for i, key in { "health", "warmth", "hunger" } do
 		local row = make("Frame", {
@@ -219,13 +248,13 @@ function HudController.start()
 		textProps(UDim2.fromScale(1, 0.26), UDim2.fromScale(0, 0.72), "camp", 12)
 	)
 
-	-- Hotbar (bottom-center), hint floats above it.
+	-- Hotbar (bottom-center); the selected item name floats above it, the reactive hint above that.
 	local slotCount = Config.Inventory.HotbarSize
 	local hotbar = make("Frame", {
 		Name = "Hotbar",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.fromScale(0.5, 0.98),
-		Size = UDim2.fromScale(0.62, 0.1),
+		Size = UDim2.fromScale(0.7, 0.1),
 		BackgroundTransparency = 1,
 	}, gui) :: Frame
 	constrain(
@@ -239,15 +268,12 @@ function HudController.start()
 		hotbar
 	)
 
-	local slotItems: { [number]: string } = {} -- mirror of InventoryUpdate (display and action choice only)
-	local selectedSlot = 1
 	local slots: { [number]: Slot } = {}
 	for i = 1, slotCount do
 		local button = make("TextButton", {
 			Name = `Slot{i}`,
 			AutoButtonColor = true,
 			Text = "",
-			AnchorPoint = Vector2.zero,
 			Position = UDim2.new((i - 1) / slotCount, 2, 0, 0),
 			Size = UDim2.new(1 / slotCount, -4, 1, 0),
 			BackgroundColor3 = HudConfig.PanelColor,
@@ -257,8 +283,9 @@ function HudController.start()
 		make("UICorner", { CornerRadius = UDim.new(0, 6) }, button)
 		local stroke = make("UIStroke", {
 			Color = HudConfig.SelectedColor,
-			Thickness = 2,
+			Thickness = 3,
 			Enabled = false,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 		}, button) :: UIStroke
 		local keyLabel = makeLabel(
 			button,
@@ -275,32 +302,33 @@ function HudController.start()
 		)
 		countLabel.TextXAlignment = Enum.TextXAlignment.Right
 		slots[i] = { button = button, name = nameLabel, count = countLabel, stroke = stroke }
-		connect(cleanups, button.Activated, function()
-			-- Tapping the already-selected food slot eats it; otherwise just select.
-			local def = ItemCatalog.Items[slotItems[i] or ""]
-			if i == selectedSlot and def and def.kind == "food" then
-				Remotes.event(Remotes.UseItemRequest):FireServer(i)
-			else
-				Remotes.event(Remotes.SelectSlotRequest):FireServer(i)
-			end
-		end)
 	end
 
+	local itemLabel =
+		makeLabel(hotbar, textProps(UDim2.fromScale(0.6, 0.38), UDim2.new(0.2, 0, 0, -6), "", 18))
+	itemLabel.Name = "ItemName"
+	itemLabel.AnchorPoint = Vector2.new(0, 1)
+	itemLabel.BackgroundTransparency = HudConfig.PanelTransparency
+	itemLabel.BackgroundColor3 = HudConfig.PanelColor
+	itemLabel.Font = Enum.Font.GothamBold
+	itemLabel.Visible = false
+	make("UICorner", { CornerRadius = UDim.new(0, 8) }, itemLabel)
+
 	local hintLabel =
-		makeLabel(hotbar, textProps(UDim2.fromScale(1, 0.55), UDim2.fromOffset(0, -6), "", 18))
+		makeLabel(hotbar, textProps(UDim2.fromScale(1, 0.45), UDim2.new(0, 0, -0.45, -12), "", 18))
 	hintLabel.AnchorPoint = Vector2.new(0, 1)
 	hintLabel.BackgroundTransparency = HudConfig.PanelTransparency
 	hintLabel.BackgroundColor3 = HudConfig.PanelColor
 	hintLabel.Visible = false
 	make("UICorner", { CornerRadius = UDim.new(0, 8) }, hintLabel)
 
-	-- Mobile context action button (bottom-right): picks gather or attack from the nearest tagged target.
+	-- Mobile context action button (bottom-right).
 	local actionButton: TextButton? = nil
 	if UserInputService.TouchEnabled then
 		local b = make("TextButton", {
 			Name = "Action",
 			AnchorPoint = Vector2.new(1, 1),
-			Position = UDim2.fromScale(0.97, 0.9),
+			Position = UDim2.fromScale(0.97, 0.78),
 			Size = UDim2.fromScale(0.16, 0.16),
 			BackgroundColor3 = HudConfig.AccentColor,
 			BackgroundTransparency = 0.2,
@@ -321,20 +349,145 @@ function HudController.start()
 		actionButton = b
 	end
 
-	-- State mirrored from the server (display only).
+	-- State mirrored from the server (display and intent choice only).
 	local meters = { health = 0, warmth = 0, hunger = 0, day = 1, isNight = false }
+	local stacks: { [number]: { id: string, count: number } } = {}
+	local counts: { [string]: number } = {}
 	local hasItems = false
+	local selectedSlot = 1 -- server-confirmed
+	local pendingSlot: number? = nil -- predicted while a SelectSlotRequest is in flight
+	local pendingAt = 0.0
+	local lastSelectSent = -math.huge
+	local selectQueued = false
+	local lastUserSelectAt = -math.huge
+	local itemLabelUntil = 0.0
 	local shownHints: { [string]: boolean } = {}
 	local hintUntil = 0.0
 	local lastDist = -1
 	local targetKind = "none"
 	local targetInstance: Instance? = nil
 	local fireInstance: Instance? = nil
+	local recent: { [string]: number } = {} -- our last request time per intent (onboarding credit)
+	local watches: { [Instance]: Watch } = {}
 
-	local function setSelected(selected: number)
-		selectedSlot = selected
+	local prompt = TargetPrompt.new(playerGui)
+	addCleanup(cleanups, prompt.destroy)
+	local hints = OnboardingHints.new(gui)
+	addCleanup(cleanups, hints.destroy)
+
+	local function shownSlot(): number
+		if pendingSlot and os.clock() - pendingAt < 1 then
+			return pendingSlot
+		end
+		return selectedSlot
+	end
+
+	local function selectedDef(): ItemCatalog.ItemDef?
+		local stack = stacks[shownSlot()]
+		return if stack then ItemCatalog.Items[stack.id] else nil
+	end
+
+	local function workbenchTier(): number
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not root or not root:IsA("BasePart") then
+			return 0
+		end
+		local best = 0
+		for _, bench in CollectionService:GetTagged(ItemCatalog.WorkbenchTag) do
+			local pos = positionOf(bench)
+			if pos and (pos - root.Position).Magnitude <= Config.Craft.WorkbenchRange then
+				local tier = bench:GetAttribute(ItemCatalog.WorkbenchTierAttribute)
+				best = math.max(best, if type(tier) == "number" then tier else 1)
+			end
+		end
+		return math.min(best, Config.Craft.MaxTier)
+	end
+
+	local craftPanel: CraftPanel.Panel
+	craftPanel = CraftPanel.new(gui, function(recipeId: string)
+		recent["craft"] = os.clock()
+		Remotes.event(Remotes.CraftRequest):FireServer(recipeId)
+	end, function(text: string)
+		Feedback.sound("DenySound", nil)
+		Toast.show(text)
+	end, function()
+		hints.complete("openCraft")
+		craftPanel.refresh(counts, workbenchTier())
+	end)
+	addCleanup(cleanups, craftPanel.destroy)
+
+	local function showItemName()
+		local def = selectedDef()
+		if def == nil then
+			itemLabel.Visible = false
+			return
+		end
+		local suffix = if def.kind == "food"
+			then `  {inputHint} eat`
+			elseif def.kind == "placeable" then `  {inputHint} place`
+			else ""
+		itemLabel.Text = def.name .. suffix
+		itemLabel.Visible = true
+		itemLabelUntil = if suffix ~= ""
+			then math.huge
+			else os.clock() + Config.Feedback.ItemNameSeconds
+	end
+
+	local function renderSelection()
+		local shown = shownSlot()
 		for i, slot in slots do
-			slot.stroke.Enabled = i == selected
+			slot.stroke.Enabled = i == shown
+			slot.button.BackgroundTransparency = if i == shown
+				then 0.1
+				else HudConfig.PanelTransparency
+		end
+		showItemName()
+	end
+
+	local function confirmSelected(selected: number)
+		selectedSlot = selected
+		if pendingSlot == selected then
+			pendingSlot = nil
+		end
+		local stack = stacks[selected]
+		if stack and stack.id == "Axe" and os.clock() - lastUserSelectAt < RECENT_SECONDS then
+			hints.complete("equipAxe")
+		end
+		renderSelection()
+	end
+
+	-- Hotbar select (keys, click/tap, wheel, QA): predicted highlight now, request throttled to the
+	-- server's Net.SelectRateInterval; the server's InventoryUpdate/attribute confirms.
+	local function sendSelect()
+		local slot = pendingSlot
+		if slot == nil or destroyed then
+			return
+		end
+		lastSelectSent = os.clock()
+		Remotes.event(Remotes.SelectSlotRequest):FireServer(slot)
+	end
+	local function requestSelect(slot: number)
+		if type(slot) ~= "number" or slot < 1 or slot > slotCount then
+			return
+		end
+		slot = math.floor(slot)
+		lastUserSelectAt = os.clock()
+		if slot == selectedSlot and pendingSlot == nil then
+			confirmSelected(slot) -- re-pressing the current slot still counts as equipping it
+			return
+		end
+		pendingSlot, pendingAt = slot, os.clock()
+		renderSelection()
+		local wait = Config.Net.SelectRateInterval - (os.clock() - lastSelectSent)
+		if wait <= 0 then
+			sendSelect()
+		elseif not selectQueued then
+			selectQueued = true
+			task.delay(wait + 0.01, function()
+				selectQueued = false
+				sendSelect()
+			end)
 		end
 	end
 
@@ -353,15 +506,8 @@ function HudController.start()
 		dayLabel.Text = if meters.isNight then `Day {meters.day} (night)` else `Day {meters.day}`
 	end
 
-	local function nodePosition(inst: Instance): Vector3?
-		if inst:IsA("BasePart") then
-			return inst.Position
-		elseif inst:IsA("Model") then
-			return inst:GetPivot().Position
-		end
-		return nil
-	end
-
+	-- Target pick: on PC the candidate nearest the mouse ray (within AimSlack) wins, else the nearest
+	-- within ActionRange. Tagged instances only; never scans Workspace.
 	local function pickTarget()
 		targetKind, targetInstance, fireInstance = "none", nil, nil
 		local character = player.Character
@@ -369,15 +515,36 @@ function HudController.start()
 		if not root or not root:IsA("BasePart") then
 			return
 		end
-		local best = HudConfig.ActionRange
+		local camera = Workspace.CurrentCamera
+		local ray: Ray? = nil
+		if camera and not touchOnly then
+			local m = UserInputService:GetMouseLocation()
+			ray = camera:ViewportPointToRay(m.X, m.Y)
+		end
+		local bestNear, bestAim = HudConfig.ActionRange, Config.Feedback.AimSlack
+		local nearKind, nearInst, aimKind, aimInst =
+			"none", nil :: Instance?, "none", nil :: Instance?
 		local function scan(tag: string, kind: string)
 			for _, inst in CollectionService:GetTagged(tag) do
-				if inst ~= character then
-					local pos = nodePosition(inst)
+				if
+					inst ~= character
+					and inst:GetAttribute(ItemCatalog.NodeDepletedAttribute) ~= true
+				then
+					local pos = positionOf(inst)
 					if pos then
 						local d = (pos - root.Position).Magnitude
-						if d <= best then
-							best, targetKind, targetInstance = d, kind, inst
+						if d <= HudConfig.ActionRange then
+							if d <= bestNear then
+								bestNear, nearKind, nearInst = d, kind, inst
+							end
+							if ray then
+								local off = pos - ray.Origin
+								local along = off:Dot(ray.Direction.Unit)
+								local perp = (off - ray.Direction.Unit * along).Magnitude
+								if along > 0 and perp <= bestAim then
+									bestAim, aimKind, aimInst = perp, kind, inst
+								end
+							end
 						end
 					end
 				end
@@ -385,9 +552,14 @@ function HudController.start()
 		end
 		scan(Config.Gather.NodeTag, "gather")
 		scan(Config.Mobs.Tag, "attack")
+		if aimInst then
+			targetKind, targetInstance = aimKind, aimInst
+		else
+			targetKind, targetInstance = nearKind, nearInst
+		end
 		local fireBest = Config.Fire.AddFuelRange
 		for _, inst in CollectionService:GetTagged(Config.Fire.Tag) do
-			local pos = nodePosition(inst)
+			local pos = positionOf(inst)
 			if pos and (pos - root.Position).Magnitude <= fireBest then
 				fireBest, fireInstance = (pos - root.Position).Magnitude, inst
 			end
@@ -395,53 +567,157 @@ function HudController.start()
 	end
 
 	local function currentAction(): string
-		local def = ItemCatalog.Items[slotItems[selectedSlot] or ""]
+		local def = selectedDef()
 		return ActionPick.choose({
 			fireInRange = fireInstance ~= nil,
-			hasWood = (function()
-				for _, id in slotItems do
-					if id == "Wood" then
-						return true
-					end
-				end
-				return false
-			end)(),
+			hasWood = (counts["Wood"] or 0) > 0,
 			targetKind = targetKind,
 			selectedKind = if def then def.kind else nil,
+			selectedId = if def then def.id else nil,
 		})
 	end
 
-	-- Sends one request for the chosen action; never mutates local state.
-	local function doAction()
-		pickTarget()
-		local action = currentAction()
-		if action == "fuel" and fireInstance then
-			Remotes.event(Remotes.AddFuelRequest):FireServer(fireInstance)
-		elseif action == "gather" and targetInstance then
-			Remotes.event(Remotes.GatherRequest):FireServer(targetInstance)
-		elseif action == "attack" and targetInstance then
-			Remotes.event(Remotes.AttackRequest):FireServer(targetInstance)
-		elseif action == "eat" then
-			Remotes.event(Remotes.UseItemRequest):FireServer(selectedSlot)
-		elseif action == "place" then
-			local def = ItemCatalog.Items[slotItems[selectedSlot] or ""]
-			local character = player.Character
-			local root = character and character:FindFirstChild("HumanoidRootPart")
-			if def and def.structureId and root and root:IsA("BasePart") then
-				local look = root.CFrame.LookVector
-				local _, yaw, _ = root.CFrame:ToOrientation()
-				Remotes.event(Remotes.PlaceRequest):FireServer(
-					def.structureId,
-					root.Position + look * HudConfig.PlaceDistance,
-					math.deg(yaw)
-				)
+	-- Hit confirm: watch a target we just hit for the server's attribute change (HitsLeft / Depleted /
+	-- MobHealth), then burst + sound (+ flash for mobs). Short-lived connections, swept in the loop.
+	local function watch(inst: Instance, isMob: boolean)
+		local now = os.clock()
+		local w = watches[inst]
+		if w then
+			w.expires = now + WATCH_SECONDS
+			return
+		end
+		local conns: { RBXScriptConnection } = {}
+		local function confirm()
+			local pos = positionOf(inst)
+			if pos then
+				Feedback.burst(pos)
+				Feedback.sound(if isMob then "MobHitSound" else "ChopSound", pos)
+			end
+			if isMob then
+				Feedback.flash(inst)
+			end
+		end
+		if isMob then
+			table.insert(
+				conns,
+				inst:GetAttributeChangedSignal(Config.Mobs.HealthAttribute):Connect(confirm)
+			)
+		else
+			table.insert(
+				conns,
+				inst:GetAttributeChangedSignal(ItemCatalog.NodeHitsAttribute):Connect(confirm)
+			)
+			table.insert(
+				conns,
+				inst:GetAttributeChangedSignal(ItemCatalog.NodeDepletedAttribute):Connect(function()
+					if inst:GetAttribute(ItemCatalog.NodeDepletedAttribute) == true then
+						confirm()
+					end
+				end)
+			)
+		end
+		watches[inst] = { conns = conns, expires = now + WATCH_SECONDS }
+	end
+	local function sweepWatches(force: boolean)
+		local now = os.clock()
+		for inst, w in watches do
+			if force or now > w.expires or inst.Parent == nil then
+				for _, c in w.conns do
+					c:Disconnect()
+				end
+				watches[inst] = nil
 			end
 		end
 	end
+	addCleanup(cleanups, function()
+		sweepWatches(true)
+	end)
+
+	-- Intent senders (shared by keys, click, tap, the Act button and the QA bridge).
+	local function gather(node: Instance?)
+		local target = node or targetInstance
+		Feedback.swing()
+		if target == nil then
+			return
+		end
+		watch(target, false)
+		recent["gather"] = os.clock()
+		Remotes.event(Remotes.GatherRequest):FireServer(target)
+	end
+	local function attack(mob: Instance?)
+		local target = mob or targetInstance
+		Feedback.swing()
+		if target == nil then
+			return
+		end
+		watch(target, true)
+		Remotes.event(Remotes.AttackRequest):FireServer(target)
+	end
+	local function eat()
+		recent["eat"] = os.clock()
+		Remotes.event(Remotes.UseItemRequest):FireServer(shownSlot())
+	end
+	local function fuel(fire: Instance?)
+		local target = fire or fireInstance
+		if target then
+			recent["fuel"] = os.clock()
+			Remotes.event(Remotes.AddFuelRequest):FireServer(target)
+		end
+	end
+	local function place()
+		local def = selectedDef()
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if def and def.structureId and root and root:IsA("BasePart") then
+			local look = root.CFrame.LookVector
+			local _, yaw, _ = root.CFrame:ToOrientation()
+			recent["place"] = os.clock()
+			Remotes.event(Remotes.PlaceRequest):FireServer(
+				def.structureId,
+				root.Position + look * HudConfig.PlaceDistance,
+				math.deg(yaw)
+			)
+		end
+	end
+
+	local function doAction(): string
+		pickTarget()
+		local action = currentAction()
+		if action == "fuel" then
+			fuel(nil)
+		elseif action == "gather" then
+			gather(nil)
+		elseif action == "attack" then
+			attack(nil)
+		elseif action == "eat" then
+			eat()
+		elseif action == "place" then
+			place()
+		else
+			local def = selectedDef()
+			if def and (def.kind == "tool" or def.kind == "weapon") then
+				Feedback.swing()
+			end
+		end
+		return action
+	end
 
 	if actionButton then
-		local b = actionButton
-		connect(cleanups, b.Activated, doAction)
+		connect(cleanups, actionButton.Activated, function()
+			doAction()
+		end)
+	end
+	for i, slot in slots do
+		connect(cleanups, slot.button.Activated, function()
+			-- Tapping the already-selected food slot eats it; otherwise select.
+			local stack = stacks[i]
+			local def = if stack then ItemCatalog.Items[stack.id] else nil
+			if i == shownSlot() and def and def.kind == "food" then
+				eat()
+			else
+				requestSelect(i)
+			end
+		end)
 	end
 
 	-- Server -> client updates. Remotes.event may yield, so connect from a spawned thread.
@@ -474,32 +750,57 @@ function HudController.start()
 			if type(p) ~= "table" or type(p.slots) ~= "table" then
 				return
 			end
+			local before = table.clone(counts)
+			table.clear(stacks)
+			table.clear(counts)
 			hasItems = false
-			table.clear(slotItems)
 			for i, stack in p.slots do
 				if
 					type(i) == "number"
 					and type(stack) == "table"
 					and type(stack.id) == "string"
 				then
-					slotItems[i] = stack.id
+					local n = if type(stack.count) == "number" then stack.count else 1
+					stacks[i] = { id = stack.id, count = n }
+					counts[stack.id] = (counts[stack.id] or 0) + n
+					hasItems = true
 				end
 			end
 			for i, slot in slots do
-				local stack = p.slots[i]
-				if type(stack) == "table" and type(stack.id) == "string" then
-					slot.name.Text = stack.id
-					slot.count.Text = if type(stack.count) == "number" and stack.count > 1
-						then `x{stack.count}`
-						else ""
-					hasItems = true
-				else
-					slot.name.Text = ""
-					slot.count.Text = ""
-				end
+				local stack = stacks[i]
+				local def = if stack then ItemCatalog.Items[stack.id] else nil
+				slot.name.Text = if def then def.name elseif stack then stack.id else ""
+				slot.count.Text = if stack and stack.count > 1 then `x{stack.count}` else ""
+			end
+			-- Onboarding credit from real inventory changes.
+			local now = os.clock()
+			local function delta(id: string): number
+				return (counts[id] or 0) - (before[id] or 0)
+			end
+			if delta("Wood") > 0 then
+				hints.complete("chop")
+			end
+			if delta("Campfire") > 0 then
+				hints.complete("craftCampfire")
+				Feedback.sound("CraftSound", nil)
+			end
+			if delta("Campfire") < 0 and now - (recent["place"] or -math.huge) < RECENT_SECONDS then
+				hints.complete("placeCampfire")
+				Feedback.sound("CraftSound", nil)
+			end
+			if delta("Wood") < 0 and now - (recent["fuel"] or -math.huge) < RECENT_SECONDS then
+				hints.complete("addWood")
+			end
+			if delta("RawMeat") < 0 and now - (recent["eat"] or -math.huge) < RECENT_SECONDS then
+				hints.complete("eat")
 			end
 			if type(p.selected) == "number" then
-				setSelected(p.selected)
+				confirmSelected(p.selected)
+			else
+				renderSelection()
+			end
+			if craftPanel.isOpen() then
+				craftPanel.refresh(counts, workbenchTier())
 			end
 		end)
 	end)
@@ -507,25 +808,111 @@ function HudController.start()
 	connect(cleanups, player:GetAttributeChangedSignal(Config.Inventory.SlotAttribute), function()
 		local v = player:GetAttribute(Config.Inventory.SlotAttribute)
 		if type(v) == "number" then
-			setSelected(v)
+			confirmSelected(v)
 		end
 	end)
+
 	connect(cleanups, UserInputService.InputBegan, function(input: InputObject, processed: boolean)
 		if processed then
 			return
 		end
-		if input.KeyCode == ACTION_KEY then
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			doAction()
+			return
+		end
+		if input.KeyCode == HudConfig.ActionKey then
+			doAction()
+			return
+		end
+		if input.KeyCode == HudConfig.CraftKey then
+			craftPanel.toggle()
 			return
 		end
 		local idx = table.find(HOTBAR_KEYS, input.KeyCode)
 		if idx and idx <= slotCount then
-			Remotes.event(Remotes.SelectSlotRequest):FireServer(idx)
+			requestSelect(idx)
 		end
 	end)
 
-	-- One visual loop: compass every frame, hints/action label at a low rate.
+	-- Mouse wheel cycles the hotbar. Bound above the camera's zoom binding and sunk so it does not
+	-- also zoom; hold Shift to zoom with the wheel instead.
+	ContextActionService:BindActionAtPriority(
+		WHEEL_ACTION,
+		function(
+			_name: string,
+			state: Enum.UserInputState,
+			input: InputObject
+		): Enum.ContextActionResult
+			if
+				state ~= Enum.UserInputState.Change
+				or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+			then
+				return Enum.ContextActionResult.Pass
+			end
+			local dz = input.Position.Z
+			if dz == 0 then
+				return Enum.ContextActionResult.Pass
+			end
+			requestSelect(HudMath.cycleSlot(shownSlot(), if dz < 0 then 1 else -1, slotCount))
+			return Enum.ContextActionResult.Sink
+		end,
+		false,
+		Enum.ContextActionPriority.High.Value,
+		Enum.UserInputType.MouseWheel
+	)
+	addCleanup(cleanups, function()
+		ContextActionService:UnbindAction(WHEEL_ACTION)
+	end)
+
+	local function promptFor(): (Instance?, string, number?, boolean)
+		local action = currentAction()
+		if action == "fuel" and fireInstance then
+			return fireInstance, `Add wood {inputHint}`, nil, false
+		end
+		local target = targetInstance
+		if target == nil then
+			return nil, "", nil, false
+		end
+		if targetKind == "gather" then
+			local kind = target:GetAttribute(ItemCatalog.NodeKindAttribute)
+			local node = if type(kind) == "string" then ItemCatalog.Nodes[kind] else nil
+			if node == nil then
+				return nil, "", nil, false
+			end
+			local hits = target:GetAttribute(ItemCatalog.NodeHitsAttribute)
+			local progress = if type(hits) == "number"
+				then hits / Config.Gather.HitsToDeplete
+				else nil
+			local stack = stacks[shownSlot()]
+			local ok = ItemsGather.canHarvest(
+				node.kind,
+				if stack then { id = stack.id, count = stack.count } else nil
+			)
+			local tool = ItemCatalog.Items[node.toolId]
+			if ok then
+				return target, `{node.verb} {inputHint}`, progress, false
+			end
+			return target,
+				`{node.verb}: needs {if tool then tool.name else node.toolId}`,
+				progress,
+				true
+		elseif targetKind == "attack" then
+			local hp = target:GetAttribute(Config.Mobs.HealthAttribute)
+			local humanoid = target:FindFirstChildOfClass("Humanoid")
+			local progress = if type(hp) == "number"
+					and humanoid
+					and humanoid.MaxHealth > 0
+				then hp / humanoid.MaxHealth
+				else nil
+			local name = HudConfig.MobNames[target.Name] or target.Name
+			return target, `Hunt {name} {inputHint}`, progress, false
+		end
+		return nil, "", nil, false
+	end
+
+	-- One visual loop: compass every frame; target/prompt/hints at a low rate.
 	local accumulator = 0.0
+	local promptAccum = 0.0
 	connect(cleanups, RunService.RenderStepped, function(dt: number)
 		local camera = Workspace.CurrentCamera
 		local camp = Workspace:GetAttribute(HudConfig.CampAttribute)
@@ -545,12 +932,30 @@ function HudController.start()
 			lastDist = -1
 		end
 
+		promptAccum += dt
+		if promptAccum >= HudConfig.PromptInterval then
+			promptAccum = 0
+			pickTarget()
+			local t, text, progress, warn = promptFor()
+			prompt.set(t, text, progress, warn)
+			if actionButton then
+				actionButton.Text = ActionPick.Labels[currentAction()] or ActionPick.Labels.none
+			end
+		end
+
 		accumulator += dt
 		if accumulator < HudConfig.HintCheckInterval then
 			return
 		end
 		accumulator = 0
 		local now = os.clock()
+		sweepWatches(false)
+		if itemLabel.Visible and now >= itemLabelUntil then
+			itemLabel.Visible = false
+		end
+		if craftPanel.isOpen() then
+			craftPanel.refresh(counts, workbenchTier())
+		end
 		if hintLabel.Visible and now >= hintUntil then
 			hintLabel.Visible = false
 		end
@@ -573,14 +978,84 @@ function HudController.start()
 				end
 			end
 		end
-		if actionButton then
-			pickTarget()
-			actionButton.Text = ActionPick.Labels[currentAction()] or ActionPick.Labels.none
-		end
 	end)
 
 	addCleanup(cleanups, DebugChat.start())
-	addCleanup(cleanups, Toast.start(gui))
+	addCleanup(
+		cleanups,
+		Toast.start(gui, function(kind: string, _text: string)
+			if HudConfig.DenyKinds[kind] then
+				Feedback.sound("DenySound", nil)
+			end
+		end)
+	)
+
+	-- Studio-only QA bridge: the same handlers the inputs call.
+	addCleanup(
+		cleanups,
+		QABridge.start({
+			selectSlot = function(slot: number)
+				requestSelect(slot)
+			end,
+			selectItem = function(id: string): number?
+				for i = 1, slotCount do
+					local stack = stacks[i]
+					if stack and stack.id == id then
+						requestSelect(i)
+						return i
+					end
+				end
+				return nil
+			end,
+			wheel = function(delta: number)
+				requestSelect(HudMath.cycleSlot(shownSlot(), delta, slotCount))
+			end,
+			toggleCraft = function()
+				craftPanel.toggle()
+			end,
+			craft = function(recipeId: string)
+				craftPanel.click(recipeId)
+			end,
+			action = function(): string
+				return doAction()
+			end,
+			gather = function(node: Instance?)
+				gather(node)
+			end,
+			attack = function(mob: Instance?)
+				attack(mob)
+			end,
+			place = function()
+				place()
+			end,
+			eat = function()
+				eat()
+			end,
+			fuel = function(fire: Instance?)
+				fuel(fire)
+			end,
+			state = function(): { [string]: any }
+				pickTarget()
+				local character = player.Character
+				local tool = character and character:FindFirstChildOfClass("Tool")
+				local _, ptext = promptFor()
+				return {
+					selected = selectedSlot,
+					shown = shownSlot(),
+					counts = table.clone(counts),
+					held = if tool then tool:GetAttribute("ItemId") else nil,
+					itemName = if itemLabel.Visible then itemLabel.Text else "",
+					target = targetKind,
+					targetName = if targetInstance then targetInstance.Name else "",
+					prompt = ptext,
+					action = currentAction(),
+					craftOpen = craftPanel.isOpen(),
+					onboarding = hints.current(),
+					hunger = meters.hunger,
+				}
+			end,
+		})
+	)
 
 	local function teardown()
 		if destroyed then
@@ -599,6 +1074,7 @@ function HudController.start()
 	end)
 
 	applyMeters()
+	renderSelection()
 	gui.Parent = playerGui
 end
 

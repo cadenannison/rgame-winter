@@ -144,11 +144,15 @@ local function onGather(player: Player, node: unknown)
 	if type(kind) ~= "string" then
 		return
 	end
-	local ok, reason = ItemsGather.canHarvest(kind, InventoryService.getSelected(player))
+	local ok = ItemsGather.canHarvest(kind, InventoryService.getSelected(player))
 	if not ok then
+		local nodeDef = ItemCatalog.Nodes[kind]
+		local tool = nodeDef and ItemCatalog.Items[nodeDef.toolId]
 		notify(
 			player,
-			if reason == "NoTool" then "You need a tool." else "That tool cannot harvest this."
+			if nodeDef and tool
+				then `{nodeDef.verb}: needs {tool.name}`
+				else "That tool cannot harvest this."
 		)
 		return
 	end

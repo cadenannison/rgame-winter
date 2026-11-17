@@ -41,13 +41,18 @@ return function(check: (string, boolean) -> ())
 		{ fireInRange = false, hasWood = false, targetKind = "none", selectedKind = nil }
 	check("pick none", ActionPick.choose(ctx) == "none")
 	ctx.selectedKind = "food"
-	check("pick eat", ActionPick.choose(ctx) == "eat")
-	ctx.selectedKind = "placeable"
-	check("pick place", ActionPick.choose(ctx) == "place")
 	ctx.targetKind = "gather"
-	check("pick gather beats place", ActionPick.choose(ctx) == "gather")
+	check("pick eat beats target", ActionPick.choose(ctx) == "eat")
+	ctx.selectedKind = "placeable"
+	check("pick place beats target", ActionPick.choose(ctx) == "place")
+	ctx.selectedKind, ctx.selectedId = "tool", "Axe"
+	check("pick gather with tool", ActionPick.choose(ctx) == "gather")
 	ctx.fireInRange, ctx.hasWood = true, true
-	check("pick fuel first", ActionPick.choose(ctx) == "fuel")
+	check("target beats fuel when holding a tool", ActionPick.choose(ctx) == "gather")
+	ctx.selectedKind, ctx.selectedId = "resource", "Wood"
+	check("wood in hand fuels", ActionPick.choose(ctx) == "fuel")
+	ctx.selectedKind, ctx.selectedId, ctx.targetKind = nil, nil, "none"
+	check("fuel when nothing targeted", ActionPick.choose(ctx) == "fuel")
 	ctx.hasWood = false
-	check("no fuel without wood", ActionPick.choose(ctx) == "gather")
+	check("no fuel without wood", ActionPick.choose(ctx) == "none")
 end

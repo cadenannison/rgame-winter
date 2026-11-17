@@ -42,6 +42,20 @@ DebugService.expose("Crafting", CraftingService)
 DebugService.expose("Placement", PlacementService)
 DebugService.expose("Mobs", MobService)
 
+-- Studio-only QA commands (DebugService validates the arg against ItemCatalog / Config.Debug.MobKinds).
+local DebugConfig = require(ReplicatedStorage.Shared.Config).Debug
+DebugService.register("give", function(player: Player, itemId: unknown)
+	InventoryService.add(player, itemId :: string, DebugConfig.GiveCount)
+end)
+DebugService.register("spawnMob", function(player: Player, kind: unknown)
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") then
+		local at = root.Position + root.CFrame.LookVector * DebugConfig.SpawnMobDistance
+		MobService.spawn(kind :: string, at - Vector3.new(0, DebugConfig.SpawnMobDrop, 0))
+	end
+end)
+
 -- Start systems here, each exactly once. ChunkService before Spawn so the camp exists before any
 -- LoadCharacter; Spawn starts after every gameplay system so characters never load unwired.
 DataService.start()

@@ -30,6 +30,7 @@ require("./MobTests")(check)
 require("./PlacementTests")(check)
 require("./ConsumeTests")(check)
 require("./FlowTests")(check)
+require("./PlayabilityTests")(check)
 
 if failures > 0 then
 	error(`{failures} test(s) failed`)

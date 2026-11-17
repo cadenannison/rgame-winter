@@ -12,6 +12,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local DebugCommands = require(Shared.logic.DebugCommands)
+local ItemCatalog = require(Shared.ItemCatalog)
 local Guard = require(script.Parent.Parent.Net.Guard)
 
 export type Handler = (player: Player, arg: unknown) -> ()
@@ -32,6 +33,14 @@ local limits: DebugCommands.Limits = {
 	maxClockSpeed = D.MaxClockSpeed,
 	ringCount = D.RingCount,
 	darkEvents = D.DarkEvents,
+	itemIds = (function(): { string }
+		local ids: { string } = {}
+		for id in ItemCatalog.Items do
+			table.insert(ids, id)
+		end
+		return ids
+	end)(),
+	mobKinds = D.MobKinds,
 }
 
 function DebugService.isActive(): boolean
@@ -113,6 +122,10 @@ function DebugService.run(player: Player, name: unknown, arg: unknown): (boolean
 		setInvincible(player, value :: boolean)
 	elseif command == "teleportRing" then
 		player:SetAttribute(D.PlayerRingAttribute, value :: number)
+	elseif DebugCommands.ACTION_ONLY[command] then
+		if #(registry[command] or {}) == 0 then
+			return false, "no handler registered"
+		end
 	else
 		Workspace:SetAttribute(worldAttribute(command), value :: any)
 	end

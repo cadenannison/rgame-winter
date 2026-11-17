@@ -28,3 +28,7 @@ Status: in progress (server, placement, food, client senders and tests done)
 - Consumes: Config.Inventory.StarterItems (starter Axe on join); FireService.register/count; Workspace.Chunks for ground.
 - Catalog changes: Campfire item/recipe (5 Wood, 2 Stone), RawMeat (food), Hide; Pickaxe is wood-only (4 Wood) so stone is obtainable; Spear damage = Config.Combat.SpearDamage.
 - Food: FoodService.install() (init.server, before start) registers InventoryService.setUseHandler; UseItemRequest(slot) -> type, slot range, Guard (UseRateInterval) -> state (Consume.eat: food, alive, not downed, hunger not full) -> act (SurvivalService.feed clamped gain, consume 1, Notify "eat"). Hunger value is data: ItemCatalog RawMeat.hunger = Config.Food.RawMeatHunger. InventoryService.handleUse = QA path.
+- Held item (client UX pass): src/server/Items/HeldItem.luau builds a visual Tool (Config.Held.ToolName, attr ItemId, handle from Config.Held.Visuals) in the character for the selected slot on every sync and on CharacterAdded; cleaned on PlayerRemoving. Visual only; gameplay reads the selected stack.
+- Inventory: HotbarSize 9 (keys 1-9), BackpackSize 15 (total unchanged at 24).
+- Gather refusal toast: "<verb>: needs <tool>" from ItemCatalog.Nodes verb/toolId (Chop/Axe, Mine/Pickaxe).
+- Studio debug: "give <itemId>" grants Config.Debug.GiveCount (handler in init.server).

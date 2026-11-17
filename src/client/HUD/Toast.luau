@@ -1,5 +1,6 @@
 --!strict
--- Short toast for server Notify(kind, text). Display only; text is length-capped and never trusted.
+-- Short toast for server Notify(kind, text) and local client messages. Display only; text is
+-- length-capped and never trusted.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10,12 +11,22 @@ local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
 
 local Toast = {}
 
--- Builds the label under gui and listens to Notify. Returns a cleanup function.
-function Toast.start(gui: ScreenGui): () -> ()
+local showFn: ((string) -> ())? = nil
+
+-- Shows text now (no-op before start).
+function Toast.show(text: string)
+	if showFn then
+		showFn(text)
+	end
+end
+
+-- Builds the label under gui and listens to Notify; onNotify(kind, text) runs for each server toast.
+-- Returns a cleanup function.
+function Toast.start(gui: ScreenGui, onNotify: ((string, string) -> ())?): () -> ()
 	local label = Instance.new("TextLabel")
 	label.Name = "Toast"
 	label.AnchorPoint = Vector2.new(0.5, 0)
-	label.Position = UDim2.fromScale(0.5, 0.12)
+	label.Position = UDim2.fromScale(0.5, 0.2)
 	label.Size = UDim2.fromOffset(HudConfig.MaxWidth, 32)
 	label.BackgroundColor3 = HudConfig.PanelColor
 	label.BackgroundTransparency = HudConfig.PanelTransparency
@@ -24,6 +35,7 @@ function Toast.start(gui: ScreenGui): () -> ()
 	label.Font = Enum.Font.GothamMedium
 	label.BorderSizePixel = 0
 	label.Visible = false
+	label.ZIndex = 10
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 8)
 	corner.Parent = label
@@ -35,29 +47,45 @@ function Toast.start(gui: ScreenGui): () -> ()
 	local token = 0
 	local destroyed = false
 	local connection: RBXScriptConnection? = nil
+
+	local function show(text: string)
+		if destroyed or text == "" then
+			return
+		end
+		token += 1
+		local mine = token
+		label.Text = string.sub(text, 1, HudConfig.ToastMaxChars)
+		label.Visible = true
+		task.delay(HudConfig.ToastSeconds, function()
+			if token == mine and not destroyed then
+				label.Visible = false
+			end
+		end)
+	end
+	showFn = show
+
 	task.spawn(function()
 		local ev = Remotes.event(Remotes.Notify)
 		if destroyed then
 			return
 		end
-		connection = ev.OnClientEvent:Connect(function(_kind: unknown, text: unknown)
-			if type(text) ~= "string" or text == "" or Players.LocalPlayer == nil then
+		connection = ev.OnClientEvent:Connect(function(kind: unknown, text: unknown)
+			if type(text) ~= "string" or Players.LocalPlayer == nil then
 				return
 			end
-			token += 1
-			local mine = token
-			label.Text = string.sub(text, 1, HudConfig.ToastMaxChars)
-			label.Visible = true
-			task.delay(HudConfig.ToastSeconds, function()
-				if token == mine and not destroyed then
-					label.Visible = false
-				end
-			end)
+			local friendly = HudConfig.NotifyText[text] or text
+			show(friendly)
+			if onNotify then
+				onNotify(if type(kind) == "string" then kind else "", text)
+			end
 		end)
 	end)
 
 	return function()
 		destroyed = true
+		if showFn == show then
+			showFn = nil
+		end
 		if connection then
 			connection:Disconnect()
 		end

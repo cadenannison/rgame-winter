@@ -62,6 +62,15 @@ function HudMath.nextHint(
 	return nil
 end
 
+-- Next hotbar slot for a wheel step (delta > 0 forward), wrapping within 1..count.
+function HudMath.cycleSlot(current: number, delta: number, count: number): number
+	if count <= 0 then
+		return 1
+	end
+	local step = if delta > 0 then 1 elseif delta < 0 then -1 else 0
+	return ((current - 1 + step) % count) + 1
+end
+
 local TRUE_WORDS: { [string]: boolean } =
 	{ ["true"] = true, ["on"] = true, ["1"] = true, ["yes"] = true }
 local FALSE_WORDS: { [string]: boolean } =
@@ -86,8 +95,8 @@ function HudMath.parseDebug(text: string, names: { string }): (boolean, string, 
 			return true, name, false
 		end
 		return false, name .. " needs true/false", nil
-	elseif name == "darkEvent" then
-		return true, name, rest or "" -- empty string clears
+	elseif name == "darkEvent" or name == "give" or name == "spawnMob" then
+		return true, name, rest or "" -- string arg (darkEvent: empty string clears)
 	end
 	local n = tonumber(rest or "")
 	if n == nil or n ~= n or n == math.huge or n == -math.huge then

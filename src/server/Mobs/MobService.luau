@@ -37,6 +37,7 @@ type MobRow = {
 	nextAttackAt: number,
 	wanderUntil: number,
 	lastAction: string?,
+	burst: MobAI.Burst,
 }
 
 type PlayerInfo = { player: Player, root: BasePart, humanoid: Humanoid }
@@ -177,6 +178,7 @@ local function createMob(kind: MobKind, position: Vector3): Model?
 		nextAttackAt = 0,
 		wanderUntil = 0,
 		lastAction = nil,
+		burst = { burstEnd = 0, restEnd = 0 },
 	}
 	rows[model] = row
 	rowCount += 1
@@ -319,8 +321,14 @@ local function stepMob(
 
 	local humanoid = row.humanoid
 	if action == "Flee" and nearestInfo then
-		humanoid.WalkSpeed = stats.FleeSpeed
-		humanoid:MoveTo(pos + horizontalDir(nearestInfo.root.Position, pos) * MOBS.FleeStep)
+		-- Sprint / pause rhythm so a walking player can close in during the pauses.
+		if MobAI.fleeBurst(row.burst, now, stats.FleeBurstSeconds, stats.FleeRestSeconds) then
+			humanoid.WalkSpeed = stats.FleeSpeed
+			humanoid:MoveTo(pos + horizontalDir(nearestInfo.root.Position, pos) * MOBS.FleeStep)
+		else
+			row.lastAction = "Rest"
+			humanoid:MoveTo(pos)
+		end
 	elseif action == "Retreat" and fire then
 		humanoid.WalkSpeed = stats.FleeSpeed
 		humanoid:MoveTo(pos + horizontalDir(fire, pos) * MOBS.RetreatStep)
@@ -407,6 +415,24 @@ local function onHeartbeat(dt: number)
 	end
 end
 
+-- Killed: unregister at once (no second kill, no AI), publish health 0, remove after a short delay so
+-- clients can play the hit confirm on the attribute change.
+local function killMob(row: MobRow)
+	local model = row.model
+	if rows[model] then
+		rows[model] = nil
+		rowCount -= 1
+	end
+	CollectionService:RemoveTag(model, Config.Mobs.Tag)
+	row.root.Anchored = true
+	model:SetAttribute(HEALTH_ATTRIBUTE, 0)
+	task.delay(MOBS.DeathRemoveDelay, function()
+		if model.Parent then
+			model:Destroy()
+		end
+	end)
+end
+
 local function resolveMob(target: Instance): MobRow?
 	local model: Instance? = target
 	if target:IsA("BasePart") then
@@ -449,27 +475,30 @@ local function onAttack(player: Player, target: unknown)
 	end
 	-- 5. act: server-recomputed distance and damage
 	local dist = MobRules.distance(toPoint(root.Position), toPoint(row.root.Position))
-	if not MobRules.canMelee(dist, Config.Combat.MeleeRange, Config.Combat.LagCompensation) then
+	local reach = Config.Combat.MeleeRange + row.kind.stats.HitRadius
+	if not MobRules.canMelee(dist, reach, Config.Combat.LagCompensation) then
 		return
 	end
 	lastMeleeAt[player] = now
-	-- Damage from the equipped weapon's item data (fist / non-weapon = MeleeBaseDamage).
+	-- Damage from the equipped item: weapon data, gather tool = Combat.ToolDamage, else MeleeBaseDamage.
 	local held = InventoryService.getSelected(player)
 	local def = if held then ItemCatalog.Items[held.id] else nil
 	local isWeapon = def ~= nil and def.kind == "weapon" and def.damage ~= nil
+	local isTool = def ~= nil and def.kind == "tool"
 	local damage = if isWeapon
 			and def
 			and def.damage
 		then def.damage
+		elseif isTool then Config.Combat.ToolDamage
 		else Config.Combat.MeleeBaseDamage
-	if isWeapon then
+	if isWeapon or isTool then
 		InventoryService.wearSelected(player, Config.Combat.WeaponDurabilityPerHit)
 	end
 	row.health -= damage
 	row.model:SetAttribute(HEALTH_ATTRIBUTE, math.max(0, row.health))
 	if row.health <= 0 then
 		local stats = row.kind.stats
-		removeMob(row.model)
+		killMob(row)
 		-- Drop goes straight to the killer's inventory (no world pickups yet).
 		if stats.DropId and stats.DropCount > 0 then
 			InventoryService.add(player, stats.DropId, stats.DropCount)
@@ -490,7 +519,7 @@ function MobService.spawn(kindName: string, position: Vector3): Model?
 	return nil
 end
 
--- Last AI action of a mob ("Wander" | "Flee" | "Chase" | "Attack" | "Retreat"), nil before its first step.
+-- Last AI action of a mob ("Wander" | "Flee" | "Rest" | "Chase" | "Attack" | "Retreat"), nil before its first step.
 function MobService.getLastAction(model: Model): string?
 	local row = rows[model]
 	return if row then row.lastAction else nil

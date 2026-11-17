@@ -10,11 +10,13 @@ local Remotes = require(Shared.Remotes)
 local ItemCatalog = require(Shared.ItemCatalog)
 local Inventory = require(Shared.logic.Inventory)
 local Guard = require(script.Parent.Parent.Net.Guard)
+local HeldItem = require(script.Parent.HeldItem)
 
 local InventoryService = {}
 
 local inventories: { [Player]: Inventory.Inv } = {}
 local selected: { [Player]: number } = {}
+local characterConns: { [Player]: RBXScriptConnection } = {}
 local useHandler: ((Player, ItemCatalog.ItemDef, number) -> boolean)? = nil
 local started = false
 
@@ -31,8 +33,11 @@ local function sync(player: Player)
 			slots[i] = { id = s.id, count = s.count, durability = s.durability }
 		end
 	end
-	local payload: Remotes.InventoryPayload = { slots = slots, selected = selected[player] or 1 }
+	local index = selected[player] or 1
+	local payload: Remotes.InventoryPayload = { slots = slots, selected = index }
 	Remotes.event(Remotes.InventoryUpdate):FireClient(player, payload)
+	local stack = inv.slots[index]
+	HeldItem.show(player, if stack then stack.id else nil)
 end
 
 local function setup(player: Player)
@@ -49,6 +54,15 @@ local function setup(player: Player)
 	inventories[player] = inv
 	selected[player] = 1
 	player:SetAttribute(Config.Inventory.SlotAttribute, 1)
+	-- Re-show the held item on every (re)spawn; deferred so the Humanoid exists.
+	characterConns[player] = player.CharacterAdded:Connect(function()
+		task.defer(function()
+			if inventories[player] then
+				local stack = inventories[player].slots[selected[player] or 1]
+				HeldItem.show(player, if stack then stack.id else nil)
+			end
+		end)
+	end)
 	sync(player)
 end
 
@@ -163,6 +177,12 @@ InventoryService.handleUse = onUse
 local function cleanup(player: Player)
 	inventories[player] = nil
 	selected[player] = nil
+	local conn = characterConns[player]
+	if conn then
+		conn:Disconnect()
+		characterConns[player] = nil
+	end
+	HeldItem.cleanup(player)
 end
 
 function InventoryService.start()
