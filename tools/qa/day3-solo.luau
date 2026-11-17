@@ -45,6 +45,16 @@ local function scenario(chk)
 		chk("player_ready", false, "no ready local player (server-only run?)")
 		return
 	end
+	-- Precondition: needs a fresh play session. A re-run (or a first run whose MCP call errored but still
+	-- executed server-side) leaves a bench and meat behind and fails eat_*/place_workbench misleadingly.
+	if
+		#CollectionService:GetTagged(Catalog.WorkbenchTag) > 0
+		or Inv.count(P, "RawMeat") > 0
+		or Inv.count(P, "Workbench") > 0
+	then
+		chk("fresh_session", false, "stale state (bench/meat present): stop_play, start_play, run once")
+		return
+	end
 	local hrp = P.Character.HumanoidRootPart
 	local hum = P.Character:FindFirstChildOfClass("Humanoid")
 	local spawnPos = Chunk.getCampSpawnPosition()
