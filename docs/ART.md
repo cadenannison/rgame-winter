@@ -52,3 +52,6 @@ Interaction audio is silent for now (E no longer spams hit sounds). Re-enable by
 - Mob hit: same confirm, isMob -> MobHitSound (muted).
 - Pickup: ItemDrop / GatherService pickup notify (no client sound yet; add on the Notify "gather" event).
 - Structure interact (door toggled, chest/station use): src/client/HUD/StructureInteract.luau, comments mark the spots (previously CraftSound).
+
+## Creature sound hook points (Art Pass 3; silent, no ids)
+Per creature kind: footstep (client, from Walk/Run phase in AnimKit), growl/warning (State Alert/Telegraph: seal warning, wolf/wolverine/brute wind-up), attack (State Attack), hurt (State Hurt / MobHealth drop), death (State Death). Ambient: CarrionCrow caw (circle + scatter), AuroraWisp hum (loop near camera, tied to the nearby light cap). Add AudioCues keys with empty ids first; hook in CreatureAnim/CreatureFx.

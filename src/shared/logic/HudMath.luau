@@ -99,6 +99,8 @@ function HudMath.parseDebug(text: string, names: { string }): (boolean, string, 
 		name == "darkEvent"
 		or name == "give"
 		or name == "spawnMob"
+		or name == "mob"
+		or name == "mobs"
 		or name == "structures"
 		or name == "tp"
 		or name == "chest"

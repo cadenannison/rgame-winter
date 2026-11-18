@@ -45,7 +45,16 @@ local limits: DebugCommands.Limits = {
 		end
 		return ids
 	end)(),
-	mobKinds = D.MobKinds,
+	mobKinds = (function(): { string }
+		-- every existing kind plus the Art Pass 3 species (valid "spawnMob" / "mob" args)
+		local kinds = table.clone(D.MobKinds)
+		for _, id in Config.Mobs.SpeciesIds do
+			if not table.find(kinds, id) then
+				table.insert(kinds, id)
+			end
+		end
+		return kinds
+	end)(),
 	gallerySets = Config.Art.GallerySets,
 }
 
@@ -391,7 +400,42 @@ local function onSprint(player: Player, arg: unknown)
 	say(player, `sprint {if arg == true then "on" else "off"}: {if ok then "ok" else "refused"}`)
 end
 
+-- /debug mob <id>: spawn any mob kind in front of the player (same placement as spawnMob).
+local function onMob(player: Player, kind: unknown)
+	local root = rootOf(player)
+	if not root or type(kind) ~= "string" then
+		return
+	end
+	local at = root.Position + root.CFrame.LookVector * D.SpawnMobDistance
+	local model = worldService("Mobs").spawn(kind, at - Vector3.new(0, D.SpawnMobDrop, 0))
+	say(player, if model then `mob: spawned {kind}` else `mob: could not spawn {kind}`)
+end
+
+-- /debug mobs: live mobs near the player with distance, replicated State and health.
+local function onMobs(player: Player)
+	local root = rootOf(player)
+	if not root then
+		return
+	end
+	local list = worldService("Mobs").debugNearby(root.Position, Config.Mobs.DebugListRadius)
+	if #list == 0 then
+		say(player, "mobs: none within " .. Config.Mobs.DebugListRadius .. " studs")
+		return
+	end
+	local parts: { string } = {}
+	for i = 1, math.min(#list, Config.Mobs.DebugListMax) do
+		local row = list[i]
+		table.insert(
+			parts,
+			`{row.kind} {math.floor(row.distance)}s {row.state} hp{math.floor(row.health)}`
+		)
+	end
+	say(player, `mobs ({#list}): ` .. table.concat(parts, " | "))
+end
+
 local function registerBuiltins()
+	DebugService.register("mob", onMob)
+	DebugService.register("mobs", onMobs)
 	DebugService.register("blizzard", onBlizzard)
 	DebugService.register("forage", onForage)
 	DebugService.register("sprint", onSprint)

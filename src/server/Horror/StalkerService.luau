@@ -291,6 +291,12 @@ function StalkerService.isHunting(): boolean
 	return active ~= nil
 end
 
+-- Server only, read-only. World position of the active hunter (nil when no hunt); crows scatter toward it.
+function StalkerService.getHuntPosition(): Vector3?
+	local a = active
+	return if a then Vector3.new(a.x, a.y, a.z) else nil
+end
+
 -- Called once per strike with the struck player. Returns a disconnect function.
 function StalkerService.onStrike(cb: (Player) -> ()): () -> ()
 	table.insert(strikeCallbacks, cb)

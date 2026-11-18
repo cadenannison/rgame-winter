@@ -16,6 +16,8 @@ local WEAPON_DURABILITY = 45
 local METAL = Config.Durability.MetalToolMultiplier
 local TORCH_BURN_SECONDS = 240 -- torch durability = seconds of burn
 local LANTERN_BURN_SECONDS = 600
+local BLUBBER_TORCH_BURN_SECONDS = 720 -- blubber burns long and slow (3x a plain torch)
+local AURORA_TORCH_BURN_SECONDS = 480
 local FLARE_BURN_SECONDS = 20
 local STONE_PICK_DURABILITY = 80
 
@@ -55,7 +57,27 @@ local list: { Types.ItemDef } = {
 		kind = "resource",
 		maxStack = stackOf("rareMaterial"),
 	},
+	-- Art Pass 3 creature drops (stack sizes from Config.Items.Entries). Uses: Feather/DenseHide -> InsulatedCoat,
+	-- Blubber -> BlubberTorch, Claw/Fang/Bone -> FangSpear, CrystalShard/AuroraDust -> AuroraTorch, Venison = food.
+	{ id = "Feather", name = "Feather", kind = "resource", maxStack = stackOf("material") },
+	{ id = "Blubber", name = "Blubber", kind = "resource", maxStack = stackOf("animalPart") },
+	{ id = "Claw", name = "Claw", kind = "resource", maxStack = stackOf("animalPart") },
+	{ id = "Fang", name = "Fang", kind = "resource", maxStack = stackOf("animalPart") },
+	{ id = "DenseHide", name = "Dense Hide", kind = "resource", maxStack = stackOf("animalPart") },
+	{
+		id = "CrystalShard",
+		name = "Crystal Shard",
+		kind = "resource",
+		maxStack = stackOf("rareMaterial"),
+	},
+	{
+		id = "AuroraDust",
+		name = "Aurora Dust",
+		kind = "resource",
+		maxStack = stackOf("rareMaterial"),
+	},
 	-- Food (buffs: shared/data/Food.luau EatBuffs)
+	{ id = "Venison", name = "Venison", kind = "food", maxStack = stackOf("meat"), hunger = 30 },
 	{ id = "RawFish", name = "Raw Fish", kind = "food", maxStack = stackOf("meat"), hunger = 10 },
 	{
 		id = "CookedMeat",
@@ -125,6 +147,43 @@ local list: { Types.ItemDef } = {
 		repairable = true,
 	},
 	{ id = "Arrow", name = "Arrow", kind = "ammo", maxStack = stackOf("ammo") },
+	-- Creature-drop crafts (data/Recipes.luau)
+	{
+		id = "FangSpear",
+		name = "Fang Spear",
+		kind = "weapon",
+		maxStack = 1,
+		damage = math.floor(Config.Combat.SpearDamage * 1.25),
+		durability = WEAPON_DURABILITY,
+		repairable = true,
+	},
+	{
+		id = "InsulatedCoat",
+		name = "Insulated Coat",
+		kind = "clothing",
+		maxStack = 1,
+		clothingSlot = "Body",
+		clothingTier = 2,
+		coldResistance = 3,
+	},
+	{
+		id = "BlubberTorch",
+		name = "Blubber Torch",
+		kind = "light",
+		maxStack = 1,
+		durability = BLUBBER_TORCH_BURN_SECONDS,
+		lightRadius = 22,
+		repelsStalker = true,
+	},
+	{
+		id = "AuroraTorch",
+		name = "Aurora Torch",
+		kind = "light",
+		maxStack = 1,
+		durability = AURORA_TORCH_BURN_SECONDS,
+		lightRadius = 30,
+		repelsStalker = true,
+	},
 	-- Lights (counter-play to the Stalker and the dark)
 	{
 		id = "Torch",

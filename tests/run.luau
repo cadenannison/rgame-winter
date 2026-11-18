@@ -38,6 +38,7 @@ require("./SurvivalTests")(check)
 require("./ForageTests")(check)
 require("./ItemTests")(check)
 require("./MobTests")(check)
+require("./MobSpeciesTests")(check) -- Art Pass 3: species behaviors, ring weights, drops, dread
 require("./NightTests")(check)
 require("./PlacementTests")(check)
 require("./ConsumeTests")(check)
@@ -72,6 +73,8 @@ require("./InventoryTests")(check) -- items round: move path, stacks, chests, mi
 require("./EquipmentTests")(check) -- items round: equipment slots and worn resistance (agent B)
 require("./BlizzardTests")(check) -- blizzard rework: wind, whiteout, duration
 require("./InputGroundTests")(check) -- bug-fix round: input gate, ground fix, drop durability
+require("./AnimKitTests")(check) -- art pass 3: creature pose math
+require("./CreatureFxTests")(check) -- art pass 3 (creature fx helpers)
 
 print(`tests: {passes} passed, {failures} failed`)
 if failures > 0 then

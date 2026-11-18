@@ -558,6 +558,16 @@ local Sections: Sections = {
 		Entries = {
 			Hide = { category = "animalPart" },
 			Bone = { category = "animalPart" },
+			-- Art Pass 3 creature drops: Feather 20, Venison 10, Blubber / Claw / Fang / DenseHide 10, shards 10
+			Feather = { category = "material", stack = 20 },
+			Venison = { category = "meat", stack = 10 },
+			Blubber = { category = "animalPart", stack = 10 },
+			Claw = { category = "animalPart", stack = 10 },
+			Fang = { category = "animalPart", stack = 10 },
+			DenseHide = { category = "animalPart", stack = 10 },
+			CrystalShard = { category = "rareMaterial", stack = 10 },
+			AuroraDust = { category = "rareMaterial", stack = 10 },
+			InsulatedCoat = { equipSlot = "Body", coldResistance = 3 },
 			Crystal = { category = "rareMaterial" },
 			IceShard = { category = "rareMaterial" },
 			RelicFragment = { category = "rareMaterial" },

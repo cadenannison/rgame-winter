@@ -9,6 +9,8 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local ShootController = require(script.Parent.Parent.Combat.ShootController)
 local Toast = require(script.Parent.Parent.HUD.Toast)
+local CreatureAnim = require(script.Parent.Parent.Art.CreatureAnim)
+local CreatureFx = require(script.Parent.Parent.Art.CreatureFx)
 
 local BOSS_WARNING_TEXT = "Something huge is coming toward camp"
 
@@ -22,6 +24,8 @@ function MobsClient.start()
 	end
 	started = true
 	ShootController.start()
+	CreatureAnim.start()
+	CreatureFx.start()
 	Remotes.event(Remotes.Cue).OnClientEvent:Connect(function(payload: Remotes.CuePayload)
 		if type(payload) == "table" and payload.kind == "BossWarning" then
 			Toast.show(BOSS_WARNING_TEXT)

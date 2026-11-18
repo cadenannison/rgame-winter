@@ -98,3 +98,13 @@ Nothing here has been played in Studio. Check on PC and phone emulation. Place i
 - Sprint: hold LeftShift (touch: toggle button) ~+30% speed, extra hunger cost, HUD indicator only while sprinting, blocked when hungry/downed. `/debug sprint on|off`.
 - Forage and nodes per ring (`/debug forage` spawns one of each): E pick, tool tier gates, respawn at dawn, 3 recipes work, nothing inside structures, part count < 6000.
 - `/debug blizzard start`: no screen tint, whipped streak snow, whiteout to ~60 studs, fire still visible, smooth ~20s ease in/out, lasts ~9 min. Also `stop` and `intensity 0.5`.
+
+## Art Pass 3: creatures + 8 new mobs (nothing played in Studio yet)
+Use `/debug mob <id>` (spawns in front) and `/debug mobs` (nearby list with State). Ids: ArcticHare Caribou Fish Wolf PolarBear IceWraith SnowLurker CaveCrawler IceWarden CaveMatriarch RuinColossus WhiteoutBeast + SnowGrouse RidgeStag LakeSeal RimeWolverine ScrapHound CarrionCrow FrostboundBrute AuroraWisp. Also Stalker and lurkers (TreeWatcher, IceScratcher, EyesInDark) via their normal triggers.
+- Per mob: silhouette reads in moonlight and whiteout; Idle/Walk/Run/Alert/Telegraph/Attack/Hurt/Death look right (limbs hinge at joints, faces forward, no detached parts); `/debug mobs` State matches what you see; death fades then removes.
+- Behaviors: grouse flees in bursts and returns; stag Alert on approach, herd joins when one is hit; seal rears up (Alert) then attacks only if you keep closing (~9 studs), calms after ~8s; wolverine crouch then charge at your old spot (sidestep); hounds x3 flank then rush (night, ring 3); crows circle, scatter within 16 studs or toward the Stalker's heading (check Heading attr); brute 1.6s slam, ground ring fills, leave its reach to dodge; wisp drifts, lures toward hazards, touch = -4 warmth (max 12 per wisp).
+- Toughness (hits to kill): grouse < hare < stag < seal < wolverine < wolf < hounds < brute.
+- Drops + recipes: Feather, Venison, Blubber, Claw, Fang, DenseHide, CrystalShard, AuroraDust drop and have uses; craft InsulatedCoat, BlubberTorch (hand-craft), FangSpear, AuroraTorch.
+- Rings: teleport to each ring (`/debug tp ring N`) and watch spawn mix; outer rings meaner (more hostiles, more aggression, capped scaling).
+- Dread: alone attracts more crows/wisps, a full group suppresses them; no visible meters.
+- Perf: many mobs live, parts stay under 6000 (watch MaxMobParts 600); mobs beyond ~120 studs freeze; wisp PointLights <= 4; phone emulation framerate.

@@ -108,3 +108,5 @@ Append-only log below (YYYY-MM-DD — decision — reason). Read the summary tab
 
 2026-11-18 — Config split into src/shared/Config/ (init.luau merges Core, Debug, Survival, World, Items, Loot, Mobs, Horror, Lighting, Perf, Meta, Ui, Art; shared constants in Constants.luau) — a 3,000-line file cost every agent its full size to edit one section; public Config.X.Y and exported type names are unchanged.
 2026-11-18 — scripts/check.sh and tests/run are quiet by default (one summary line, failures only, full output in .logs/check.log, --verbose restores it) — a passing run printed ~54k chars into every session.
+
+2026-11-18 — MobService split (Art Pass 3): MobService keeps the public API + Heartbeat; MobKinds/MobRegistry/MobWorld/MobSpawner/MobCombat/MobState own data, counters, spawning, damage and the State/Target/TelegraphLeft attrs; legacy kinds share the unchanged Drivers/Legacy (old stepMob verbatim), the 8 new species have Species/<Kind>.luau built from pure src/shared/logic/MobBehaviors*.luau machines; species spawn by ring weight (Config.Mobs.Species), ambient weight by isolation (MobDread), mob parts counted against the live part cap (MobSpecies.partsOk).

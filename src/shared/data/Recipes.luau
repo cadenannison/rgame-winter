@@ -30,6 +30,24 @@ local list: { Types.Recipe } = {
 	r("Bow", 1, "workbench", { { id = "Wood", count = 5 }, { id = "Hide", count = 1 } }),
 	r("Arrow", 1, "workbench", { { id = "Wood", count = 1 }, { id = "Stone", count = 1 } }, 4),
 	r("Torch", 0, nil, { { id = "Wood", count = 2 }, { id = "Hide", count = 1 } }),
+	-- Creature drops (Art Pass 3)
+	r("BlubberTorch", 0, nil, { { id = "Blubber", count = 2 }, { id = "Wood", count = 1 } }),
+	r("InsulatedCoat", 1, "workbench", {
+		{ id = "Feather", count = 10 },
+		{ id = "DenseHide", count = 1 },
+		{ id = "Hide", count = 2 },
+	}),
+	r("FangSpear", 1, "workbench", {
+		{ id = "Wood", count = 3 },
+		{ id = "Fang", count = 2 },
+		{ id = "Claw", count = 1 },
+		{ id = "Bone", count = 1 },
+	}),
+	r("AuroraTorch", 1, "workbench", {
+		{ id = "AuroraDust", count = 2 },
+		{ id = "CrystalShard", count = 1 },
+		{ id = "Wood", count = 1 },
+	}),
 	r("Forge", 1, "workbench", { { id = "Stone", count = 20 }, { id = "Wood", count = 10 } }),
 	r(
 		"CookingStation",

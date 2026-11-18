@@ -46,6 +46,55 @@ export type MobStats = {
 	DropCount: number,
 }
 
+-- Art Pass 3 species table (docs/CREATURES_CONTRACT.md). Ring weights are indexed ring + 1:
+-- SnowyForest, FrozenLake, MountainsCaves, DeepTundra.
+export type DropRow = { id: string, min: number, max: number, chance: number }
+
+export type SpeciesDef = {
+	id: string,
+	role: string, -- "passive" | "neutral" | "hostile" | "ambient"
+	ringWeights: { number }, -- 4 entries (ring + 1)
+	behaviors: { string }, -- MobBehaviors* machines the species module composes
+	health: number,
+	damage: number,
+	walkSpeed: number,
+	runSpeed: number, -- flee / chase / charge speed
+	hitsToKill: number, -- ceil(health / Combat.ToolDamage) at day 1, ring 0, solo (tested)
+	telegraphSeconds: number,
+	drops: { DropRow },
+	partCap: number, -- <= Creatures.PartCap
+	spawnCap: number, -- live mobs of this species at once
+	packSize: number?, -- herd / pack members spawned together
+	aggroRange: number,
+	attackRange: number,
+	attackCooldown: number,
+	fleeRange: number,
+	hitRadius: number,
+	hostileWeightPerRing: number?, -- extra spawn weight per ring (capped by Scaling.MaxRingBudgetMultiplier)
+	cost: number, -- budget slots per mob (0 = ambient, bounded by spawnCap and MaxLiveMobs)
+	minDay: number,
+	nightOnly: boolean,
+	breaksStructures: boolean,
+	size: { number }, -- hitbox {x, y, z}
+	color: { number }, -- stub body colour {r, g, b} 0-255
+	tune: { [string]: number }, -- behavior knobs read by Species/<Kind>.luau
+}
+
+export type SpawningConfig = {
+	MaxMobParts: number, -- parts all live mobs may hold together (counted with chunks against Perf.MaxLiveParts)
+	PartHeadroom: number, -- keep chunk parts + mob parts below Perf.MaxLiveParts - this
+	GroundTolerance: number, -- studs: spawn hit must be within this of the real terrain surface (else ungrounded)
+	PackSpread: number, -- studs between pack / herd members at spawn
+}
+
+export type DreadSpawnConfig = {
+	MinFactor: number, -- ambient weight factor floor (full groups)
+	MaxFactor: number, -- ambient weight factor cap (lone players)
+	FullGroupFactor: number, -- extra multiplier while the whole party is one cluster
+	HazardLead: number, -- studs a wisp aims past a player toward a hazard
+	ScatterStep: number, -- studs per scatter move
+}
+
 export type MobConfig = {
 	Budget: number,
 	SpawnMinDistance: number,
@@ -73,6 +122,14 @@ export type MobConfig = {
 	Hare: MobStats,
 	Caribou: MobStats,
 	Wolf: MobStats,
+	Species: { [string]: SpeciesDef },
+	SpeciesIds: { string },
+	Spawning: SpawningConfig,
+	Dread: DreadSpawnConfig,
+	RingAggroPerRing: number, -- hostile aggro range grows this fraction per ring (capped by Scaling.MaxRingDamageMultiplier)
+	DebugListRadius: number, -- studs: "/debug mobs" lists mobs within this
+	DebugListMax: number, -- most rows "/debug mobs" prints
+	AttackHoldSeconds: number, -- State stays Attack this long after a bite (client plays the swing)
 }
 
 export type CombatConfig = {
@@ -254,6 +311,309 @@ local Sections: Sections = {
 			DropId = "Hide", -- drop on kill
 			DropCount = 1, -- drop amount
 		},
+		Species = {
+			SnowGrouse = {
+				id = "SnowGrouse",
+				role = "passive",
+				ringWeights = { 5, 2, 0, 0 },
+				behaviors = { "Flee", "ReturnAfterFlee" },
+				health = 12,
+				damage = 0,
+				walkSpeed = 4,
+				runSpeed = 14, -- below player WALK_SPEED 16: catchable
+				hitsToKill = 2, -- ToolDamage 8
+				telegraphSeconds = 0,
+				drops = {
+					{ id = "Feather", min = 1, max = 3, chance = 0.9 },
+					{ id = "RawMeat", min = 1, max = 1, chance = 0.4 },
+				},
+				partCap = 12,
+				spawnCap = 4,
+				aggroRange = 0,
+				attackRange = 0,
+				attackCooldown = 0,
+				fleeRange = 20,
+				hitRadius = 3,
+				cost = 1,
+				minDay = 1,
+				nightOnly = false,
+				breaksStructures = false,
+				size = { 1.2, 1.2, 1.8 },
+				color = { 235, 235, 240 },
+				tune = { burstSeconds = 0.9, restSeconds = 0.8, returnDelay = 6, homeRadius = 14 },
+			},
+			RidgeStag = {
+				id = "RidgeStag",
+				role = "neutral",
+				ringWeights = { 2, 3, 1, 0 },
+				behaviors = { "HerdAlert", "Retaliate", "Telegraph" },
+				health = 28,
+				damage = 9,
+				walkSpeed = 6,
+				runSpeed = 15,
+				hitsToKill = 4,
+				telegraphSeconds = 0.6,
+				drops = {
+					{ id = "Venison", min = 2, max = 3, chance = 1 },
+					{ id = "Hide", min = 1, max = 2, chance = 0.7 },
+					{ id = "Bone", min = 1, max = 1, chance = 0.3 },
+				},
+				partCap = 22,
+				spawnCap = 5,
+				packSize = 2,
+				aggroRange = 0,
+				attackRange = 5,
+				attackCooldown = 2.5,
+				fleeRange = 0,
+				hitRadius = 4,
+				cost = 1,
+				minDay = 1,
+				nightOnly = false,
+				breaksStructures = false,
+				size = { 2.5, 4, 5 },
+				color = { 120, 95, 75 },
+				tune = {
+					alertRange = 30,
+					alertRadius = 40,
+					alertSeconds = 6,
+					retaliateSeconds = 10,
+					leash = 45,
+				},
+			},
+			LakeSeal = {
+				id = "LakeSeal",
+				role = "neutral",
+				ringWeights = { 0, 4, 1, 0 },
+				behaviors = { "TerritorialWarn", "Telegraph" },
+				health = 31,
+				damage = 8,
+				walkSpeed = 3,
+				runSpeed = 9,
+				hitsToKill = 4,
+				telegraphSeconds = 0.6,
+				drops = {
+					{ id = "Blubber", min = 1, max = 2, chance = 1 },
+					{ id = "RawFish", min = 1, max = 1, chance = 0.5 },
+					{ id = "Hide", min = 1, max = 1, chance = 0.3 },
+				},
+				partCap = 14,
+				spawnCap = 4,
+				aggroRange = 0,
+				attackRange = 4.5,
+				attackCooldown = 2.5,
+				fleeRange = 0,
+				hitRadius = 4,
+				cost = 1,
+				minDay = 1,
+				nightOnly = false,
+				breaksStructures = false,
+				size = { 2, 1.6, 4 },
+				color = { 95, 100, 110 },
+				tune = {
+					warnRange = 20,
+					warnSeconds = 2.5,
+					commitRange = 9,
+					attackSeconds = 5,
+					cooldownSeconds = 8,
+					loseRange = 30,
+				},
+			},
+			RimeWolverine = {
+				id = "RimeWolverine",
+				role = "hostile",
+				ringWeights = { 0, 3, 2, 1 },
+				behaviors = { "Telegraph" },
+				health = 34,
+				damage = 14,
+				walkSpeed = 7,
+				runSpeed = 20, -- charge speed
+				hitsToKill = 5,
+				telegraphSeconds = 0.8,
+				drops = {
+					{ id = "Claw", min = 1, max = 2, chance = 0.8 },
+					{ id = "Hide", min = 1, max = 1, chance = 0.6 },
+					{ id = "Fang", min = 1, max = 1, chance = 0.25 },
+				},
+				partCap = 16,
+				spawnCap = 3,
+				aggroRange = 36,
+				attackRange = 5,
+				attackCooldown = 4,
+				fleeRange = 0,
+				hitRadius = 3,
+				hostileWeightPerRing = 0.2,
+				cost = 2,
+				minDay = 2,
+				nightOnly = false,
+				breaksStructures = false,
+				size = { 2, 2, 3.5 },
+				color = { 60, 62, 70 },
+				tune = { chargeRange = 22, chargeSeconds = 1.2 },
+			},
+			ScrapHound = {
+				id = "ScrapHound",
+				role = "hostile",
+				ringWeights = { 0, 0, 4, 1 },
+				behaviors = { "PackFlank", "Telegraph" },
+				health = 48,
+				damage = 9,
+				walkSpeed = 9,
+				runSpeed = 17,
+				hitsToKill = 6,
+				telegraphSeconds = 0.5,
+				drops = {
+					{ id = "Fang", min = 1, max = 1, chance = 0.6 },
+					{ id = "Bone", min = 1, max = 2, chance = 0.7 },
+					{ id = "Claw", min = 1, max = 1, chance = 0.3 },
+				},
+				partCap = 18,
+				spawnCap = 6,
+				packSize = 3,
+				aggroRange = 55,
+				attackRange = 4,
+				attackCooldown = 2.2,
+				fleeRange = 0,
+				hitRadius = 3,
+				hostileWeightPerRing = 0.25,
+				cost = 1,
+				minDay = 3,
+				nightOnly = true,
+				breaksStructures = false,
+				size = { 2, 2.6, 4 },
+				color = { 110, 80, 60 },
+				tune = { flankRadius = 14, engageSeconds = 4, slotTolerance = 5 },
+			},
+			CarrionCrow = {
+				id = "CarrionCrow",
+				role = "ambient",
+				ringWeights = { 2, 3, 2, 1 },
+				behaviors = { "Circle" },
+				health = 6,
+				damage = 0,
+				walkSpeed = 6,
+				runSpeed = 18,
+				hitsToKill = 1,
+				telegraphSeconds = 0,
+				drops = { { id = "Feather", min = 1, max = 1, chance = 0.2 } },
+				partCap = 10,
+				spawnCap = 3,
+				aggroRange = 0,
+				attackRange = 0,
+				attackCooldown = 0,
+				fleeRange = 0,
+				hitRadius = 5,
+				cost = 0,
+				minDay = 1,
+				nightOnly = false,
+				breaksStructures = false,
+				size = { 1.2, 1.2, 1.6 },
+				color = { 25, 25, 30 },
+				tune = {
+					circleRadius = 14,
+					circleSpeed = 1.1,
+					scatterRange = 16,
+					scatterSeconds = 5,
+					centerRange = 40,
+				},
+			},
+			FrostboundBrute = {
+				id = "FrostboundBrute",
+				role = "hostile",
+				ringWeights = { 0, 0, 0, 3 },
+				behaviors = { "Telegraph" },
+				health = 160,
+				damage = 28,
+				walkSpeed = 5,
+				runSpeed = 8,
+				hitsToKill = 20,
+				telegraphSeconds = 1.6,
+				drops = {
+					{ id = "DenseHide", min = 1, max = 2, chance = 1 },
+					{ id = "Bone", min = 2, max = 3, chance = 0.8 },
+					{ id = "Fang", min = 1, max = 1, chance = 0.4 },
+					{ id = "CrystalShard", min = 1, max = 1, chance = 0.3 },
+				},
+				partCap = 24,
+				spawnCap = 1,
+				aggroRange = 45,
+				attackRange = 8,
+				attackCooldown = 4.5,
+				fleeRange = 0,
+				hitRadius = 6,
+				hostileWeightPerRing = 0.3,
+				cost = 3,
+				minDay = 4,
+				nightOnly = false,
+				breaksStructures = true,
+				size = { 5, 7, 5 },
+				color = { 150, 190, 215 },
+				tune = { strikeLeeway = 2 },
+			},
+			AuroraWisp = {
+				id = "AuroraWisp",
+				role = "ambient",
+				ringWeights = { 1, 2, 2, 3 },
+				behaviors = { "Lure" },
+				health = 10,
+				damage = 0,
+				walkSpeed = 3,
+				runSpeed = 6,
+				hitsToKill = 2,
+				telegraphSeconds = 0,
+				drops = {
+					{ id = "AuroraDust", min = 1, max = 1, chance = 0.25 },
+					{ id = "CrystalShard", min = 1, max = 1, chance = 0.05 },
+				},
+				partCap = 8,
+				spawnCap = 2,
+				aggroRange = 0,
+				attackRange = 0,
+				attackCooldown = 0,
+				fleeRange = 0,
+				hitRadius = 4,
+				cost = 0,
+				minDay = 2,
+				nightOnly = true,
+				breaksStructures = false,
+				size = { 2, 2, 2 },
+				color = { 120, 255, 200 },
+				tune = {
+					lureRange = 45,
+					leadDistance = 22,
+					touchRange = 3,
+					drainCooldown = 6,
+					drainWarmth = 4,
+					drainCap = 12,
+				},
+			},
+		},
+		SpeciesIds = {
+			"SnowGrouse",
+			"RidgeStag",
+			"LakeSeal",
+			"RimeWolverine",
+			"ScrapHound",
+			"CarrionCrow",
+			"FrostboundBrute",
+			"AuroraWisp",
+		},
+		Spawning = {
+			MaxMobParts = 600, -- all live mob parts together (counted with chunk parts against Perf.MaxLiveParts)
+			PartHeadroom = 200, -- chunk parts + mob parts stay below Perf.MaxLiveParts - this
+			GroundTolerance = 4, -- spawn hit must be within this of real terrain (else the site is ungrounded)
+			PackSpread = 7, -- studs between pack / herd members at spawn
+		},
+		Dread = {
+			MinFactor = 0.15, -- ambient weight factor floor (full groups)
+			MaxFactor = 2, -- ambient weight factor cap (lone players)
+			FullGroupFactor = 0.5, -- extra multiplier while the whole party is one cluster
+			HazardLead = 22, -- studs a wisp aims past a player toward a hazard
+			ScatterStep = 30, -- studs per scatter move
+		},
+		RingAggroPerRing = 0.08, -- hostile aggro range per ring (capped by Scaling.MaxRingDamageMultiplier)
+		DebugListRadius = 150,
+		DebugListMax = 12,
+		AttackHoldSeconds = 0.35, -- State stays Attack this long after a bite
 	},
 	Night = {
 		WindupSeconds = 0.7,

@@ -281,6 +281,18 @@ return function(check: (string, boolean) -> ())
 	check("liveparts: full stream window (no structures) leaves a 10% margin", fullTotal <= limit)
 	check("liveparts: 3x3 core + live structures + chests leaves a 10% margin", coreTotal <= limit)
 	check("liveparts: Perf.MaxLiveParts never raised", Config.Perf.MaxLiveParts == 6000)
+	-- Art Pass 3 creatures: live mob parts (<= Mobs.Spawning.MaxMobParts, each mob <= Creatures.PartCap) are held
+	-- by MobService (MobRegistry.partsUsed) and spawns also check chunk parts + mob parts against the world cap
+	-- (MobSpecies.partsOk), so the 3x3 core with structures and a full mob load stays under the margin.
+	check(
+		"liveparts: 3x3 core + structures + full mob part budget leaves a 10% margin",
+		coreTotal + Config.Mobs.Spawning.MaxMobParts <= limit
+	)
+	check(
+		"liveparts: mob parts cap covers MaxLiveMobs at the creature part cap or is enforced below it",
+		Config.Mobs.Spawning.MaxMobParts <= Config.Scaling.MaxLiveMobs * Config.Creatures.PartCap
+			and Config.Mobs.Spawning.PartHeadroom > 0
+	)
 	-- Items round: one massive structure live at a time, <= Loot.Chests Massive.Max chests (each with at most
 	-- one beam part, counted in ChestStyle.partCount), so the structure estimate is small and bounded.
 	local maxChestRule = 0

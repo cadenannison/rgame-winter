@@ -37,6 +37,8 @@ DebugCommands.NAMES = {
 	"groundcheck",
 	"forage",
 	"sprint",
+	"mob",
+	"mobs",
 }
 
 -- Commands that only call registered handlers (no attribute is written by DebugService).
@@ -53,6 +55,8 @@ DebugCommands.ACTION_ONLY = {
 	respawn = true, -- the real revive/respawn transition (SurvivalService.respawn)
 	forage = true, -- spawn one of each forage/node/relic kind around the player
 	sprint = true, -- on|off: force the player's sprint state
+	mob = true, -- <id>: spawn any mob kind (all existing + the 8 Art Pass 3 species) in front of the player
+	mobs = true, -- list nearby mobs with their replicated State
 	groundcheck = true, -- heightAt vs real terrain raycast at the player and the nearest fire
 } :: { [string]: boolean }
 
@@ -180,7 +184,19 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 			return true, arg
 		end
 		return false, "unknown gallery set"
-	elseif name == "structures" or name == "respawn" or name == "groundcheck" then
+	elseif name == "mob" then
+		-- "/debug mob <id>": case-insensitive match against the known mob kinds; returns the canonical id.
+		local text = if type(arg) == "string" then string.match(arg, "^%s*(.-)%s*$") or "" else ""
+		if text ~= "" and limits.mobKinds then
+			local lower = string.lower(text)
+			for _, kind in limits.mobKinds do
+				if string.lower(kind) == lower then
+					return true, kind
+				end
+			end
+		end
+		return false, "mob needs a kind id"
+	elseif name == "structures" or name == "respawn" or name == "groundcheck" or name == "mobs" then
 		return true, nil
 	elseif name == "tp" then
 		local target = DebugCommands.parseTp(arg, limits.ringCount)

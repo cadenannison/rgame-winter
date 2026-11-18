@@ -13,6 +13,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local DreadLogic = require(Shared.logic.DreadLogic)
 local Isolation = require(Shared.logic.Isolation)
+local CreatureRegistry = require(Shared.Creatures.Registry)
 local SurvivalService = require(script.Parent.Parent.Survival.SurvivalService)
 
 export type Repeller = DreadLogic.Repeller
@@ -257,6 +258,7 @@ function HorrorWorld.makeModel(name: string, visual: Visual, tag: string, at: Ve
 	part.Parent = model
 	model.PrimaryPart = part
 	CollectionService:AddTag(model, tag)
+	CreatureRegistry.attach(name, part) -- art pass 3: Stalker / lurker rigs (0 parts for unknown names)
 	model.Parent = HorrorWorld.folder()
 	return model
 end

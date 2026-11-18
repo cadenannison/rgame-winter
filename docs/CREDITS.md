@@ -8,3 +8,5 @@ Every imported asset: id, creator, source, what was stripped. Update with each a
 
 Part-built (no external asset): hub plaza ground, shop cabin, boards, pads, lamp posts, fire pits, rocks, drifts, mountains, mirror, spawn arch (src/server/Art/HubProps.luau).
 Roblox-bundled placeholder sounds: see docs/ART.md.
+
+Art Pass 3 creatures: all Part-built (src/shared/Creatures/Defs), no Creator Store assets, no asset ids; sounds are silent hooks (docs/ART.md).
