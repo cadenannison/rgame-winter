@@ -17,6 +17,7 @@ local WorldLayout = require(Shared:WaitForChild("logic"):WaitForChild("WorldLayo
 local Server = ServerScriptService:WaitForChild("Server")
 local Guard = require(Server:WaitForChild("Net"):WaitForChild("Guard"))
 local InventoryService = require(Server:WaitForChild("Items"):WaitForChild("InventoryService"))
+local WorldArt = require(Server:WaitForChild("Art"):WaitForChild("WorldArt"))
 
 local TUNING = BiomeLogic.Tuning
 local WARM = Config.WarmSpot
@@ -216,6 +217,14 @@ local function applyHearth(hearth: Hearth)
 	part:SetAttribute("Lit", lit)
 	part.Color = if lit then COLORS.HearthLit else COLORS.HearthCold
 	part.Material = if lit then Enum.Material.Neon else Enum.Material.Slate
+	local fire = part:FindFirstChild("HearthFire")
+	if fire and fire:IsA("Fire") then
+		fire.Enabled = lit
+	end
+	local glow = part:FindFirstChild("HearthLight")
+	if glow and glow:IsA("PointLight") then
+		glow.Enabled = lit
+	end
 	if lit then
 		CollectionService:AddTag(part, WARM.Tag)
 	else
@@ -235,6 +244,7 @@ local function buildHearth(parent: Instance, base: CFrame, offset: Vector3, poi:
 	)
 	part:SetAttribute(WARM.RadiusAttribute, WARM.CabinRadius)
 	part:SetAttribute("WarmSpotKind", "Hearth")
+	WorldArt.dressHearth(parent, base, offset, part)
 	local hearth: Hearth = { id = poi.id, part = part }
 	hearths[part] = hearth
 	part.Destroying:Connect(function()
@@ -274,6 +284,8 @@ local function buildSpring(parent: Instance, base: CFrame)
 	spring:SetAttribute(WARM.RadiusAttribute, WARM.HotSpringRadius)
 	spring:SetAttribute("WarmSpotKind", "HotSpring")
 	CollectionService:AddTag(spring, WARM.Tag)
+	WorldArt.dressSpring(spring)
+	WorldArt.poi(parent, "hotspring", base)
 end
 
 local function breakPatch(patch: Patch)
@@ -344,109 +356,23 @@ function PoiService.build(parent: Instance, poi: WorldLayout.Poi, chunkIndex: nu
 	end
 	local angle = math.rad((chunkIndex * 37 + slotOf(poi) * 53) % 360)
 	local base = CFrame.new(poi.position.x, 0, poi.position.z) * CFrame.Angles(0, angle, 0)
-	local function wall(
-		name: string,
-		size: Vector3,
-		offset: Vector3,
-		color: Color3,
-		material: Enum.Material,
-		collide: boolean
-	)
-		local p = block(parent, name, size, base * CFrame.new(offset), color, material, collide)
-		p:SetAttribute("PoiKind", poi.kind)
-	end
 	if poi.kind == "hotspring" then
 		buildSpring(parent, base)
 	elseif poi.kind == "cabin" then
-		wall(
-			"CabinBody",
-			Vector3.new(12, 7, 10),
-			Vector3.new(0, 3.5, 0),
-			COLORS.Wood,
-			Enum.Material.Wood,
-			true
-		)
-		wall(
-			"CabinRoof",
-			Vector3.new(13, 1, 11),
-			Vector3.new(0, 7.5, 0),
-			COLORS.Dark,
-			Enum.Material.Wood,
-			true
-		)
+		WorldArt.poi(parent, "cabin", base)
 		buildHearth(parent, base, Vector3.new(0, 0.75, 8), poi)
 		buildCrate(parent, base, Vector3.new(5, 1, 8), poi, chunkIndex)
 	elseif poi.kind == "plane" then
-		wall(
-			"PlaneBody",
-			Vector3.new(5, 5, 18),
-			Vector3.new(0, 2.5, 0),
-			COLORS.Metal,
-			Enum.Material.Metal,
-			true
-		)
-		wall(
-			"PlaneWing",
-			Vector3.new(22, 0.6, 5),
-			Vector3.new(0, 3, -2),
-			COLORS.Metal,
-			Enum.Material.Metal,
-			true
-		)
+		WorldArt.poi(parent, "plane", base)
 		buildCrate(parent, base, Vector3.new(4, 1, 9), poi, chunkIndex)
 	elseif poi.kind == "cave" then
-		wall(
-			"CaveMound",
-			Vector3.new(16, 10, 12),
-			Vector3.new(0, 5, 0),
-			COLORS.Stone,
-			Enum.Material.Slate,
-			true
-		)
-		wall(
-			"CaveMouth",
-			Vector3.new(6, 6, 1),
-			Vector3.new(0, 3, 6.2),
-			COLORS.Dark,
-			Enum.Material.Slate,
-			false
-		)
+		WorldArt.poi(parent, "cave", base)
 		buildCrate(parent, base, Vector3.new(0, 1, 9), poi, chunkIndex)
 	elseif poi.kind == "ruin" then
-		wall(
-			"RuinPillarA",
-			Vector3.new(3, 9, 3),
-			Vector3.new(-6, 4.5, 0),
-			COLORS.Stone,
-			Enum.Material.Slate,
-			true
-		)
-		wall(
-			"RuinPillarB",
-			Vector3.new(3, 9, 3),
-			Vector3.new(6, 4.5, 0),
-			COLORS.Stone,
-			Enum.Material.Slate,
-			true
-		)
-		wall(
-			"RuinSlab",
-			Vector3.new(14, 1, 3),
-			Vector3.new(0, 9.5, 0),
-			COLORS.Stone,
-			Enum.Material.Slate,
-			true
-		)
+		WorldArt.poi(parent, "ruin", base)
 		buildCrate(parent, base, Vector3.new(0, 1, 5), poi, chunkIndex)
 	else -- campsite
-		wall(
-			"Tent",
-			Vector3.new(6, 4, 6),
-			Vector3.new(0, 2, 0),
-			COLORS.Tent,
-			Enum.Material.Fabric,
-			true
-		)
+		WorldArt.poi(parent, "campsite", base)
 		buildCrate(parent, base, Vector3.new(5, 1, 3), poi, chunkIndex)
 	end
 end

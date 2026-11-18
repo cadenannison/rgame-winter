@@ -14,12 +14,12 @@ local Config = require(Shared:WaitForChild("Config"))
 local WorldLayout = require(Shared:WaitForChild("logic"):WaitForChild("WorldLayout"))
 local BiomeLogic = require(Shared:WaitForChild("logic"):WaitForChild("BiomeLogic"))
 local PerfBudget = require(Shared:WaitForChild("logic"):WaitForChild("PerfBudget"))
-local Biomes = require(Shared:WaitForChild("data"):WaitForChild("Biomes"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 local Server = ServerScriptService:WaitForChild("Server")
 local DebugService = require(Server:WaitForChild("Debug"):WaitForChild("DebugService"))
 local GatherService = require(Server:WaitForChild("Items"):WaitForChild("GatherService"))
 local PoiService = require(script.Parent:WaitForChild("PoiService"))
+local WorldArt = require(Server:WaitForChild("Art"):WaitForChild("WorldArt"))
 
 local WORLD = Config.World
 local SLOT_TAGS = WORLD.SlotTags
@@ -123,7 +123,9 @@ local function newSlot(
 	tag: string,
 	pos: WorldLayout.Vec2,
 	index: number,
-	key: string
+	key: string,
+	biome: string,
+	rng: Random
 )
 	local node = NODE_SLOTS[tag]
 	local size = if node then node.size else SLOT_SIZE
@@ -146,6 +148,7 @@ local function newSlot(
 	if not node then
 		return
 	end
+	WorldArt.skinNode(part, node.kind, biome, parent, rng)
 	local state, remaining = BiomeLogic.nodeState(
 		nodeMemory[key],
 		os.clock(),
@@ -218,16 +221,14 @@ local function buildChunk(chunk: WorldLayout.Chunk, root: Folder): number
 	ground.CFrame = CFrame.new(chunk.center.x, -GROUND_THICKNESS / 2, chunk.center.z)
 		* CFrame.Angles(0, math.rad(90 * chunk.rotation), 0)
 	ground.Anchored = true
-	local biome = Biomes.ById[chunk.biome]
-	local rgb = biome.color
-	local shade = VARIANT_SHADE[chunk.variant] or 1
-	ground.Color = Color3.fromRGB(rgb[1] * shade, rgb[2] * shade, rgb[3] * shade)
-	ground.Material = if chunk.biome == "FrozenLake" then Enum.Material.Ice else Enum.Material.Snow
+	WorldArt.styleGround(ground, chunk.biome, VARIANT_SHADE[chunk.variant] or 1)
 	ground.Parent = model
+	local rng = WorldArt.chunkRandom(chunk.index)
+	WorldArt.decorChunk(model, chunk.biome, chunk.center.x, chunk.center.z, rng)
 
 	local function fill(tag: string, list: { WorldLayout.Vec2 })
 		for i, p in list do
-			newSlot(model, tag, p, chunk.index, `{chunk.index}:{tag}:{i}`)
+			newSlot(model, tag, p, chunk.index, `{chunk.index}:{tag}:{i}`, chunk.biome, rng)
 		end
 	end
 	fill(SLOT_TAGS.Tree, chunk.trees)

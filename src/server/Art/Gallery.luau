@@ -10,6 +10,8 @@ local Workspace = game:GetService("Workspace")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local HubProps = require(script.Parent.HubProps)
+local WorldProps = require(script.Parent.WorldProps)
+local WorldArt = require(script.Parent.WorldArt)
 
 local Gallery = {}
 
@@ -119,8 +121,100 @@ local function hubItems(): { Item }
 	}
 end
 
+-- World set (art pass 2): every tree/rock/ore/decor kind, one mini-scene per biome, every POI.
+local function worldItems(): { Item }
+	local items: { Item } = {}
+	local function add(label: string, width: number, build: (Instance, CFrame) -> ())
+		table.insert(items, { label = label, width = width, build = build })
+	end
+	local rng = Random.new(1)
+	for _, kind in { "PineTall", "PineFat", "PineYoung", "PineFrost", "DeadTree", "DeadTwisted" } do
+		add(kind, 18, function(parent, cf)
+			WorldProps.tree(parent, CFrame.new(cf.Position), kind)
+		end)
+	end
+	add("Stump (tree depleted)", 10, function(parent, cf)
+		WorldProps.stump(parent, CFrame.new(cf.Position))
+	end)
+	for _, kind in { "Boulder", "Slab", "IceRock", "DarkBoulder", "DarkSlab" } do
+		add(kind, 14, function(parent, cf)
+			WorldProps.rock(parent, CFrame.new(cf.Position), kind)
+		end)
+	end
+	add("Iron ore", 14, function(parent, cf)
+		WorldProps.ore(parent, CFrame.new(cf.Position))
+	end)
+	add("Rubble (rock depleted)", 10, function(parent, cf)
+		WorldProps.rubbleSmall(parent, CFrame.new(cf.Position), nil)
+	end)
+	for _, kind in
+		{ "Drift", "Bush", "Tuft", "Reeds", "Shard", "Crack", "Crystal", "Scree", "Rubble" }
+	do
+		add(`Decor: {kind}`, 16, function(parent, cf)
+			WorldProps.decor(parent, CFrame.new(cf.Position), kind, rng)
+		end)
+	end
+	for _, biome in { "SnowyForest", "FrozenLake", "MountainsCaves", "DeepTundra" } do
+		add(`Biome: {biome}`, 56, function(parent, cf)
+			local art = Config.Art.World.Biomes[biome]
+			local ground = Instance.new("Part")
+			ground.Name = "GroundSample"
+			ground.Anchored = true
+			ground.CanCollide = false
+			ground.Size = Vector3.new(50, 1, 50)
+			ground.CFrame = CFrame.new(cf.Position - Vector3.new(0, 0.5, 0))
+			WorldArt.styleGround(ground, biome, 1)
+			ground.Parent = parent
+			WorldArt.decorChunk(parent :: Model, biome, cf.Position.X, cf.Position.Z, Random.new(5))
+			WorldProps.tree(
+				parent,
+				CFrame.new(cf.Position + Vector3.new(-14, 0, -10)),
+				art.TreeSet[1]
+			)
+			WorldProps.tree(
+				parent,
+				CFrame.new(cf.Position + Vector3.new(0, 0, -14)),
+				art.TreeSet[#art.TreeSet]
+			)
+			WorldProps.rock(
+				parent,
+				CFrame.new(cf.Position + Vector3.new(14, 0, -8)),
+				art.RockSet[1]
+			)
+		end)
+	end
+	local function poi(label: string, width: number, kind: string)
+		add(label, width, function(parent, cf)
+			WorldProps.poi(parent, kind, cf * CFrame.Angles(0, math.pi, 0))
+		end)
+	end
+	poi("POI: Cabin", 34, "cabin")
+	poi("POI: Crashed plane", 34, "plane")
+	poi("POI: Cave", 30, "cave")
+	poi("POI: Ruin", 34, "ruin")
+	poi("POI: Campsite", 26, "campsite")
+	add("POI: Hot spring", 34, function(parent, cf)
+		local spring = Instance.new("Part")
+		spring.Name = "HotSpring"
+		spring.Anchored = true
+		spring.CanCollide = false
+		spring.Shape = Enum.PartType.Cylinder
+		spring.Size = Vector3.new(0.5, 16, 16)
+		spring.CFrame = CFrame.new(cf.Position + Vector3.new(0, 0.25, 0))
+			* CFrame.Angles(0, 0, math.pi / 2)
+		spring.Color = Color3.fromRGB(110, 190, 220)
+		spring.Material = Enum.Material.Glass
+		spring.Transparency = 0.3
+		WorldArt.dressSpring(spring)
+		spring.Parent = parent
+		WorldProps.poi(parent, "hotspring", CFrame.new(cf.Position))
+	end)
+	return items
+end
+
 local SETS: { [string]: () -> { Item } } = {
 	hub = hubItems,
+	world = worldItems,
 }
 
 local function clear()

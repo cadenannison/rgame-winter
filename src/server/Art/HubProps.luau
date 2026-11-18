@@ -345,7 +345,7 @@ function HubProps.lampPost(parent: Instance, pos: Vector3, height: number?): Ins
 		m,
 		{ transparency = 0.15 }
 	)
-	light(lantern, P.Warm, 30, 1.8)
+	light(lantern, P.Warm, H.LampLight.Range, H.LampLight.Brightness)
 	CollectionService:AddTag(lantern, T.Lamp)
 	part(
 		"Hat",
@@ -420,7 +420,7 @@ function HubProps.firePit(parent: Instance, pos: Vector3, big: boolean?): Instan
 	fire.Color = P.Fire
 	fire.SecondaryColor = Color3.fromRGB(255, 80, 30)
 	fire.Parent = core
-	local l = light(core, P.Warm, 38 * scale, 2.4)
+	local l = light(core, P.Warm, math.min(H.FireLight.Range * scale, 60), H.FireLight.Brightness)
 	l.Name = "Glow"
 	CollectionService:AddTag(core, T.Lamp)
 	sound(core, "Crackle", "HubFireCrackleSound", 0.5, 70)

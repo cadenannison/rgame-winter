@@ -894,6 +894,8 @@ export type HubArtConfig = {
 	PromptDistance: number,
 	PulseSpeed: number, -- pad pulse, radians per second
 	FlickerSpeed: number,
+	LampLight: { Range: number, Brightness: number }, -- lamp post lantern PointLight (warm, readable on snow at dusk)
+	FireLight: { Range: number, Brightness: number }, -- fire pit / bonfire PointLight
 	Tags: {
 		Lamp: string,
 		Shop: string,
@@ -921,8 +923,52 @@ export type HubArtConfig = {
 	Palette: { [string]: { number } },
 }
 
+-- World art (pass 2): per-biome look. Biome ids match data/Biomes. Materials are Enum.Material names.
+export type WorldBiomeArt = {
+	Ground: { number }, -- chunk ground colour
+	GroundAlt: { number }, -- colour of the ground patches
+	Material: string,
+	PatchMaterial: string,
+	Atmosphere: {
+		Color: { number },
+		Decay: { number },
+		Density: number,
+		Haze: number,
+		Glare: number,
+	},
+	Tint: { Color: { number }, Saturation: number, Contrast: number, Brightness: number },
+	Snow: { Rate: number, Speed: number, Drift: number }, -- client falling snow (rate/s, fall speed, sideways)
+	Wind: { Rate: number, Speed: number }, -- client wind streaks (horizontal)
+	TreeSet: { string },
+	RockSet: { string },
+	Decor: { { kind: string, count: number } }, -- ground cover per chunk (ChunkDecorBudget caps the parts)
+}
+
+export type WorldArtConfig = {
+	Seed: number,
+	Biomes: { [string]: WorldBiomeArt },
+	BlendStuds: number, -- client biome blend width either side of a ring border
+	UpdateInterval: number, -- client blend refresh seconds
+	ParticleTexture: string,
+	ParticleHeight: number, -- emitter plate height above the camera
+	ParticleArea: number, -- emitter plate side in studs
+	MaxEmitters: number,
+	MaxParticleRate: number, -- client total (snow + wind) cap
+	MaxPartsPerTree: number,
+	MaxPartsPerRock: number,
+	MaxPartsPerPoi: number,
+	ChunkDecorBudget: number, -- ground cover + patch parts per chunk
+	ChunkPatchCount: number, -- ground colour patches per chunk
+	PatchSize: { number }, -- min,max patch side studs
+	DecorEdgeMargin: number, -- decor stays this far inside the chunk edge
+	HearthLight: { Range: number, Brightness: number },
+	SpringSteamRate: number,
+	Palette: { [string]: { number } },
+}
+
 export type ArtConfig = {
 	Hub: HubArtConfig,
+	World: WorldArtConfig,
 	AssetFolderName: string, -- ServerStorage folder holding sanitized Creator Store models (name = Assets key)
 	GalleryRoot: string, -- Workspace folder for /debug gallery
 	GallerySets: { string },
@@ -1467,9 +1513,180 @@ local Config: Config = {
 	Art = {
 		AssetFolderName = "ArtAssets",
 		GalleryRoot = "Gallery",
-		GallerySets = { "hub", "clear" },
+		GallerySets = { "hub", "world", "clear" },
 		GallerySpacing = 40,
 		GalleryDistance = 40,
+		World = {
+			Seed = 7741,
+			BlendStuds = 70,
+			UpdateInterval = 0.2,
+			ParticleTexture = "rbxasset://textures/particles/sparkles_main.dds",
+			ParticleHeight = 28,
+			ParticleArea = 90,
+			MaxEmitters = 2,
+			MaxParticleRate = 40,
+			MaxPartsPerTree = 9,
+			MaxPartsPerRock = 6,
+			MaxPartsPerPoi = 60,
+			ChunkDecorBudget = 48,
+			ChunkPatchCount = 4,
+			PatchSize = { 40, 90 },
+			DecorEdgeMargin = 12,
+			HearthLight = { Range = 26, Brightness = 2.2 },
+			SpringSteamRate = 5,
+			Biomes = {
+				SnowyForest = {
+					Ground = { 232, 240, 248 },
+					GroundAlt = { 206, 222, 240 },
+					Material = "Snow",
+					PatchMaterial = "Snow",
+					Atmosphere = {
+						Color = { 190, 205, 225 },
+						Decay = { 120, 140, 175 },
+						Density = 0.3,
+						Haze = 1.4,
+						Glare = 0,
+					},
+					Tint = {
+						Color = { 238, 244, 255 },
+						Saturation = -0.03,
+						Contrast = 0.04,
+						Brightness = 0,
+					},
+					Snow = { Rate = 14, Speed = 6, Drift = 1.5 },
+					Wind = { Rate = 0, Speed = 30 },
+					TreeSet = { "PineTall", "PineFat", "PineYoung" },
+					RockSet = { "Boulder", "Slab" },
+					Decor = {
+						{ kind = "Drift", count = 10 },
+						{ kind = "Bush", count = 8 },
+						{ kind = "Stump", count = 4 },
+						{ kind = "Tuft", count = 5 },
+					},
+				},
+				FrozenLake = {
+					Ground = { 170, 214, 238 },
+					GroundAlt = { 120, 176, 216 },
+					Material = "Ice",
+					PatchMaterial = "Glacier",
+					Atmosphere = {
+						Color = { 170, 205, 232 },
+						Decay = { 90, 130, 180 },
+						Density = 0.26,
+						Haze = 0.9,
+						Glare = 0.2,
+					},
+					Tint = {
+						Color = { 220, 238, 255 },
+						Saturation = 0.04,
+						Contrast = 0.06,
+						Brightness = 0.02,
+					},
+					Snow = { Rate = 6, Speed = 5, Drift = 2 },
+					Wind = { Rate = 6, Speed = 36 },
+					TreeSet = { "PineFrost", "DeadTree" },
+					RockSet = { "IceRock", "Boulder" },
+					Decor = {
+						{ kind = "Crack", count = 12 },
+						{ kind = "Shard", count = 8 },
+						{ kind = "Reeds", count = 9 },
+						{ kind = "Drift", count = 4 },
+					},
+				},
+				MountainsCaves = {
+					Ground = { 112, 118, 132 },
+					GroundAlt = { 78, 84, 100 },
+					Material = "Slate",
+					PatchMaterial = "Rock",
+					Atmosphere = {
+						Color = { 140, 150, 172 },
+						Decay = { 84, 92, 120 },
+						Density = 0.36,
+						Haze = 1.8,
+						Glare = 0,
+					},
+					Tint = {
+						Color = { 210, 220, 242 },
+						Saturation = -0.12,
+						Contrast = 0.1,
+						Brightness = -0.02,
+					},
+					Snow = { Rate = 8, Speed = 8, Drift = 6 },
+					Wind = { Rate = 12, Speed = 48 },
+					TreeSet = { "PineYoung", "DeadTree" },
+					RockSet = { "DarkBoulder", "Slab", "DarkBoulder" },
+					Decor = {
+						{ kind = "Scree", count = 14 },
+						{ kind = "Crystal", count = 6 },
+						{ kind = "Drift", count = 5 },
+						{ kind = "Rubble", count = 5 },
+					},
+				},
+				DeepTundra = {
+					Ground = { 148, 150, 156 },
+					GroundAlt = { 218, 224, 232 },
+					Material = "Ground",
+					PatchMaterial = "Snow",
+					Atmosphere = {
+						Color = { 205, 208, 218 },
+						Decay = { 120, 116, 124 },
+						Density = 0.4,
+						Haze = 2.4,
+						Glare = 0.5,
+					},
+					Tint = {
+						Color = { 255, 246, 236 },
+						Saturation = -0.2,
+						Contrast = 0.18,
+						Brightness = 0.03,
+					},
+					Snow = { Rate = 4, Speed = 10, Drift = 14 },
+					Wind = { Rate = 24, Speed = 70 },
+					TreeSet = { "DeadTree", "DeadTwisted" },
+					RockSet = { "DarkSlab", "DarkBoulder" },
+					Decor = {
+						{ kind = "Rubble", count = 12 },
+						{ kind = "Tuft", count = 12 },
+						{ kind = "Scree", count = 8 },
+						{ kind = "Drift", count = 4 },
+					},
+				},
+			},
+			Palette = {
+				Snow = { 238, 245, 252 },
+				SnowShade = { 205, 220, 238 },
+				Bark = { 92, 66, 46 },
+				BarkDark = { 62, 44, 34 },
+				BarkDead = { 84, 76, 70 },
+				Needle = { 44, 86, 78 },
+				NeedleDeep = { 34, 66, 64 },
+				NeedleFrost = { 112, 160, 170 },
+				Rock = { 118, 124, 134 },
+				RockDark = { 62, 68, 82 },
+				RockWarm = { 98, 90, 88 },
+				Ice = { 168, 218, 246 },
+				IceDeep = { 96, 160, 212 },
+				Crystal = { 120, 220, 255 },
+				CrystalDeep = { 150, 120, 255 },
+				Ore = { 214, 120, 60 },
+				OreGlint = { 255, 170, 90 },
+				Reed = { 150, 140, 104 },
+				Wood = { 120, 84, 56 },
+				WoodDark = { 68, 48, 36 },
+				Roof = { 74, 80, 98 },
+				Window = { 255, 190, 110 },
+				Metal = { 160, 168, 178 },
+				MetalDark = { 90, 96, 106 },
+				Scorch = { 40, 36, 38 },
+				Tent = { 176, 102, 54 },
+				TentAlt = { 214, 196, 160 },
+				Spring = { 110, 200, 226 },
+				Cave = { 22, 24, 32 },
+				Rune = { 120, 230, 255 },
+				Ruin = { 132, 128, 124 },
+				RuinDark = { 86, 82, 80 },
+			},
+		},
 		Hub = {
 			Origin = { 0, 500, 0 },
 			GroundRadius = 340,
@@ -1517,6 +1734,8 @@ local Config: Config = {
 			PromptDistance = 14,
 			PulseSpeed = 2.4,
 			FlickerSpeed = 7,
+			LampLight = { Range = 44, Brightness = 3.6 }, -- was 30 / 1.8: weak on snow at dusk
+			FireLight = { Range = 52, Brightness = 5 }, -- was 38 / 2.4 (scaled by fire size)
 			Tags = {
 				Lamp = "HubLight",
 				Shop = "LobbyShop",

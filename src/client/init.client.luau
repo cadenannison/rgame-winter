@@ -55,4 +55,5 @@ else
 	LobbyController.Start() -- run summary screen (pad/menu views stay hidden outside the lobby)
 	require(script.Phase4.MetaClient).start(Config.Teleport.ModeRun) -- brief 19
 	require(script.Phase4.AtmosphereClient).start(Config.Teleport.ModeRun) -- brief 20
+	require(script.Art.BiomeFx).start() -- art pass 2: per-biome atmosphere, grade, snow/wind
 end

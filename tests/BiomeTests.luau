@@ -3,6 +3,7 @@
 -- hearth, thin ice, fog map. Uses the live Config.World so a ring/config change breaks here first.
 
 local Biomes = require("../src/shared/data/Biomes")
+local BiomeBlend = require("../src/shared/logic/BiomeBlend")
 local BiomeLogic = require("../src/shared/logic/BiomeLogic")
 local Chunks = require("../src/shared/data/Chunks")
 local Config = require("../src/shared/Config")
@@ -24,6 +25,21 @@ return function(check: (string, boolean) -> ())
 	local c = WorldLayout.generate(778, PARAMS)
 	check("biome same seed same layout", WorldLayout.serialize(a) == WorldLayout.serialize(b))
 	check("biome different seed differs", WorldLayout.serialize(a) ~= WorldLayout.serialize(c))
+
+	-- Biome look blend (art pass 2): pure inside a band, 50/50 on a border, weights sum to 1
+	local cs = Config.World.ChunkSize
+	local blend = Config.Art.World.BlendStuds
+	local inner = BiomeBlend.weights(cs * 1.5, 0, cs, 3, blend)
+	check("blend interior is one ring", #inner == 1 and inner[1].ring == 1 and inner[1].weight == 1)
+	local below = BiomeBlend.weights(cs - 0.001, 0, cs, 3, blend)
+	local above = BiomeBlend.weights(cs + 0.001, 0, cs, 3, blend)
+	check(
+		"blend continuous across border",
+		math.abs(below[1].weight - 0.5) < 0.01 and math.abs(above[1].weight - 0.5) < 0.01
+	)
+	local mixed = BiomeBlend.weights(cs + blend / 2, 0, cs, 3, blend)
+	check("blend weights sum to 1", math.abs(mixed[1].weight + mixed[2].weight - 1) < 1e-6)
+	check("blend clamps beyond the edge", BiomeBlend.weights(cs * 9, 0, cs, 3, blend)[1].ring == 3)
 
 	-- Ring math
 	local r = Config.World.ChunkSize

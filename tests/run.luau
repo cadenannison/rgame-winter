@@ -44,6 +44,7 @@ require("./ProgressionTests")(check) -- brief 17 (brief 16 uses MobTests)
 require("./MetaTests")(check) -- brief 21 (Phase 4 contract data)
 require("./MetaLogicTests")(check) -- brief 19
 require("./AtmosphereTests")(check) -- brief 20
+require("./LivePartsTests")(check)
 
 if failures > 0 then
 	error(`{failures} test(s) failed`)
