@@ -30,6 +30,9 @@ export type DebugConfig = {
 	TeleportStructureGap: number, -- studs outside a structure footprint that /debug tp lands
 	TeleportLift: number, -- studs above the ground height a /debug tp places the character
 	TeleportPlayerOffset: number, -- studs beside the target player
+	TeleportWaitSeconds: number, -- max wait for the destination chunk terrain before giving up (no move)
+	TeleportBodySize: number, -- footprint (studs) grounded with SiteGround.footprintTop for a tp landing
+	TpAliases: { [string]: string }, -- squashed fuzzy word -> massive structure id for /debug tp
 	ChestSpawnDistance: number, -- studs in front of the player a /debug chest appears
 	MaxSeed: number, -- /debug seed argument upper bound
 }
@@ -81,6 +84,23 @@ local Sections: Sections = {
 		TeleportStructureGap = 14,
 		TeleportLift = 6,
 		TeleportPlayerOffset = 5,
+		TeleportWaitSeconds = 10,
+		TeleportBodySize = 4,
+		TpAliases = {
+			research = "ResearchStation",
+			beacon = "ResearchStation",
+			station = "ResearchStation",
+			mine = "MineComplex",
+			mines = "MineComplex",
+			complex = "MineComplex",
+			ship = "FrozenShipwreck",
+			shipwreck = "FrozenShipwreck",
+			wreck = "FrozenShipwreck",
+			temple = "RuinedTemple",
+			lodge = "RangerLodge",
+			ranger = "RangerLodge",
+			ruins = "ExpandedRuins",
+		},
 		ChestSpawnDistance = 8,
 		MaxSeed = 2147483646,
 	},

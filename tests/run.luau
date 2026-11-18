@@ -58,6 +58,7 @@ require("./MetaLogicTests")(check) -- brief 19
 require("./AtmosphereTests")(check) -- brief 20
 require("./LivePartsTests")(check)
 require("./PoiTests")(check) -- agent C enterable structures
+require("./WorldSessionTests")(check) -- tp resolver, camp grounding, moonlight
 require("./LootTests")(check) -- contracts round: loot, massive structures, trees
 require("./ChestTests")(check) -- chest looks and loot-only gear (agent I)
 require("./LootServiceTests")(check) -- loot server (agent H)

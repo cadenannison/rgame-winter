@@ -44,3 +44,11 @@ Part counts per built area: (record here)
 - Needed (silent until supplied): HubWindSound, HubFireCrackleSound, HubMusicSound (loops; hooks already placed in the hub), SnowParticle (hub snow uses the engine sparkle texture until then).
 - Review: `/debug gallery hub` (Studio chat) lays out every hub prop in a labelled row; `/debug gallery clear` removes it.
 - Billboards over pads (size label, timer, Join) are client UI, not Parts.
+
+## Audio pass: interaction sound hook points
+Interaction audio is silent for now (E no longer spams hit sounds). Re-enable by removing names from `Config.Feedback.MutedSounds` (src/shared/Config/Ui.luau) and/or adding calls at these hooks:
+- Swing: `Feedback.swing` / `Feedback.swingOther` (src/client/HUD/Feedback.luau) -> SwingSound (muted).
+- Chop / mine hit: `HitWatch` confirm (src/client/HUD/HitWatch.luau), node hits attribute -> ChopSound (muted); distinct mine/chop ids should split by node kind there.
+- Mob hit: same confirm, isMob -> MobHitSound (muted).
+- Pickup: ItemDrop / GatherService pickup notify (no client sound yet; add on the Notify "gather" event).
+- Structure interact (door toggled, chest/station use): src/client/HUD/StructureInteract.luau, comments mark the spots (previously CraftSound).

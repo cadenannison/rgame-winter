@@ -383,4 +383,96 @@ return function(check: (string, boolean) -> ())
 			return 1
 		end).size == 36
 	)
+	-- Property: any random sequence of moves (valid, invalid, cancelled) conserves total item counts. A cancelled
+	-- drag sends nothing; the only way counts change is the explicit drop, tested separately below.
+	do
+		local ids = { "Wood", "Stone", "Axe", "Hide", "Torch", "Pickaxe" }
+		local seed = 1234
+		local rng = {
+			NextInteger = function(_: unknown, lo: number, hi: number): number
+				seed = (seed * 1103515245 + 12345) % 2147483648
+				return lo + math.floor(seed / 65536) % (hi - lo + 1)
+			end,
+		}
+		local propOk = true
+		for _ = 1, 40 do
+			local ctx = newCtx()
+			local box = Inventory.new(Config.Storage.ChestSlots)
+			ctx.chest, ctx.chestId = box, "c1"
+			local total: { [string]: number } = {}
+			for slot = 1, ctx.inv.size do
+				if rng:NextInteger(1, 3) == 1 then
+					local id = ids[rng:NextInteger(1, #ids)]
+					local n = if ItemCatalog.stackOf(id) > 1 then rng:NextInteger(1, 20) else 1
+					put(ctx, slot, id, n, if ItemCatalog.stackOf(id) == 1 then 10 else nil)
+					total[id] = (total[id] or 0) + n
+				end
+			end
+			local function randAddr(): InventoryMove.Addr
+				local r = rng:NextInteger(1, 10)
+				if r <= 6 then
+					return inv(rng:NextInteger(0, ctx.inv.size + 2)) -- includes out-of-range
+				elseif r <= 8 then
+					return {
+						kind = "chest",
+						id = if r == 8 then "c1" else "other",
+						slot = rng:NextInteger(0, 11),
+					}
+				elseif r == 9 then
+					return {
+						kind = "equip",
+						slot = Config.Equipment.Slots[rng:NextInteger(1, #Config.Equipment.Slots)],
+					}
+				end
+				return { kind = "bogus", slot = 1 }
+			end
+			for _ = 1, 150 do
+				local action = rng:NextInteger(1, 4) -- 1 = cancelled drag: nothing is sent
+				if action == 2 then
+					InventoryMove.quickMove(ctx, randAddr())
+				else
+					local from = randAddr()
+					local count = rng:NextInteger(0, 25)
+					InventoryMove.move(ctx, from, randAddr(), count)
+				end
+			end
+			local after: { [string]: number } = {}
+			for _, part in { ctx.inv, ctx.equip, box } do
+				for id, _ in total do
+					after[id] = (after[id] or 0) + Inventory.count(part, id)
+				end
+			end
+			for id, n in total do
+				if after[id] ~= n then
+					propOk = false
+				end
+			end
+		end
+		check("property: random moves (valid, invalid, cancelled) conserve item counts", propOk)
+	end
+
+	-- Explicit Drop is the only removal path; failures change nothing.
+	do
+		local ctx = newCtx()
+		put(ctx, 3, "Wood", 10)
+		local bad1 = { InventoryMove.drop(ctx.inv, 99, 1) }
+		local bad2 = { InventoryMove.drop(ctx.inv, 3, 11) }
+		local bad3 = { InventoryMove.drop(ctx.inv, 4, 1) }
+		local bad4 = { InventoryMove.drop(ctx.inv, 3, 0) }
+		check(
+			"drop: invalid slot/count/empty refused, stack unchanged",
+			not bad1[1]
+				and not bad2[1]
+				and not bad3[1]
+				and not bad4[1]
+				and stackAt(ctx.inv, 3).count == 10
+		)
+		local dropped, _, id, n = InventoryMove.drop(ctx.inv, 3, 4)
+		check(
+			"drop: partial drop removes exactly that many",
+			dropped and id == "Wood" and n == 4 and stackAt(ctx.inv, 3).count == 6
+		)
+		InventoryMove.drop(ctx.inv, 3, 6)
+		check("drop: whole stack empties the slot", ctx.inv.slots[3] == nil)
+	end
 end

@@ -32,6 +32,7 @@ export type Sections = {
 	VOID_CHECK_INTERVAL: number,
 	WALK_SPEED: number,
 	SpawnPointName: string,
+	SpawnPadSize: { number }, -- {x, y, z} studs; -- camp spawn pad footprint (grounded with SiteGround.footprintTop)
 }
 
 local Sections: Sections = {
@@ -71,6 +72,7 @@ local Sections: Sections = {
 	VOID_CHECK_INTERVAL = 0.5,
 	WALK_SPEED = 16,
 	SpawnPointName = "SpawnPoint",
+	SpawnPadSize = { 6, 1, 6 },
 }
 
 return Sections

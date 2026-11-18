@@ -12,6 +12,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local DebugCommands = require(Shared.logic.DebugCommands)
+local TpResolve = require(Shared.logic.TpResolve)
 local ItemCatalog = require(Shared.ItemCatalog)
 local Guard = require(script.Parent.Parent.Net.Guard)
 local Rarity = require(Shared.data.Rarity)
@@ -184,18 +185,6 @@ local function sitesByDistance(from: Vector3): { { site: any, distance: number }
 	return out
 end
 
--- Teleports the character to (x, z) on the ground (pure height field, chunk loaded first).
-local function teleportGrounded(player: Player, x: number, z: number)
-	local character = player.Character
-	if character == nil then
-		return
-	end
-	local chunks = worldService("Chunk")
-	chunks.ensureLoadedAround(x, z)
-	local ground = chunks.heightAt(x, z) or Config.Terrain.BaseHeight
-	character:PivotTo(CFrame.new(x, ground + D.TeleportLift, z))
-end
-
 local function onStructures(player: Player)
 	local root = rootOf(player)
 	if root == nil then
@@ -217,57 +206,76 @@ local function onStructures(player: Player)
 	end
 end
 
+-- /debug tp <query>: the pure resolver (TpResolve) picks the target by fuzzy name, then the Chunk service waits
+-- for that chunk's terrain, grounds with SiteGround and PivotTo. Prints the resolved name and coordinates, or why not.
 local function onTeleport(player: Player, target: unknown)
 	local t = target :: DebugCommands.TpTarget
 	local root = rootOf(player)
 	if root == nil then
+		say(player, "tp: no character to move")
 		return
 	end
-	if t.kind == "ring" then
-		DebugService.run(player, "teleportRing", t.ring)
-	elseif t.kind == "structure" then
-		local list = sitesByDistance(root.Position)
-		if t.id then
-			local filtered = {}
-			for _, e in list do
-				if string.lower(e.site.id) == string.lower(t.id) then
-					table.insert(filtered, e)
-				end
-			end
-			list = filtered
-		end
-		local e = list[t.index or 1]
-		if e == nil then
-			say(player, "no such structure")
-			return
-		end
-		-- outside the footprint, on the side facing the player's current position, grounded
-		local dx, dz = root.Position.X - e.site.x, root.Position.Z - e.site.z
-		local len = math.sqrt(dx * dx + dz * dz)
-		local ux, uz = if len > 0.001 then dx / len else 1, if len > 0.001 then dz / len else 0
-		local reach = e.site.radius + D.TeleportStructureGap
-		teleportGrounded(player, e.site.x + ux * reach, e.site.z + uz * reach)
-		say(player, `at {e.site.key} (ring {e.site.ring})`)
-	else
-		local want = string.lower(t.name or "")
-		for _, other in Players:GetPlayers() do
-			local otherRoot = rootOf(other)
-			if
-				other ~= player
-				and otherRoot
-				and string.sub(string.lower(other.Name), 1, #want) == want
-			then
-				teleportGrounded(
-					player,
-					otherRoot.Position.X + D.TeleportPlayerOffset,
-					otherRoot.Position.Z
-				)
-				say(player, `at {other.Name}`)
-				return
-			end
-		end
-		say(player, `no player matching {t.name}`)
+	local chunks = worldService("Chunk")
+	local sites: { TpResolve.Site } = {}
+	for _, site in chunks.getSites() do
+		table.insert(sites, {
+			key = site.key,
+			id = site.id,
+			x = site.x,
+			z = site.z,
+			ring = site.ring,
+			radius = site.radius,
+		})
 	end
+	local others: { TpResolve.PlayerPos } = {}
+	for _, other in Players:GetPlayers() do
+		local otherRoot = rootOf(other)
+		if other ~= player and otherRoot then
+			table.insert(
+				others,
+				{ name = other.Name, x = otherRoot.Position.X, z = otherRoot.Position.Z }
+			)
+		end
+	end
+	local result = TpResolve.resolve(t.text, {
+		ringCount = D.RingCount,
+		from = { x = root.Position.X, z = root.Position.Z },
+		selfName = player.Name,
+		sites = sites,
+		players = others,
+		aliases = D.TpAliases,
+		ringPoint = function(n: number): TpResolve.Vec2?
+			return chunks.ringPoint(n)
+		end,
+		gap = D.TeleportStructureGap,
+		playerOffset = D.TeleportPlayerOffset,
+	})
+	if not result.ok then
+		say(player, `tp: {result.error}`)
+		return
+	end
+	-- Yields while the chunk streams in; run off the remote handler thread.
+	task.spawn(function()
+		local at: Vector3? = chunks.teleportGrounded(
+			player,
+			result.x,
+			result.z,
+			D.TeleportBodySize,
+			D.TeleportLift,
+			D.TeleportWaitSeconds
+		)
+		if at == nil then
+			say(
+				player,
+				`tp {result.name}: terrain at ({math.floor(result.x)}, {math.floor(result.z)}) did not load; not moved`
+			)
+		else
+			say(
+				player,
+				`tp -> {result.name} at ({math.floor(at.X)}, {math.floor(at.Y)}, {math.floor(at.Z)})`
+			)
+		end
+	end)
 end
 
 local function onChest(player: Player, rarity: unknown)

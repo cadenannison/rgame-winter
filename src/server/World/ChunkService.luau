@@ -13,6 +13,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local WorldLayout = require(Shared:WaitForChild("logic"):WaitForChild("WorldLayout"))
 local World = require(Shared:WaitForChild("logic"):WaitForChild("World"))
+local SiteGround = require(Shared:WaitForChild("logic"):WaitForChild("SiteGround"))
 local BiomeLogic = require(Shared:WaitForChild("logic"):WaitForChild("BiomeLogic"))
 local PerfBudget = require(Shared:WaitForChild("logic"):WaitForChild("PerfBudget"))
 local FireTiers = require(Shared:WaitForChild("logic"):WaitForChild("FireTiers"))
@@ -56,6 +57,9 @@ local NODE_SLOTS: { [string]: { kind: string, size: Vector3, color: Color3, mate
 		},
 	}
 local CAMPFIRE_SIZE = Vector3.new(4, 1, 4)
+local SPAWN_PAD_SIZE =
+	Vector3.new(Config.SpawnPadSize[1], Config.SpawnPadSize[2], Config.SpawnPadSize[3])
+local TERRAIN_POLL_SECONDS = 0.1
 local CAMPFIRE_COLOR = Color3.fromRGB(230, 120, 40)
 
 local ChunkService = {}
@@ -485,7 +489,11 @@ function ChunkService.getCampSpawnPosition(): Vector3?
 		return nil
 	end
 	local x, z = l.camp.position.x + WORLD.CampSpawnOffset, l.camp.position.z
-	return Vector3.new(x, groundY(x, z), z)
+	return Vector3.new(
+		x,
+		SiteGround.footprintTop(groundY, x, z, SPAWN_PAD_SIZE.X, SPAWN_PAD_SIZE.Z),
+		z
+	)
 end
 
 -- The camp campfire (tagged Config.Fire.Tag; FireService registers it from the tag).
@@ -541,18 +549,92 @@ function ChunkService.getSeed(): number?
 	return if layout then layout.seed else nil
 end
 
-local function teleportRing(player: Player, arg: unknown)
+-- Debug ring N (1 = start forest ring, then outward; clamped to the outermost ring) -> chunk position.
+function ChunkService.ringPoint(n: number): WorldLayout.Vec2?
 	local l = layout
+	if not l then
+		return nil
+	end
+	local ring = math.min(WORLD.StartForestRing + (n - 1), WorldLayout.maxRing(l.gridSize))
+	return WorldLayout.ringPosition(l, ring)
+end
+
+-- Chunk index containing (x, z), nil outside the grid or before start().
+function ChunkService.chunkIndexAt(x: number, z: number): number?
+	local l = layout
+	if not l then
+		return nil
+	end
+	local mid = (l.gridSize + 1) / 2
+	local cx = math.floor(x / l.chunkSize + mid + 0.5)
+	local cy = math.floor(z / l.chunkSize + mid + 0.5)
+	if cx < 1 or cy < 1 or cx > l.gridSize or cy > l.gridSize then
+		return nil
+	end
+	return WorldLayout.chunkIndex(l.gridSize, cx, cy)
+end
+
+-- Yields until the chunk under (x, z) is loaded with its terrain fully built (or timeout seconds pass).
+-- Re-requests the chunk every poll so streaming cannot unload it while we wait.
+function ChunkService.waitForTerrain(x: number, z: number, timeout: number): boolean
+	local deadline = os.clock() + timeout
+	while true do
+		ChunkService.ensureLoadedAround(x, z)
+		local index = ChunkService.chunkIndexAt(x, z)
+		if index ~= nil and ChunkService.isTerrainReady(index) then
+			return true
+		end
+		if os.clock() >= deadline then
+			return false
+		end
+		task.wait(TERRAIN_POLL_SECONDS)
+	end
+end
+
+-- Teleports a character onto the ground at (x, z): waits for the chunk terrain first (never drops a player
+-- into unbuilt voxels), grounds with SiteGround.footprintTop, PivotTo. Yields. Returns the landing position.
+function ChunkService.teleportGrounded(
+	player: Player,
+	x: number,
+	z: number,
+	bodySize: number,
+	lift: number,
+	timeout: number
+): Vector3?
+	if not ChunkService.waitForTerrain(x, z, timeout) then
+		return nil
+	end
 	local character = player.Character
-	local hrp = character and character:FindFirstChild("HumanoidRootPart")
-	if not l or type(arg) ~= "number" or not (hrp and hrp:IsA("BasePart")) then
+	if character == nil or player.Parent ~= Players then
+		return nil
+	end
+	local y = SiteGround.footprintTop(groundY, x, z, bodySize, bodySize) + lift
+	local at = Vector3.new(x, y, z)
+	character:PivotTo(CFrame.new(at))
+	return at
+end
+
+local function teleportRing(player: Player, arg: unknown)
+	if type(arg) ~= "number" then
 		return
 	end
-	-- Debug ring 1 = start forest, then outward; clamped to the outermost ring.
-	local ring = math.min(WORLD.StartForestRing + (arg - 1), WorldLayout.maxRing(l.gridSize))
-	local pos = WorldLayout.ringPosition(l, ring)
-	ChunkService.ensureLoadedAround(pos.x, pos.z)
-	hrp.CFrame = CFrame.new(pos.x, groundY(pos.x, pos.z) + TELEPORT_HEIGHT, pos.z)
+	local p = ChunkService.ringPoint(arg)
+	if p == nil then
+		return
+	end
+	task.spawn(function()
+		local at = ChunkService.teleportGrounded(
+			player,
+			p.x,
+			p.z,
+			Config.Debug.TeleportBodySize,
+			Config.Debug.TeleportLift,
+			Config.Debug.TeleportWaitSeconds
+		)
+		print(
+			`[Debug] ring {arg}: {if at then tostring(at) else "terrain did not load; not moved"}`
+		)
+	end)
 end
 
 -- Removes live trees (trunk + foliage; GatherService unregisters the node on Destroying) whose base is within
@@ -663,7 +745,13 @@ function ChunkService.start()
 	fire.Size = CAMPFIRE_SIZE
 	fire.Position = Vector3.new(
 		l.camp.position.x,
-		groundY(l.camp.position.x, l.camp.position.z) + CAMPFIRE_SIZE.Y / 2,
+		SiteGround.footprintTop(
+			groundY,
+			l.camp.position.x,
+			l.camp.position.z,
+			CAMPFIRE_SIZE.X,
+			CAMPFIRE_SIZE.Z
+		) + CAMPFIRE_SIZE.Y / 2,
 		l.camp.position.z
 	)
 	fire.Anchored = true

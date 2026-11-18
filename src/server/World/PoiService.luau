@@ -17,6 +17,7 @@ local BiomeLogic = require(Shared:WaitForChild("logic"):WaitForChild("BiomeLogic
 local WorldLayout = require(Shared:WaitForChild("logic"):WaitForChild("WorldLayout"))
 local World = require(Shared:WaitForChild("logic"):WaitForChild("World"))
 local PoiPlan = require(Shared:WaitForChild("logic"):WaitForChild("PoiPlan"))
+local SiteGround = require(Shared:WaitForChild("logic"):WaitForChild("SiteGround"))
 local Server = ServerScriptService:WaitForChild("Server")
 local Guard = require(Server:WaitForChild("Net"):WaitForChild("Guard"))
 local InventoryService = require(Server:WaitForChild("Items"):WaitForChild("InventoryService"))
@@ -391,8 +392,10 @@ function PoiService.build(parent: Instance, poi: WorldLayout.Poi, chunkIndex: nu
 	if probe == nil then
 		return
 	end
-	local floorY, minY =
-		PoiPlan.siteFloor(height, px, pz, probe.radius - Config.Shelter.FootprintMargin)
+	local footprint = probe.radius - Config.Shelter.FootprintMargin
+	local floorY, minY = PoiPlan.siteFloor(height, px, pz, footprint)
+	-- SiteGround: the floor clears the highest terrain under the whole square footprint (never buried).
+	floorY = math.max(floorY, SiteGround.footprintTop(height, px, pz, footprint * 2, footprint * 2))
 	local pref = (chunkIndex * 37 + slotOf(poi) * 53) % 4
 	local yawIndex = PoiPlan.chooseYaw(height, px, pz, probe.doorDistance, pref)
 	local dx, dz = PoiPlan.doorDirection(yawIndex)

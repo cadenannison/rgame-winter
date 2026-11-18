@@ -17,6 +17,7 @@ export type FeedbackConfig = {
 	SwingSeconds: number,
 	SwingAngle: number,
 	SoundVolume: number,
+	MutedSounds: { [string]: boolean }, -- Assets names Feedback.sound skips (no interaction audio until the audio pass)
 	HitParticleCount: number,
 	HitParticleColor: { number }, -- {r, g, b} 0-255
 	HitParticleSpeed: number,
@@ -47,7 +48,24 @@ export type HintsConfig = {
 	WarnWindowSeconds: number, -- a warning cue keeps its hint triggered this long
 }
 
+-- Slot highlight style: outline color (0-255 rgb), background tint, outline thickness px.
+export type SlotHighlight = { Stroke: { number }, Tint: { number }, Thickness: number }
+
+-- Inventory UI (Backpack, HUD hotbar, chest grid): slot highlights and input keys.
+export type InventoryUiConfig = {
+	Focus: SlotHighlight, -- last clicked/tapped slot (also the Drop target)
+	Held: SlotHighlight, -- slot picked up for tap-to-move, or being dragged
+	Target: SlotHighlight, -- valid destination glow while something is held
+	Hover: SlotHighlight, -- valid destination under the pointer during a drag
+	ToggleKeyName: string, -- Backpack toggle (B only)
+	DropKeyName: string, -- drops the focused/held inventory slot while the Backpack is open
+	DropButtonText: string,
+	DropButtonWidthPx: number,
+	DragThresholdPx: number, -- HUD hotbar pointer travel before a press becomes a drag
+}
+
 export type Sections = {
+	InventoryUi: InventoryUiConfig,
 	Held: HeldConfig,
 	Feedback: FeedbackConfig,
 	Settings: SettingsConfig,
@@ -55,6 +73,17 @@ export type Sections = {
 }
 
 local Sections: Sections = {
+	InventoryUi = {
+		Focus = { Stroke = { 255, 255, 255 }, Tint = { 70, 110, 150 }, Thickness = 3 },
+		Held = { Stroke = { 255, 200, 60 }, Tint = { 140, 110, 30 }, Thickness = 4 },
+		Target = { Stroke = { 110, 230, 150 }, Tint = { 30, 85, 60 }, Thickness = 2 },
+		Hover = { Stroke = { 190, 255, 210 }, Tint = { 50, 130, 90 }, Thickness = 3 },
+		ToggleKeyName = "B",
+		DropKeyName = "Q",
+		DropButtonText = "Drop",
+		DropButtonWidthPx = 72,
+		DragThresholdPx = 8,
+	},
 	Held = {
 		ToolName = "HeldItem", -- name of the server-built Tool in the character (visual only)
 		Default = {
@@ -114,6 +143,7 @@ local Sections: Sections = {
 		SwingSeconds = 0.25, -- procedural swing length (used when Assets.SwingAnimation is empty)
 		SwingAngle = 70, -- degrees the arm swings
 		SoundVolume = 0.6, -- volume of action sounds
+		MutedSounds = { SwingSound = true, ChopSound = true, MobHitSound = true }, -- audio pass: remove to enable (docs/ART.md hook points)
 		HitParticleCount = 10, -- particles per hit burst
 		HitParticleColor = { 235, 225, 200 }, -- chips/snow burst color
 		HitParticleSpeed = 12, -- studs/s burst speed

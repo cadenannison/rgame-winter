@@ -287,4 +287,25 @@ function SiteGround.snapGround(
 	return SiteGround.snapY(hits)
 end
 
+-- Highest terrain top under an axis-aligned footprint (centre x, z; full sizes), sampled on the terrain block grid
+-- (edges included) plus SinkMargin. Fires and spawn pads sit here so no corner is ever buried.
+function SiteGround.footprintTop(
+	heightFn: HeightFn,
+	x: number,
+	z: number,
+	sizeX: number,
+	sizeZ: number
+): number
+	local step = Config.Terrain.BlockSize
+	local hx, hz = sizeX / 2, sizeZ / 2
+	local nx, nz = math.max(1, math.ceil(sizeX / step)), math.max(1, math.ceil(sizeZ / step))
+	local top = -math.huge
+	for i = 0, nx do
+		for j = 0, nz do
+			top = math.max(top, heightFn(x - hx + sizeX * i / nx, z - hz + sizeZ * j / nz))
+		end
+	end
+	return top + cfg().SinkMargin
+end
+
 return SiteGround

@@ -50,7 +50,14 @@ DebugCommands.ACTION_ONLY = {
 	respawn = true, -- the real revive/respawn transition (SurvivalService.respawn)
 } :: { [string]: boolean }
 
-export type TpTarget = { kind: string, index: number?, id: string?, ring: number?, name: string? }
+export type TpTarget = {
+	kind: string,
+	index: number?,
+	id: string?,
+	ring: number?,
+	name: string?,
+	text: string,
+}
 
 -- "/debug tp structure [n|Id]" | "ring <n>" | "<player name>" -> normalized target (nil = unusable).
 function DebugCommands.parseTp(arg: unknown, ringCount: number): TpTarget?
@@ -65,24 +72,25 @@ function DebugCommands.parseTp(arg: unknown, ringCount: number): TpTarget?
 	local lower = string.lower(word or "")
 	if lower == "structure" then
 		if rest == "" then
-			return { kind = "structure", index = 1 }
+			return { kind = "structure", index = 1, text = text }
 		end
 		local n = tonumber(rest)
 		if n ~= nil then
 			if n % 1 ~= 0 or n < 1 or n > 64 then
-				return nil
+				return { kind = "structure", text = text }
 			end
-			return { kind = "structure", index = n }
+			return { kind = "structure", index = n, text = text }
 		end
-		return { kind = "structure", index = 1, id = rest }
+		return { kind = "structure", index = 1, id = rest, text = text }
 	elseif lower == "ring" then
 		local n = tonumber(rest)
 		if n == nil or n % 1 ~= 0 or n < 1 or n > ringCount then
-			return nil
+			-- the resolver reports a clear out-of-range message for the player
+			return { kind = "ring", text = text }
 		end
-		return { kind = "ring", ring = n }
+		return { kind = "ring", ring = n, text = text }
 	end
-	return { kind = "player", name = text }
+	return { kind = "player", name = text, text = text }
 end
 
 local function isNumber(v: unknown): boolean

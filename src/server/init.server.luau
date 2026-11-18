@@ -223,6 +223,14 @@ local function startRun()
 	require(script.Phase3.MobsBoot).start() -- brief 16
 	require(script.Phase3.ProgressionBoot).start() -- brief 17
 	RunLifecycleService.Start()
+	-- Run end: worn gear is lost; starter gear comes from meta unlocks only.
+	RunLifecycleService.onRunEnded(function()
+		for _, player in Players:GetPlayers() do
+			InventoryService.clearEquipment(player)
+		end
+	end)
+	-- Dead players stay spectating until revive (SurvivalService.respawn) or a new run; no timer respawn.
+	Spawn.setAutoRespawn(false)
 	-- Phase 4 boot hooks (each file owned by one brief; stubs until filled). See docs/INTEGRATION.md.
 	require(script.Phase4.MetaBoot).start(TP.ModeRun) -- brief 19
 	require(script.Phase4.AtmosphereBoot).start(TP.ModeRun) -- brief 20

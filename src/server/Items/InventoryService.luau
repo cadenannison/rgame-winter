@@ -327,6 +327,8 @@ local function failMove(player: Player, reason: string, from: Remotes.InventoryA
 	end
 	local payload: Remotes.InventoryMoveResultPayload = { ok = false, reason = reason, from = from }
 	Remotes.event(Remotes.InventoryMoveResult):FireClient(player, payload)
+	-- A refused move leaves state unchanged; resend it so the client reconciles to the server's truth.
+	sync(player)
 end
 
 -- type-check -> range/sanity -> rate limit (Guard) -> permission/state/zone -> act
@@ -377,6 +379,38 @@ end
 -- Same path as the InventoryMove remote (QA and server callers); runs the full validation.
 InventoryService.handleMove = onMove
 
+-- Explicit Drop (Q / Drop button): type-check -> range -> rate limit -> state (alive, has the stack) -> act.
+local function onDrop(player: Player, payload: unknown)
+	if type(payload) ~= "table" then
+		return
+	end
+	local p = payload :: { [string]: unknown }
+	if not Guard.isNumber(p.slot) or not Guard.isNumber(p.count) then
+		return
+	end
+	if not Guard.rateLimit(player, "InvDrop", Config.Storage.MoveRateInterval) then
+		return
+	end
+	local inv = inventories[player]
+	if inv == nil or ServerUtil.actingRoot(player) == nil then
+		return
+	end
+	local at = ItemDrop.feetPosition(player, 0)
+	if at == nil then
+		return
+	end
+	local ok, reason, id, n = InventoryMove.drop(inv, p.slot, p.count)
+	if not ok or id == nil then
+		failMove(player, reason, nil)
+		return
+	end
+	ItemDrop.spawn(id, n, at, InventoryService.add)
+	sync(player)
+end
+
+-- Same path as the DropItemRequest remote (QA and server callers); runs the full validation.
+InventoryService.handleDrop = onDrop
+
 local function cleanup(player: Player)
 	local t = os.clock()
 	for userId, entry in held do
@@ -422,6 +456,7 @@ function InventoryService.start()
 	Remotes.event(Remotes.SelectSlotRequest).OnServerEvent:Connect(onSelect)
 	Remotes.event(Remotes.UseItemRequest).OnServerEvent:Connect(onUse)
 	Remotes.event(Remotes.InventoryMove).OnServerEvent:Connect(onMove)
+	Remotes.event(Remotes.DropItemRequest).OnServerEvent:Connect(onDrop)
 	DataService.onLoaded(loadEquipment)
 	Players.PlayerAdded:Connect(setup)
 	Players.PlayerRemoving:Connect(cleanup)

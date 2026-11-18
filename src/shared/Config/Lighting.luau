@@ -19,6 +19,12 @@ export type LightingConfig = {
 	NightFogStart: number,
 	DayFogEnd: number,
 	NightFogEnd: number,
+	-- Moonlight: the night readability floor (ground and silhouettes visible, still clearly darker than day).
+	-- Scary events may darken below it. All tunable.
+	MoonAmbient: { number }, -- {r, g, b} minimum Lighting.Ambient at full night
+	MoonOutdoorAmbient: { number }, -- minimum Lighting.OutdoorAmbient at full night
+	MoonBrightness: number, -- minimum Lighting.Brightness at full night (soft moon light)
+	MoonExposure: number, -- Lighting.ExposureCompensation at full night (0 by day)
 }
 
 export type Sections = {
@@ -44,6 +50,10 @@ local Sections: Sections = {
 		NightFogStart = 60,
 		DayFogEnd = 1500,
 		NightFogEnd = 380,
+		MoonAmbient = { 66, 76, 108 },
+		MoonOutdoorAmbient = { 88, 100, 138 },
+		MoonBrightness = 1.1,
+		MoonExposure = 0.35,
 	},
 }
 

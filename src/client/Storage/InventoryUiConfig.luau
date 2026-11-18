@@ -2,6 +2,10 @@
 -- UI-local constants for the backpack / equipment / chest panel (layout and colours). Gameplay numbers stay
 -- in shared/Config (Inventory, Equipment, Storage).
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+
 local UiConfig = {
 	GuiName = "BackpackPanel",
 	DisplayOrderOffset = 3, -- above HudConfig.DisplayOrder
@@ -29,7 +33,7 @@ local UiConfig = {
 		RightScale = 0.985,
 		Text = "Backpack",
 	},
-	Keys = { Enum.KeyCode.B, Enum.KeyCode.Tab },
+	ToggleKey = (Enum.KeyCode :: any)[Config.InventoryUi.ToggleKeyName] :: Enum.KeyCode, -- B only
 	ChestKeyCode = Enum.KeyCode.E,
 	PromptActionText = "Open",
 	PromptObjectText = "Storage chest",

@@ -31,7 +31,7 @@ local tracks: { [Animator]: AnimationTrack } = setmetatable({}, { __mode = "k" }
 -- Plays Assets[name] once, at a world position (3D) or as UI sound. Missing id = silent.
 function Feedback.sound(name: string, at: Vector3?)
 	local id = Assets[name]
-	if id == nil or id == "" then
+	if id == nil or id == "" or FB.MutedSounds[name] == true then
 		return
 	end
 	local sound = Instance.new("Sound")

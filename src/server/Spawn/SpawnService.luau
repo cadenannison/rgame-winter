@@ -23,8 +23,15 @@ local voidThread: thread? = nil
 local started = false
 local spawnProvider: (() -> Vector3?)? = nil
 local spawnPad: SpawnLocation? = nil
+local autoRespawn = true
 
-local SPAWN_PAD_SIZE = Vector3.new(6, 1, 6)
+local SPAWN_PAD_SIZE =
+	Vector3.new(Config.SpawnPadSize[1], Config.SpawnPadSize[2], Config.SpawnPadSize[3])
+
+-- Lobby servers respawn dead players on a timer; run servers do not (dead = spectate until revive/new run).
+function Spawn.setAutoRespawn(enabled: boolean)
+	autoRespawn = enabled
+end
 
 -- Ground position players spawn at (init wires ChunkService.getCampSpawnPosition). Set before start().
 function Spawn.setSpawnProvider(fn: () -> Vector3?)
@@ -115,8 +122,16 @@ local function loadCharacter(player: Player)
 	player:SetAttribute(Config.ReadyAttribute, true)
 end
 
+-- Explicit respawn path (SurvivalService.respawn). inFlight makes a second call during a load a no-op.
+function Spawn.respawn(player: Player)
+	task.spawn(loadCharacter, player)
+end
+
 local function onDied(player: Player)
 	diedConns[player] = nil
+	if not autoRespawn then
+		return -- run server: stay dead/spectating until SurvivalService.respawn (revive) or a new run
+	end
 	if respawning[player] ~= nil then
 		return
 	end

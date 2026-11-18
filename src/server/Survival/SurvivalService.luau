@@ -19,6 +19,7 @@ local Guard = require(script.Parent.Parent.Net.Guard)
 local DayNightService = require(script.Parent.DayNightService)
 local FireService = require(script.Parent.FireService)
 local DebugService = require(script.Parent.Parent.Debug.DebugService)
+local Spawn = require(script.Parent.Parent.Spawn.SpawnService)
 
 local M = Config.Meters
 local D = Config.Downed
@@ -500,14 +501,7 @@ function SurvivalService.respawn(player: Player): boolean
 	if not wasDead then
 		return true
 	end
-	task.spawn(function()
-		local ok = pcall(function()
-			player:LoadCharacterAsync()
-		end)
-		if not ok then
-			warn(`[Survival] respawn LoadCharacterAsync failed for {player.Name}`)
-		end
-	end)
+	Spawn.respawn(player) -- one load path (SpawnService guards against a double load)
 	return true
 end
 

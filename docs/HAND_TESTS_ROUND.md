@@ -61,7 +61,7 @@ Nothing here has been played in Studio. Check on PC and phone emulation. Place i
 - Beams: only rare+, <= 12 studs, vanish beyond ~60 studs, no sky pillar. FPS fine; only one massive structure live at a time.
 - Fire and workbench placed on a slope sit flush; no half-sunk structures; no grey hard-edged pad; skirt blends into the snow.
 - Mobs never spawn inside a structure footprint. Giant tree: chop from the ground. First chest ever opened shows the one-time hint.
-- Backpack: button, B and Tab toggle; drag/drop, merge, swap, split (right-click, long-press), shift-click; phone tap-then-tap. Hotbar always visible.
+- Backpack: button and B toggle (Tab does nothing); drag/drop, merge, swap, split (right-click, long-press), shift-click; phone tap-then-tap. Hotbar always visible.
 - Equip each of the 8 slots (wrong slot shakes); cold resistance x/12 changes; carried-only clothing no longer counts; gear persists after rejoin.
 - Craft a storage chest (8 wood, workbench), place it (ghost, snap), open it, share with a second player (both edit at once); cannot pick up while non-empty; 5th chest refused with a toast.
 - Wood stacks to 20 then overflows to a new slot; with a full inventory pickup shows "Inventory full".
@@ -73,3 +73,20 @@ Nothing here has been played in Studio. Check on PC and phone emulation. Place i
 - HUD after the HudController split: bars/day/compass/hotbar look and lay out as before (desktop + phone); hotbar keys 1-9, click, mouse wheel (Shift zooms), tap-selected food eats; prompts (gather/hunt/fuel/craft/upgrade/structure) and the Act button label update; hit bursts/sounds on chop and mob hits; onboarding hints and the record toast still fire.
 - World art after the WorldProps split: trees, rocks/ore (and depleted rubble/stump), decor, and every POI (cabin, plane, cave, ruin, campsite, hot spring steam, hearth light) render as before; `/debug gallery world` shows each prop.
 - Config split: any value tweak in src/shared/Config/<Module>.luau still takes effect (spot-check one per module you touch).
+
+## Inventory UI round (Agent 1)
+- Drag an item and release outside the panel, on the panel title, or on a wrong equipment slot: it springs back to its origin slot, nothing lost. Open a drag then press B (or Close) mid-drag: panel closes, item still in its slot.
+- Drop: select a slot (click/tap) then press Q or the Drop button: the stack (or the picked half) appears at your feet and can be picked up. Q does not open the Ping wheel while the Backpack is open. With nothing selected the Drop button is dimmed.
+- Highlight on every slot type (hotbar row, grid, equipment, chest grid, HUD hotbar): a click/tap shows a white outline + tint; a tap-picked (or dragged) slot turns gold; valid destinations glow green, the one under the pointer brighter; all clear after the move.
+- HUD hotbar drag: drag a hotbar slot onto another hotbar slot (swap/merge) and onto a Backpack grid slot while the panel is open; releasing elsewhere cancels. A plain click still selects.
+- Backpack toggles with B only (Tab does nothing).
+
+## World and session round (Agent 2)
+- `/debug tp research` and `/debug tp ring 3` on 3 seeds (`/debug seed n` then rejoin or new run): you land on the ground (never in the void or under terrain) and chat/output prints the resolved name and coordinates. Also try `tp beacon`, `tp research 2`, `tp mine`, `tp ring3`, a player name prefix. `tp banana` and `tp ring 9` print a clear error and do not move you.
+- Starting campfire on 5 seeds: the fire and the spawn pad sit on the snow surface (not buried), you spawn standing beside it.
+- Die during a run: you stay in spectate (no timer respawn); a teammate revive or `/debug respawn` brings you back once, no double character.
+- Finish a run, start a new one: worn gear is gone (starter gear only from meta unlocks).
+- Night: ground and tree silhouettes readable without the fire, clearly darker than day; a dark event (False Night, blizzard) can still go darker. Tune in Config/Lighting.luau (MoonAmbient, MoonOutdoorAmbient, MoonBrightness, MoonExposure).
+- Press E on trees, a door, a chest, a crafting station: no swing/hit/craft sound spam (interaction is silent for now; hook points in docs/ART.md).
+- POIs (cabin, plane, ruin, campsite): floors never sit under terrain.
+- Round 4 audit checks: HUD (bars/day/compass/hotbar, keys 1-9, wheel, tap-to-eat, prompts, Act button, onboarding hints, record toast) lays out and behaves as before on desktop + phone; world props (trees, rocks/ore + depleted rubble/stump, decor, all POIs incl. hot spring steam and hearth light) render as before and `/debug gallery world` shows each; spot-check one Config value tweak per module still takes effect.

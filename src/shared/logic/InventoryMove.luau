@@ -319,6 +319,33 @@ function InventoryMove.quickMove(ctx: Ctx, from: Addr): (boolean, string, Touche
 	return true, "Ok", touched
 end
 
+-- Explicit Drop action: the only way an item leaves the inventory. Removes `count` (clamped by validation) from a
+-- player inventory slot and returns what was taken so the caller can spawn the world drop. Atomic: any
+-- failure changes nothing. Returns (ok, reason, id, count, durability).
+function InventoryMove.drop(
+	inv: Inventory.Inv,
+	slot: unknown,
+	count: unknown
+): (boolean, string, string?, number, number?)
+	if not whole(slot) or (slot :: number) > inv.size then
+		return false, "BadSlot", nil, 0, nil
+	end
+	local stack = inv.slots[slot :: number]
+	if stack == nil then
+		return false, "EmptySlot", nil, 0, nil
+	end
+	if not whole(count) or (count :: number) > stack.count then
+		return false, "BadCount", nil, 0, nil
+	end
+	local n = count :: number
+	local id, durability = stack.id, stack.durability
+	stack.count -= n
+	if stack.count <= 0 then
+		inv.slots[slot :: number] = nil
+	end
+	return true, "Ok", id, n, durability
+end
+
 -- Revision gate. A request carrying the current revision applies; a stale one applies only when the
 -- source still holds the item the client saw (the move rules then validate the rest). Returns ok.
 function InventoryMove.revisionOk(

@@ -41,6 +41,7 @@ local HitWatch = require(script.Parent:WaitForChild("HitWatch"))
 local HudTargeting = require(script.Parent:WaitForChild("HudTargeting"))
 local HudPrompt = require(script.Parent:WaitForChild("HudPrompt"))
 local HudInput = require(script.Parent:WaitForChild("HudInput"))
+local HudHotbarDrag = require(script.Parent:WaitForChild("HudHotbarDrag"))
 local PlacementGhost = require(script.Parent:WaitForChild("PlacementGhost"))
 
 local RECENT_SECONDS = 2 -- window in which an inventory change is credited to our own request (onboarding)
@@ -276,10 +277,25 @@ function HudController.start()
 			else os.clock() + Config.Feedback.ItemNameSeconds
 	end
 
+	local hotbarDrag: HudHotbarDrag.Drag? = nil
 	local function renderSelection()
 		local shown = shownSlot()
+		local HL = Config.InventoryUi
 		for i, slot in slots do
-			slot.stroke.Enabled = i == shown
+			-- Selected slot = Focus highlight (outline + tint); a drag in progress overrides per slot.
+			local style = if hotbarDrag then hotbarDrag.style(i) else nil
+			if style == nil and i == shown then
+				style = HL.Focus
+			end
+			slot.stroke.Enabled = style ~= nil
+			if style then
+				slot.stroke.Color =
+					Color3.fromRGB(style.Stroke[1], style.Stroke[2], style.Stroke[3])
+				slot.stroke.Thickness = style.Thickness
+			end
+			slot.button.BackgroundColor3 = if style
+				then Color3.fromRGB(style.Tint[1], style.Tint[2], style.Tint[3])
+				else HudConfig.PanelColor
 			slot.button.BackgroundTransparency = if i == shown
 				then 0.1
 				else HudConfig.PanelTransparency
@@ -517,8 +533,15 @@ function HudController.start()
 			doAction()
 		end)
 	end
+	hotbarDrag = HudHotbarDrag.attach(gui, slots, function(i: number)
+		return stacks[i]
+	end, renderSelection)
+	addCleanup(cleanups, (hotbarDrag :: HudHotbarDrag.Drag).destroy)
 	for i, slot in slots do
 		connect(cleanups, slot.button.Activated, function()
+			if hotbarDrag and hotbarDrag.consumeClick() then
+				return -- the click that ended a drag is not a select
+			end
 			-- Tapping the already-selected food slot eats it; otherwise select.
 			local stack = stacks[i]
 			local def = if stack then ItemCatalog.Items[stack.id] else nil

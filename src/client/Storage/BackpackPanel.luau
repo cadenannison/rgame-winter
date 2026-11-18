@@ -4,6 +4,7 @@
 -- shift-click quick move, tap-select then tap-destination on phones. Every action sends ONE remote
 -- (Remotes.InventoryMove) with typed addresses; the server validates everything. Display and intent only.
 
+local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
@@ -49,6 +50,7 @@ type SlotView = {
 	name: TextLabel,
 	count: TextLabel,
 	stroke: UIStroke,
+	base: Color3, -- resting background color (tinted by highlights, restored on refresh)
 }
 type Press = {
 	view: SlotView,
@@ -58,6 +60,17 @@ type Press = {
 	dragging: boolean,
 	touch: boolean,
 }
+
+local DROP_ACTION = "BackpackDropItem"
+local HL = Config.InventoryUi
+
+local function rgb(c: { number }): Color3
+	return Color3.fromRGB(c[1], c[2], c[3])
+end
+
+local function sameAddr(a: InventoryMove.Addr?, b: InventoryMove.Addr?): boolean
+	return a ~= nil and b ~= nil and a.kind == b.kind and a.slot == b.slot and a.id == b.id
+end
 
 local function key(addr: InventoryMove.Addr): string
 	return `{addr.kind}:{tostring(addr.slot)}`
@@ -100,6 +113,10 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 	local press: Press? = nil
 	local ghost: TextLabel? = nil
 	local lastTarget: SlotView? = nil
+	local focus: InventoryMove.Addr? = nil -- last clicked/tapped slot (highlight + Drop target)
+	local dragOrigin: InventoryMove.Addr? = nil -- slot being dragged (held highlight while dragging)
+	local hoverView: SlotView? = nil -- slot under the pointer during a drag
+	local dropButton: TextButton? = nil
 	local fullToken = 0
 
 	local gui = make("ScreenGui", {
@@ -159,7 +176,12 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 	title.Name = "Title"
 	title.Font = Enum.Font.GothamBold
 	title.Position = UDim2.fromOffset(UiConfig.PadPx, 4)
-	title.Size = UDim2.new(1, -(UiConfig.CloseButtonPx + UiConfig.PadPx * 2), 0, UiConfig.TitlePx)
+	title.Size = UDim2.new(
+		1,
+		-(UiConfig.CloseButtonPx + HL.DropButtonWidthPx + UiConfig.PadPx * 3),
+		0,
+		UiConfig.TitlePx
+	)
 	local closeButton = make("TextButton", {
 		Name = "Close",
 		AnchorPoint = Vector2.new(1, 0),
@@ -173,6 +195,19 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		TextSize = 20,
 	}, panel) :: TextButton
 	make("UICorner", { CornerRadius = UDim.new(0, 8) }, closeButton)
+	dropButton = make("TextButton", {
+		Name = "DropButton",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -(UiConfig.CloseButtonPx + 12), 0, 2),
+		Size = UDim2.fromOffset(HL.DropButtonWidthPx, UiConfig.CloseButtonPx),
+		BackgroundColor3 = UiConfig.Colors.Reject,
+		BorderSizePixel = 0,
+		Text = HL.DropButtonText,
+		TextColor3 = UiConfig.Colors.Text,
+		Font = Enum.Font.GothamBold,
+		TextSize = 16,
+	}, panel) :: TextButton
+	make("UICorner", { CornerRadius = UDim.new(0, 8) }, dropButton)
 	local body = make("ScrollingFrame", {
 		Name = "Body",
 		Position = UDim2.fromOffset(UiConfig.PadPx, UiConfig.CloseButtonPx + 6),
@@ -430,6 +465,7 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			name = name,
 			count = count,
 			stroke = stroke,
+			base = button.BackgroundColor3,
 		}
 		views[key(addr)] = view
 		return view
@@ -454,8 +490,33 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		return { kind = "chest", id = if chestInfo then chestInfo.id else "", slot = slot }
 	end
 
+	-- Whether a held stack could be dropped into this slot (equipment slots only take their gear).
+	local function canReceive(addr: InventoryMove.Addr, held: Stack): boolean
+		if addr.kind == "equip" then
+			return Equipment.accepts(addr.slot :: string, held.id)
+		elseif addr.kind == "chest" then
+			return chestInfo ~= nil
+		end
+		return true
+	end
+
+	-- The inventory slot a Drop acts on: the picked-up stack, else the last clicked slot.
+	local function dropTarget(): (InventoryMove.Addr?, number)
+		local addr = if selection then selection.addr else focus
+		if addr == nil or addr.kind ~= "inv" then
+			return nil, 0
+		end
+		local s = stackAt(addr)
+		if s == nil then
+			return nil, 0
+		end
+		return addr, if selection then math.min(selection.count, s.count) else s.count
+	end
+
 	refresh = function()
 		local selectedHot = mirror.selectedSlot()
+		local heldAddr = if dragOrigin then dragOrigin elseif selection then selection.addr else nil
+		local heldStack = if heldAddr then stackAt(heldAddr) else nil
 		for _, view in views do
 			local addr = view.addr
 			if addr.kind == "chest" then
@@ -472,10 +533,6 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 				text = Repair.durabilityLabel(def, stack.durability) or "" -- unbreakable items show nothing
 			end
 			view.count.Text = text
-			local picked = selection ~= nil
-				and selection.addr.kind == addr.kind
-				and selection.addr.slot == addr.slot
-				and selection.addr.id == addr.id
 			local rarityColor: Color3? = nil
 			if stack then
 				local c = Rarity.Colors[ItemCatalog.rarityOf(stack.id)]
@@ -483,8 +540,18 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 					rarityColor = Color3.fromRGB(c[1], c[2], c[3])
 				end
 			end
-			if picked then
-				view.stroke.Color = UiConfig.Colors.SlotSelected
+			local style: typeof(HL.Held)? = nil
+			if sameAddr(addr, heldAddr) then
+				style = HL.Held
+			elseif heldStack ~= nil and canReceive(addr, heldStack) then
+				style = if view == hoverView and dragOrigin ~= nil then HL.Hover else HL.Target
+			elseif sameAddr(addr, focus) then
+				style = HL.Focus
+			end
+			view.button.BackgroundColor3 = if style then rgb(style.Tint) else view.base
+			view.stroke.Thickness = if style then style.Thickness else 2
+			if style then
+				view.stroke.Color = rgb(style.Stroke)
 				view.stroke.Enabled = true
 			elseif addr.kind == "inv" and addr.slot == selectedHot then
 				view.stroke.Color = UiConfig.Colors.Hotbar
@@ -495,6 +562,12 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			else
 				view.stroke.Enabled = false
 			end
+		end
+		local button = dropButton
+		if button then
+			local target = dropTarget()
+			button.BackgroundTransparency = if target then 0 else 0.7
+			button.TextTransparency = if target then 0 else 0.5
 		end
 	end
 
@@ -536,6 +609,53 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		end
 	end
 
+	local function endGhost()
+		if ghost then
+			ghost:Destroy()
+			ghost = nil
+		end
+	end
+
+	-- Drops every transient interaction (drag, held pick, focus, hover). Used when the panel closes, the window
+	-- loses focus or a drag ends somewhere invalid: nothing was sent, so the item stays in its origin slot.
+	local function cancelInteraction()
+		press = nil
+		selection = nil
+		focus = nil
+		dragOrigin = nil
+		hoverView = nil
+		endGhost()
+	end
+
+	-- Explicit Drop of the held/focused inventory stack. The only path that removes items from the inventory.
+	local function dropSelected()
+		local addr, count = dropTarget()
+		if addr == nil or count < 1 then
+			return
+		end
+		local payload: Remotes.DropItemPayload = { slot = addr.slot :: number, count = count }
+		Remotes.event(Remotes.DropItemRequest):FireServer(payload)
+		selection = nil
+		focus = nil
+		refresh()
+	end
+
+	-- While open, Q is the Drop key; sinking it keeps the Ping wheel (also Q) from firing.
+	local function bindDrop()
+		ContextActionService:BindActionAtPriority(
+			DROP_ACTION,
+			function(_: string, state: Enum.UserInputState, _input: InputObject)
+				if state == Enum.UserInputState.Begin then
+					dropSelected()
+				end
+				return Enum.ContextActionResult.Sink
+			end,
+			false,
+			Enum.ContextActionPriority.High.Value,
+			(Enum.KeyCode :: any)[HL.DropKeyName] :: Enum.KeyCode
+		)
+	end
+
 	local function setOpen(open: boolean)
 		if open == isOpen or destroyed then
 			return
@@ -543,15 +663,19 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		isOpen = open
 		panel.Visible = open
 		if open then
+			bindDrop()
 			relayout()
 			viewport.refresh()
 		else
-			selection = nil
+			cancelInteraction()
 			if chestInfo then
 				Remotes.event(Remotes.StorageCloseRequest):FireServer()
 				chestInfo = nil
 				chestSection.Visible = false
 			end
+		end
+		if not open then
+			ContextActionService:UnbindAction(DROP_ACTION)
 		end
 		refresh()
 	end
@@ -597,13 +721,6 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		ghost = g
 	end
 
-	local function endGhost()
-		if ghost then
-			ghost:Destroy()
-			ghost = nil
-		end
-	end
-
 	-- A click or tap (no drag): quick move with shift, else select / move the selected stack here.
 	local function clickSlot(view: SlotView, half: boolean, shiftHeld: boolean)
 		local stack = stackAt(view.addr)
@@ -613,6 +730,7 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		end
 		local picked = selection
 		if picked == nil then
+			focus = view.addr
 			if stack then
 				local count = if half then math.ceil(stack.count / 2) else stack.count
 				selection = { addr = view.addr, count = count }
@@ -621,14 +739,12 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			return
 		end
 		selection = nil
-		if
-			picked.addr.kind == view.addr.kind
-			and picked.addr.slot == view.addr.slot
-			and picked.addr.id == view.addr.id
-		then
+		if sameAddr(picked.addr, view.addr) then
+			focus = view.addr
 			refresh()
 			return
 		end
+		focus = nil
 		requestMove(picked.addr, view.addr, if half and picked.count > 1 then 1 else picked.count)
 		refresh()
 	end
@@ -662,6 +778,7 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 							local stack = stackAt(view.addr)
 							if stack and stack.count > 1 then
 								press = nil
+								focus = view.addr
 								selection = { addr = view.addr, count = math.ceil(stack.count / 2) }
 								refresh()
 							end
@@ -694,10 +811,19 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 				and stackAt(p.view.addr)
 			then
 				p.dragging = true
+				dragOrigin = p.view.addr
+				selection = nil
+				focus = p.view.addr
 				beginGhost(p.view, pos)
+				refresh()
 			end
 			if p.dragging and ghost then
 				ghost.Position = UDim2.fromOffset(pos.X, pos.Y)
+				local under = slotUnder(pos)
+				if under ~= hoverView then
+					hoverView = under
+					refresh()
+				end
 			end
 		end)
 	)
@@ -713,12 +839,15 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			press = nil
 			local pos = Vector2.new(input.Position.X, input.Position.Y)
 			if p.dragging then
-				endGhost()
-				local target = slotUnder(pos)
+				-- Valid target: one move request. Anything else (no slot, same slot, outside the panel, wrong
+				-- equipment slot) cancels: nothing is sent and the item stays where it was.
+				local target = if isOpen then slotUnder(pos) else nil
 				local stack = stackAt(p.view.addr)
-				if target and stack and target ~= p.view then
+				local origin = p.view
+				cancelInteraction()
+				if target and stack and target ~= origin then
 					local count = if p.half then math.ceil(stack.count / 2) else stack.count
-					requestMove(p.view.addr, target.addr, count)
+					requestMove(origin.addr, target.addr, count)
 				end
 				refresh()
 			else
@@ -729,7 +858,15 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		end)
 	)
 
-	-- Keys (B / Tab) toggle; never while typing in a text box.
+	table.insert(
+		connections,
+		UserInputService.WindowFocusReleased:Connect(function()
+			cancelInteraction()
+			refresh()
+		end)
+	)
+
+	-- B toggles the panel; never while typing in a text box.
 	table.insert(
 		connections,
 		UserInputService.InputBegan:Connect(function(input: InputObject)
@@ -739,7 +876,7 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			then
 				return
 			end
-			if table.find(UiConfig.Keys, input.KeyCode) then
+			if input.KeyCode == UiConfig.ToggleKey then
 				setOpen(not isOpen)
 			end
 		end)
@@ -748,6 +885,12 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		connections,
 		toggleButton.Activated:Connect(function()
 			setOpen(not isOpen)
+		end)
+	)
+	table.insert(
+		connections,
+		(dropButton :: TextButton).Activated:Connect(function()
+			dropSelected()
 		end)
 	)
 	table.insert(
@@ -838,6 +981,7 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		move = requestMove,
 		destroy = function()
 			destroyed = true
+			ContextActionService:UnbindAction(DROP_ACTION)
 			for _, c in connections do
 				c:Disconnect()
 			end

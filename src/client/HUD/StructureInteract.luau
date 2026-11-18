@@ -226,10 +226,7 @@ function StructureInteract.new(
 		-- Confirm from server state: the door's DoorOpen attribute flips.
 		door:GetAttributeChangedSignal(Config.Build.DoorOpenAttribute):Once(function()
 			report("doorToggled")
-			local p = pivot(door)
-			if p then
-				Feedback.sound("CraftSound", p)
-			end
+			-- sound hook: door toggled (docs/ART.md); silent until the audio pass
 		end)
 	end
 
@@ -322,7 +319,7 @@ function StructureInteract.new(
 				return false
 			end
 			if found.send then
-				Feedback.sound("CraftSound", found.feedbackAt)
+				-- sound hook: structure interact sent (docs/ART.md); silent until the audio pass
 				found.send()
 			else
 				Feedback.sound("DenySound", nil)

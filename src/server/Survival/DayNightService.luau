@@ -51,8 +51,21 @@ local function applyLighting()
 	local SH = Config.Shadows
 	local ambient = LightingMath.lerpColor(L.DayAmbient, L.NightAmbient, n)
 	local outdoor = LightingMath.lerpColor(L.DayOutdoorAmbient, L.NightOutdoorAmbient, n)
-	local floorAmbient = LightingMath.lerpColor(SH.NightMinAmbient, { 0, 0, 0 }, 1 - n)
-	local floorOutdoor = LightingMath.lerpColor(SH.NightMinOutdoorAmbient, { 0, 0, 0 }, 1 - n)
+	-- Moonlight floors (Config.Lighting.Moon*) are the readable night minimum; Shadows floors still apply.
+	local moonAmbient = LightingMath.lerpColor({ 0, 0, 0 }, L.MoonAmbient, n)
+	local moonOutdoor = LightingMath.lerpColor({ 0, 0, 0 }, L.MoonOutdoorAmbient, n)
+	local shadeAmbient = LightingMath.lerpColor(SH.NightMinAmbient, { 0, 0, 0 }, 1 - n)
+	local shadeOutdoor = LightingMath.lerpColor(SH.NightMinOutdoorAmbient, { 0, 0, 0 }, 1 - n)
+	local floorAmbient = {
+		math.max(moonAmbient[1], shadeAmbient[1]),
+		math.max(moonAmbient[2], shadeAmbient[2]),
+		math.max(moonAmbient[3], shadeAmbient[3]),
+	}
+	local floorOutdoor = {
+		math.max(moonOutdoor[1], shadeOutdoor[1]),
+		math.max(moonOutdoor[2], shadeOutdoor[2]),
+		math.max(moonOutdoor[3], shadeOutdoor[3]),
+	}
 	Lighting.Ambient = color({
 		math.max(ambient[1], floorAmbient[1]),
 		math.max(ambient[2], floorAmbient[2]),
@@ -63,8 +76,12 @@ local function applyLighting()
 		math.max(outdoor[2], floorOutdoor[2]),
 		math.max(outdoor[3], floorOutdoor[3]),
 	})
-	Lighting.Brightness =
-		math.max(mix(L.DayBrightness, L.NightBrightness, n), SH.NightMinBrightness * n)
+	Lighting.Brightness = math.max(
+		mix(L.DayBrightness, L.NightBrightness, n),
+		SH.NightMinBrightness * n,
+		L.MoonBrightness * n
+	)
+	Lighting.ExposureCompensation = L.MoonExposure * n
 	Lighting.FogColor = color(LightingMath.lerpColor(L.DayFogColor, L.NightFogColor, n))
 	Lighting.FogStart = mix(L.DayFogStart, L.NightFogStart, n)
 	Lighting.FogEnd = mix(L.DayFogEnd, L.NightFogEnd, n)
