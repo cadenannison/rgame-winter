@@ -33,10 +33,15 @@ local queue: { Job } = {} -- FIFO; ChunkService enqueues nearest first
 local jobs: { [number]: Job } = {}
 local conn: RBXScriptConnection? = nil
 
+-- Surface material of the biome at (x, z) (site grounding fills use the same one: no grey pads).
+function TerrainBuilder.materialAt(x: number, z: number): Enum.Material
+	return BIOME_MATERIAL[World.biomeAt(x, z)] or Enum.Material.Snow
+end
+
 local function emit(run: TerrainPlan.Run)
 	local size = TERRAIN.BlockSize
 	local depth = TERRAIN.ColumnDepth
-	local material = BIOME_MATERIAL[World.biomeAt(run.x, run.z)] or Enum.Material.Snow
+	local material = TerrainBuilder.materialAt(run.x, run.z)
 	Workspace.Terrain:FillBlock(
 		CFrame.new(run.x + (run.n - 1) * size / 2, run.height - depth / 2, run.z),
 		Vector3.new(run.n * size, depth, size),

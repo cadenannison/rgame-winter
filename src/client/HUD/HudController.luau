@@ -6,11 +6,11 @@
 -- C or the Craft button = crafting panel. Feedback: swing, sounds, hit bursts, prompts, onboarding chain.
 
 local CollectionService = game:GetService("CollectionService")
-local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
+local TextChatService = game:GetService("TextChatService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
@@ -27,7 +27,6 @@ local Repair = require(Logic:WaitForChild("Repair"))
 local MetaSnapshot = require(Logic:WaitForChild("MetaSnapshot"))
 local RadiusRing = require(script.Parent.Parent:WaitForChild("Fire"):WaitForChild("RadiusRing"))
 local FireMeter = require(script.Parent.Parent:WaitForChild("Fire"):WaitForChild("FireMeter"))
-local ItemsGather = require(Logic:WaitForChild("ItemsGather"))
 local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
 local DebugChat = require(script.Parent:WaitForChild("DebugChat"))
 local Toast = require(script.Parent:WaitForChild("Toast"))
@@ -36,22 +35,15 @@ local CraftPanel = require(script.Parent:WaitForChild("CraftPanel"))
 local TargetPrompt = require(script.Parent:WaitForChild("TargetPrompt"))
 local OnboardingHints = require(script.Parent:WaitForChild("OnboardingHints"))
 local QABridge = require(script.Parent:WaitForChild("QABridge"))
+local HudKit = require(script.Parent:WaitForChild("HudKit"))
+local HudWidgets = require(script.Parent:WaitForChild("HudWidgets"))
+local HitWatch = require(script.Parent:WaitForChild("HitWatch"))
+local HudTargeting = require(script.Parent:WaitForChild("HudTargeting"))
+local HudPrompt = require(script.Parent:WaitForChild("HudPrompt"))
+local HudInput = require(script.Parent:WaitForChild("HudInput"))
 local PlacementGhost = require(script.Parent:WaitForChild("PlacementGhost"))
 
-local HOTBAR_KEYS: { Enum.KeyCode } = {
-	Enum.KeyCode.One,
-	Enum.KeyCode.Two,
-	Enum.KeyCode.Three,
-	Enum.KeyCode.Four,
-	Enum.KeyCode.Five,
-	Enum.KeyCode.Six,
-	Enum.KeyCode.Seven,
-	Enum.KeyCode.Eight,
-	Enum.KeyCode.Nine,
-}
-local WHEEL_ACTION = "ArcticHotbarWheel"
 local RECENT_SECONDS = 2 -- window in which an inventory change is credited to our own request (onboarding)
-local WATCH_SECONDS = 2 -- how long a hit target's attributes are watched for the confirm
 
 local HudController = {}
 
@@ -89,96 +81,12 @@ function HudController.currentAction(): string
 	return currentActionName
 end
 
-type Slot = { button: TextButton, name: TextLabel, count: TextLabel, stroke: UIStroke }
-type Watch = { conns: { RBXScriptConnection }, expires: number }
+type Slot = HudWidgets.Slot
 
-local function addCleanup(list: { () -> () }, fn: () -> ())
-	table.insert(list, fn)
-end
-
-local function connect(
-	list: { () -> () },
-	signal: RBXScriptSignal,
-	fn: (...any) -> ()
-): RBXScriptConnection
-	local c = signal:Connect(fn)
-	addCleanup(list, function()
-		c:Disconnect()
-	end)
-	return c
-end
-
-local function make<T>(className: string, props: { [string]: any }, parent: Instance?): T
-	local inst = Instance.new(className)
-	for k, v in props do
-		(inst :: any)[k] = v
-	end
-	inst.Parent = parent
-	return inst :: any
-end
-
-local function constrain(parent: Instance, minSize: Vector2?, maxSize: Vector2?)
-	make("UISizeConstraint", {
-		MinSize = minSize or Vector2.new(0, 0),
-		MaxSize = maxSize or Vector2.new(math.huge, math.huge),
-	}, parent)
-end
-
-local function textProps(
-	size: UDim2,
-	position: UDim2,
-	text: string,
-	maxText: number
-): { [string]: any }
-	return {
-		BackgroundTransparency = 1,
-		Size = size,
-		Position = position,
-		Text = text,
-		TextColor3 = HudConfig.TextColor,
-		TextScaled = true,
-		Font = Enum.Font.GothamMedium,
-		TextXAlignment = Enum.TextXAlignment.Center,
-		_maxText = maxText,
-	}
-end
-
-local function makeLabel(parent: Instance, props: { [string]: any }): TextLabel
-	local maxText = props._maxText :: number
-	props._maxText = nil
-	local label = make("TextLabel", props, parent) :: TextLabel
-	make("UITextSizeConstraint", { MaxTextSize = maxText, MinTextSize = 8 }, label)
-	return label
-end
-
-local function panel(
-	parent: Instance,
-	name: string,
-	size: UDim2,
-	position: UDim2,
-	anchor: Vector2
-): Frame
-	local f = make("Frame", {
-		Name = name,
-		Size = size,
-		Position = position,
-		AnchorPoint = anchor,
-		BackgroundColor3 = HudConfig.PanelColor,
-		BackgroundTransparency = HudConfig.PanelTransparency,
-		BorderSizePixel = 0,
-	}, parent) :: Frame
-	make("UICorner", { CornerRadius = UDim.new(0, 8) }, f)
-	return f
-end
-
-local function positionOf(inst: Instance): Vector3?
-	if inst:IsA("BasePart") then
-		return inst.Position
-	elseif inst:IsA("Model") then
-		return inst:GetPivot().Position
-	end
-	return nil
-end
+local addCleanup = HudKit.addCleanup
+local connect = HudKit.connect
+local make = HudKit.make
+local positionOf = HudKit.positionOf
 
 function HudController.start()
 	if started then
@@ -197,6 +105,22 @@ function HudController.start()
 		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
 	end)
 
+	-- The default chat window sits top-left over the bars: push it below the HUD stack.
+	task.spawn(function()
+		local ok = pcall(function()
+			local chatWindow = TextChatService:WaitForChild("ChatWindowConfiguration", 10)
+			if chatWindow and chatWindow:IsA("ChatWindowConfiguration") then
+				chatWindow.VerticalAlignment = Enum.VerticalAlignment.Top
+				chatWindow.HorizontalAlignment = Enum.HorizontalAlignment.Left
+				chatWindow.PositionOffset = HudConfig.Chat.PositionOffset
+				chatWindow.SizeOffset = HudConfig.Chat.SizeOffset
+			end
+		end)
+		if not ok then
+			warn("[HUD] could not reposition the chat window")
+		end
+	end)
+
 	local playerGui = player:WaitForChild("PlayerGui") :: PlayerGui
 	local gui = make("ScreenGui", {
 		Name = HudConfig.GuiName,
@@ -206,187 +130,11 @@ function HudController.start()
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}) :: ScreenGui
 
-	-- Stats (top-left): health, warmth, hunger.
-	local stats =
-		panel(gui, "Stats", UDim2.fromScale(0.3, 0.13), UDim2.fromScale(0.015, 0.02), Vector2.zero)
-	constrain(stats, Vector2.new(150, 66), Vector2.new(300, 110))
-	make("UIPadding", {
-		PaddingTop = UDim.new(0.08, 0),
-		PaddingBottom = UDim.new(0.08, 0),
-		PaddingLeft = UDim.new(0.04, 0),
-		PaddingRight = UDim.new(0.04, 0),
-	}, stats)
-	make("UIListLayout", {
-		FillDirection = Enum.FillDirection.Vertical,
-		Padding = UDim.new(0.04, 0),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-	}, stats)
-
-	type Bar = { fill: Frame, label: TextLabel, name: string }
-	local bars: { [string]: Bar } = {}
-	for i, key in { "health", "warmth", "hunger" } do
-		local row = make("Frame", {
-			Name = key,
-			LayoutOrder = i,
-			Size = UDim2.fromScale(1, 0.29),
-			BackgroundColor3 = Color3.new(0, 0, 0),
-			BackgroundTransparency = 0.5,
-			BorderSizePixel = 0,
-			ClipsDescendants = true,
-		}, stats) :: Frame
-		make("UICorner", { CornerRadius = UDim.new(0, 5) }, row)
-		local fill = make("Frame", {
-			Name = "Fill",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = (HudConfig.BarColors :: { [string]: Color3 })[key],
-			BorderSizePixel = 0,
-		}, row) :: Frame
-		local label = makeLabel(row, textProps(UDim2.fromScale(1, 1), UDim2.new(), key, 14))
-		label.Name = "Label"
-		label.ZIndex = 2
-		bars[key] = { fill = fill, label = label, name = key }
-	end
-
-	-- Day counter (top-center).
-	local dayPanel = panel(
-		gui,
-		"Day",
-		UDim2.fromScale(0.2, 0.06),
-		UDim2.fromScale(0.5, 0.02),
-		Vector2.new(0.5, 0)
-	)
-	constrain(dayPanel, Vector2.new(80, 26), Vector2.new(180, 44))
-	local dayLabel = makeLabel(
-		dayPanel,
-		textProps(UDim2.fromScale(1, 0.8), UDim2.fromScale(0, 0.1), "Day 1", 22)
-	)
-
-	-- Compass to camp (below the day counter).
-	local compass = panel(
-		gui,
-		"Compass",
-		UDim2.fromScale(0.1, 0.1),
-		UDim2.fromScale(0.5, 0.09),
-		Vector2.new(0.5, 0)
-	)
-	constrain(compass, Vector2.new(48, 48), Vector2.new(84, 84))
-	make("UIAspectRatioConstraint", { AspectRatio = 1 }, compass)
-	make("UICorner", { CornerRadius = UDim.new(1, 0) }, compass)
-	local arrowHolder = make("Frame", {
-		Name = "ArrowHolder",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.42),
-		Size = UDim2.fromScale(0.6, 0.6),
-		BackgroundTransparency = 1,
-	}, compass) :: Frame
-	local arrow = makeLabel(arrowHolder, textProps(UDim2.fromScale(1, 1), UDim2.new(), "^", 36))
-	arrow.TextColor3 = HudConfig.AccentColor
-	arrow.Font = Enum.Font.GothamBold
-	local distLabel = makeLabel(
-		compass,
-		textProps(UDim2.fromScale(1, 0.26), UDim2.fromScale(0, 0.72), "camp", 12)
-	)
-
-	-- Hotbar (bottom-center); the selected item name floats above it, the reactive hint above that.
-	local slotCount = Config.Inventory.HotbarSize
-	local hotbar = make("Frame", {
-		Name = "Hotbar",
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.fromScale(0.5, 0.98),
-		Size = UDim2.fromScale(0.7, 0.1),
-		BackgroundTransparency = 1,
-	}, gui) :: Frame
-	constrain(
-		hotbar,
-		Vector2.new(HudConfig.MinWidth, 0),
-		Vector2.new(HudConfig.MaxWidth, math.huge)
-	)
-	make(
-		"UIAspectRatioConstraint",
-		{ AspectRatio = slotCount * 1.0, DominantAxis = Enum.DominantAxis.Width },
-		hotbar
-	)
-
-	local slots: { [number]: Slot } = {}
-	for i = 1, slotCount do
-		local button = make("TextButton", {
-			Name = `Slot{i}`,
-			AutoButtonColor = true,
-			Text = "",
-			Position = UDim2.new((i - 1) / slotCount, 2, 0, 0),
-			Size = UDim2.new(1 / slotCount, -4, 1, 0),
-			BackgroundColor3 = HudConfig.PanelColor,
-			BackgroundTransparency = HudConfig.PanelTransparency,
-			BorderSizePixel = 0,
-		}, hotbar) :: TextButton
-		make("UICorner", { CornerRadius = UDim.new(0, 6) }, button)
-		local stroke = make("UIStroke", {
-			Color = HudConfig.SelectedColor,
-			Thickness = 3,
-			Enabled = false,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		}, button) :: UIStroke
-		local keyLabel = makeLabel(
-			button,
-			textProps(UDim2.fromScale(0.35, 0.3), UDim2.fromScale(0.04, 0.03), tostring(i), 12)
-		)
-		keyLabel.TextTransparency = 0.4
-		local nameLabel = makeLabel(
-			button,
-			textProps(UDim2.fromScale(0.9, 0.35), UDim2.fromScale(0.05, 0.3), "", 14)
-		)
-		local countLabel = makeLabel(
-			button,
-			textProps(UDim2.fromScale(0.6, 0.28), UDim2.fromScale(0.37, 0.68), "", 12)
-		)
-		countLabel.TextXAlignment = Enum.TextXAlignment.Right
-		slots[i] = { button = button, name = nameLabel, count = countLabel, stroke = stroke }
-	end
-
-	local itemLabel =
-		makeLabel(hotbar, textProps(UDim2.fromScale(0.6, 0.38), UDim2.new(0.2, 0, 0, -6), "", 18))
-	itemLabel.Name = "ItemName"
-	itemLabel.AnchorPoint = Vector2.new(0, 1)
-	itemLabel.BackgroundTransparency = HudConfig.PanelTransparency
-	itemLabel.BackgroundColor3 = HudConfig.PanelColor
-	itemLabel.Font = Enum.Font.GothamBold
-	itemLabel.Visible = false
-	make("UICorner", { CornerRadius = UDim.new(0, 8) }, itemLabel)
-
-	local hintLabel =
-		makeLabel(hotbar, textProps(UDim2.fromScale(1, 0.45), UDim2.new(0, 0, -0.45, -12), "", 18))
-	hintLabel.AnchorPoint = Vector2.new(0, 1)
-	hintLabel.BackgroundTransparency = HudConfig.PanelTransparency
-	hintLabel.BackgroundColor3 = HudConfig.PanelColor
-	hintLabel.Visible = false
-	make("UICorner", { CornerRadius = UDim.new(0, 8) }, hintLabel)
-
-	-- Mobile context action button (bottom-right).
-	local actionButton: TextButton? = nil
-	if UserInputService.TouchEnabled then
-		local b = make("TextButton", {
-			Name = "Action",
-			AnchorPoint = Vector2.new(1, 1),
-			Position = UDim2.fromScale(0.97, 0.78),
-			Size = UDim2.fromScale(0.16, 0.16),
-			BackgroundColor3 = HudConfig.AccentColor,
-			BackgroundTransparency = 0.2,
-			BorderSizePixel = 0,
-			Text = "Act",
-			TextColor3 = HudConfig.PanelColor,
-			TextScaled = true,
-			Font = Enum.Font.GothamBold,
-		}, gui) :: TextButton
-		constrain(
-			b,
-			Vector2.new(72, 72),
-			Vector2.new(HudConfig.ActionButtonSize + 24, HudConfig.ActionButtonSize + 24)
-		)
-		make("UIAspectRatioConstraint", { AspectRatio = 1 }, b)
-		make("UICorner", { CornerRadius = UDim.new(1, 0) }, b)
-		make("UITextSizeConstraint", { MaxTextSize = 26, MinTextSize = 10 }, b)
-		actionButton = b
-	end
+	local widgets = HudWidgets.build(gui)
+	local bars, dayLabel, arrowHolder, arrow, distLabel =
+		widgets.bars, widgets.dayLabel, widgets.arrowHolder, widgets.arrow, widgets.distLabel
+	local slotCount, slots, itemLabel, hintLabel, actionButton =
+		widgets.slotCount, widgets.slots, widgets.itemLabel, widgets.hintLabel, widgets.actionButton
 
 	-- State mirrored from the server (display and intent choice only).
 	local meters = { health = 0, warmth = 0, hunger = 0, day = 1, isNight = false }
@@ -412,7 +160,8 @@ function HudController.start()
 	local benchInstance: Instance? = nil -- nearest crafting station in range
 	local benchDist = math.huge
 	local recent: { [string]: number } = {} -- our last request time per intent (onboarding credit)
-	local watches: { [Instance]: Watch } = {}
+	local hitWatch = HitWatch.new()
+	local watch, sweepWatches = hitWatch.watch, hitWatch.sweep
 
 	local prompt = TargetPrompt.new(playerGui)
 	addCleanup(cleanups, prompt.destroy)
@@ -616,79 +365,10 @@ function HudController.start()
 	-- Target pick: on PC the candidate nearest the mouse ray (within AimSlack) wins, else the nearest
 	-- within ActionRange. Tagged instances only; never scans Workspace.
 	local function pickTarget()
-		targetKind, targetInstance, fireInstance = "none", nil, nil
-		targetDistance, targetAimed = nil, false
-		fireDist, benchInstance, benchDist = math.huge, nil, math.huge
-		local character = player.Character
-		local root = character and character:FindFirstChild("HumanoidRootPart")
-		if not root or not root:IsA("BasePart") then
-			return
-		end
-		local camera = Workspace.CurrentCamera
-		local ray: Ray? = nil
-		if camera and not touchOnly then
-			local m = UserInputService:GetMouseLocation()
-			ray = camera:ViewportPointToRay(m.X, m.Y)
-		end
-		local bestNear, bestAim = HudConfig.ActionRange, Config.Feedback.AimSlack
-		local nearKind, nearInst, aimKind, aimInst =
-			"none", nil :: Instance?, "none", nil :: Instance?
-		local function scan(tag: string, kind: string)
-			for _, inst in CollectionService:GetTagged(tag) do
-				if
-					inst ~= character
-					and inst:GetAttribute(ItemCatalog.NodeDepletedAttribute) ~= true
-				then
-					local pos = positionOf(inst)
-					if pos then
-						local d = (pos - root.Position).Magnitude
-						if d <= HudConfig.ActionRange then
-							if d <= bestNear then
-								bestNear, nearKind, nearInst = d, kind, inst
-							end
-							if ray then
-								local off = pos - ray.Origin
-								local along = off:Dot(ray.Direction.Unit)
-								local perp = (off - ray.Direction.Unit * along).Magnitude
-								if along > 0 and perp <= bestAim then
-									bestAim, aimKind, aimInst = perp, kind, inst
-								end
-							end
-						end
-					end
-				end
-			end
-		end
-		scan(Config.Gather.NodeTag, "gather")
-		scan(Config.Mobs.Tag, "attack")
-		if aimInst then
-			targetKind, targetInstance = aimKind, aimInst
-			targetAimed = true
-			local aimPos = positionOf(aimInst)
-			targetDistance = if aimPos then (aimPos - root.Position).Magnitude else nil
-		else
-			targetKind, targetInstance = nearKind, nearInst
-			targetDistance = if nearInst then bestNear else nil
-		end
-		local fireBest = Config.Fire.AddFuelRange
-		for _, inst in CollectionService:GetTagged(Config.Fire.Tag) do
-			local pos = positionOf(inst)
-			if pos and (pos - root.Position).Magnitude <= fireBest then
-				fireBest, fireInstance = (pos - root.Position).Magnitude, inst
-				fireDist = fireBest
-			end
-		end
-		for _, station in Config.Craft.Stations do
-			for _, inst in CollectionService:GetTagged(station.Tag) do
-				local pos = positionOf(inst)
-				if pos then
-					local d = (pos - root.Position).Magnitude
-					if d <= station.Range and d < benchDist then
-						benchDist, benchInstance = d, inst
-					end
-				end
-			end
-		end
+		local r = HudTargeting.pick(player, touchOnly)
+		targetKind, targetInstance, fireInstance = r.targetKind, r.targetInstance, r.fireInstance
+		targetDistance, targetAimed = r.targetDistance, r.targetAimed
+		fireDist, benchInstance, benchDist = r.fireDist, r.benchInstance, r.benchDist
 	end
 
 	-- The fire in reach if it can still be upgraded (top tier fires offer no upgrade).
@@ -722,56 +402,6 @@ function HudController.start()
 
 	-- Hit confirm: watch a target we just hit for the server's attribute change (HitsLeft / Depleted /
 	-- MobHealth), then burst + sound (+ flash for mobs). Short-lived connections, swept in the loop.
-	local function watch(inst: Instance, isMob: boolean)
-		local now = os.clock()
-		local w = watches[inst]
-		if w then
-			w.expires = now + WATCH_SECONDS
-			return
-		end
-		local conns: { RBXScriptConnection } = {}
-		local function confirm()
-			local pos = positionOf(inst)
-			if pos then
-				Feedback.burst(pos)
-				Feedback.sound(if isMob then "MobHitSound" else "ChopSound", pos)
-			end
-			if isMob then
-				Feedback.flash(inst)
-			end
-		end
-		if isMob then
-			table.insert(
-				conns,
-				inst:GetAttributeChangedSignal(Config.Mobs.HealthAttribute):Connect(confirm)
-			)
-		else
-			table.insert(
-				conns,
-				inst:GetAttributeChangedSignal(ItemCatalog.NodeHitsAttribute):Connect(confirm)
-			)
-			table.insert(
-				conns,
-				inst:GetAttributeChangedSignal(ItemCatalog.NodeDepletedAttribute):Connect(function()
-					if inst:GetAttribute(ItemCatalog.NodeDepletedAttribute) == true then
-						confirm()
-					end
-				end)
-			)
-		end
-		watches[inst] = { conns = conns, expires = now + WATCH_SECONDS }
-	end
-	local function sweepWatches(force: boolean)
-		local now = os.clock()
-		for inst, w in watches do
-			if force or now > w.expires or inst.Parent == nil then
-				for _, c in w.conns do
-					c:Disconnect()
-				end
-				watches[inst] = nil
-			end
-		end
-	end
 	addCleanup(cleanups, function()
 		sweepWatches(true)
 	end)
@@ -1022,109 +652,34 @@ function HudController.start()
 			craftPanel.toggle()
 			return
 		end
-		local idx = table.find(HOTBAR_KEYS, input.KeyCode)
+		local idx = HudInput.slotForKey(input.KeyCode)
 		if idx and idx <= slotCount then
 			requestSelect(idx)
 		end
 	end)
 
-	-- Mouse wheel cycles the hotbar. Bound above the camera's zoom binding and sunk so it does not
-	-- also zoom; hold Shift to zoom with the wheel instead.
-	ContextActionService:BindActionAtPriority(
-		WHEEL_ACTION,
-		function(
-			_name: string,
-			state: Enum.UserInputState,
-			input: InputObject
-		): Enum.ContextActionResult
-			if
-				state ~= Enum.UserInputState.Change
-				or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-			then
-				return Enum.ContextActionResult.Pass
-			end
-			local dz = input.Position.Z
-			if dz == 0 then
-				return Enum.ContextActionResult.Pass
-			end
-			requestSelect(HudMath.cycleSlot(shownSlot(), if dz < 0 then 1 else -1, slotCount))
-			return Enum.ContextActionResult.Sink
-		end,
-		false,
-		Enum.ContextActionPriority.High.Value,
-		Enum.UserInputType.MouseWheel
-	)
-	addCleanup(cleanups, function()
-		ContextActionService:UnbindAction(WHEEL_ACTION)
-	end)
+	-- Mouse wheel cycles the hotbar (bound above the camera zoom; Shift zooms instead).
+	addCleanup(cleanups, HudInput.bindWheel(shownSlot, requestSelect, slotCount))
 
 	local function promptFor(): (Instance?, string, number?, boolean)
 		local action = currentAction()
 		currentActionName = action
 		local hook = interactHook
 		local interact = if hook then hook.peek(interactCtx(action)) else nil
-		if interact then
-			return interact.target, interact.text, nil, interact.warn
-		end
-		if action == "fuel" and fireInstance then
-			return fireInstance, `Add wood {inputHint}`, nil, false
-		end
-		if action == "craft" and benchInstance then
-			return benchInstance, `Craft {inputHint}`, nil, false
-		elseif action == "upgrade" then
-			local fire = upgradableFire()
-			local cost = if fire
-				then FireTiers.nextCost(
-					FireTiers.clamp(fire:GetAttribute(Config.Fire.TierAttribute))
-				)
-				else nil
-			if fire and cost then
-				local affordable = FireTiers.canAfford(counts, cost)
-				return fire,
-					`Upgrade fire ({FireTiers.costText(cost, itemName)}) {inputHint}`,
-					nil,
-					not affordable
-			end
-		end
-		local target = targetInstance
-		if target == nil then
-			return nil, "", nil, false
-		end
-		if targetKind == "gather" then
-			local kind = target:GetAttribute(ItemCatalog.NodeKindAttribute)
-			local node = if type(kind) == "string" then ItemCatalog.Nodes[kind] else nil
-			if node == nil then
-				return nil, "", nil, false
-			end
-			local hits = target:GetAttribute(ItemCatalog.NodeHitsAttribute)
-			local progress = if type(hits) == "number"
-				then hits / Config.Gather.HitsToDeplete
-				else nil
-			local stack = stacks[shownSlot()]
-			local ok = ItemsGather.canHarvest(
-				node.kind,
-				if stack then { id = stack.id, count = stack.count } else nil
-			)
-			local tool = ItemCatalog.Items[node.toolId]
-			if ok then
-				return target, `{node.verb} {inputHint}`, progress, false
-			end
-			return target,
-				`{node.verb}: needs {if tool then tool.name else node.toolId}`,
-				progress,
-				true
-		elseif targetKind == "attack" then
-			local hp = target:GetAttribute(Config.Mobs.HealthAttribute)
-			local humanoid = target:FindFirstChildOfClass("Humanoid")
-			local progress = if type(hp) == "number"
-					and humanoid
-					and humanoid.MaxHealth > 0
-				then hp / humanoid.MaxHealth
-				else nil
-			local name = HudConfig.MobNames[target.Name] or target.Name
-			return target, `Hunt {name} {inputHint}`, progress, false
-		end
-		return nil, "", nil, false
+		local shown = stacks[shownSlot()]
+		return HudPrompt.compute({
+			action = action,
+			interact = interact,
+			inputHint = inputHint,
+			counts = counts,
+			shownStack = if shown then { id = shown.id, count = shown.count } else nil,
+			targetKind = targetKind,
+			targetInstance = targetInstance,
+			fireInstance = fireInstance,
+			benchInstance = benchInstance,
+			upgradableFire = upgradableFire,
+			itemName = itemName,
+		})
 	end
 
 	-- One visual loop: compass every frame; target/prompt/hints at a low rate.

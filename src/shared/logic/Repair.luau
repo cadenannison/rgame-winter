@@ -19,10 +19,10 @@ function Repair.isRepairable(def: Types.ItemDef): boolean
 	return def.repairable == true or def.kind == "tool" or def.kind == "weapon"
 end
 
--- HUD durability label: "n/a" for unbreakable items, "N%" for repairable ones, nil for no label.
+-- HUD durability label: nothing for unbreakable items, "N%" for repairable ones, nil for no label.
 function Repair.durabilityLabel(def: Types.ItemDef, durability: number?): string?
 	if Repair.isUnbreakable(def) then
-		return "n/a"
+		return nil
 	end
 	if durability ~= nil and Repair.isRepairable(def) then
 		return `{Repair.percent(def, durability)}%`

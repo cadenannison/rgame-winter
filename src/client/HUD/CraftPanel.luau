@@ -10,6 +10,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 local Crafting = require(Shared:WaitForChild("logic"):WaitForChild("Crafting"))
 local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
+local RightStack = require(script.Parent:WaitForChild("RightStack"))
 
 export type Panel = {
 	setOpen: (boolean) -> (),
@@ -68,9 +69,6 @@ function CraftPanel.new(
 
 	local toggleButton = Instance.new("TextButton")
 	toggleButton.Name = "CraftButton"
-	toggleButton.AnchorPoint = Vector2.new(1, 0)
-	toggleButton.Position = UDim2.fromScale(0.985, 0.02)
-	toggleButton.Size = UDim2.fromOffset(96, 40)
 	toggleButton.BackgroundColor3 = HudConfig.PanelColor
 	toggleButton.BackgroundTransparency = HudConfig.PanelTransparency
 	toggleButton.TextColor3 = HudConfig.TextColor
@@ -85,7 +83,7 @@ function CraftPanel.new(
 	pad.PaddingTop = UDim.new(0, 6)
 	pad.PaddingBottom = UDim.new(0, 6)
 	pad.Parent = toggleButton
-	toggleButton.Parent = gui
+	RightStack.attach(toggleButton, "Craft")
 
 	local frame = Instance.new("Frame")
 	frame.Name = "CraftPanel"

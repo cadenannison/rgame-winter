@@ -24,3 +24,14 @@ Status: in progress
 - QABridge (Studio only): PlayerScripts[Config.Debug.ClientBridgeName] BindableFunction; Invoke(fn, ...) with fn in selectSlot, selectItem, wheel, toggleCraft, craft, action, gather, attack, place, eat, fuel, state. Same functions as the inputs.
 
 - Round 3: HudController starts FireMeter and PlacementGhost; place() uses ghost.target(). See docs/systems/items-crafting.md and survival.md.
+
+## Respawn API
+- `SurvivalService.respawn(player: Player): boolean` (src/server/Survival/SurvivalService.luau; the downed/revive service). Debug and tools call this, never set attributes by hand. Downed -> revives in place through the same `reviveInPlace` path a teammate revive uses (meters, Downed/Dead attributes, body, humanoid health). Dead -> meters and attributes reset, `LoadCharacterAsync` loads a fresh character (setupCharacter resets again, idempotent). Alive -> no-op, returns false. It calls the respawn handler; RunLifecycleService registers one that runs `RunState.respawn` (downed/dead -> alive; skipped once the run ended).
+
+## Death panel (state -> visibility)
+- shared/logic/DeathPanelState.resolve({downed, dead, runEnded, hasSummary, inLobby, dismissed}) -> mode hidden | downed | dead | summary plus showRevive / showSpectate / showReturn / showPlayAgain / opaque / blocksInput. Alive hides; downed shows the revive banner; dead shows spectate + Return to lobby; run end with real summary data shows the opaque summary (Play again + Return to lobby), in a run server only to downed/dead players (a respawned player never sees a stale one), in the lobby to everyone until dismissed. Tests: tests/DeathPanelTests.luau.
+- DownedUi and Lobby/SummaryScreen call it on the scan tick, on the Downed/Dead attribute change signals and on CharacterAdded. Hidden means Visible=false, Active=false (DownedUi ScreenGui.Enabled=false when nothing shows). Summary content sits at ZIndex 16 above the ZIndex 15 background; stats text up to 34 px, 56 px buttons.
+
+## Right-hand button stack and chat
+- HUD/RightStack.luau: one ScreenGui "RightStack" with a UIListLayout (HudConfig.RightStack: width 88, height 44, gap 6). CraftPanel, MapView and SettingsUi attach their buttons with `RightStack.attach(button, slot)` (Craft, Map, Settings) and destroy them on cleanup. The touch Ping button sits left of the stack (HudConfig Ping.ButtonPosition) so it never overlaps it or Act.
+- HudController moves the default chat window (TextChatService.ChatWindowConfiguration) below the top-left stats/status stack (HudConfig.Chat).

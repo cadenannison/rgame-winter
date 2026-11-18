@@ -9,3 +9,6 @@ Exploit surface: none new. Client only displays; the open request is range-check
 Playtest checklist (hand, no QA scenario this round): 1 walk up to each rarity: label colour matches, E / tap / X opens, 2 rare+ beam visible from 100+ studs, 3 only ~8 chests nearest you glow (check FPS in a structure with many chests), 4 open a chest: lid swings, burst, dims, prompt gone, 5 phone emulation: button >= 44 px and tappable, hold chests (epic 0.25 s, legendary 0.5 s) show a fill bar.
 Sound hooks: Assets keys ChestOpenCommonSound / ChestOpenUncommonSound / ChestOpenRareSound / ChestOpenEpicSound / ChestOpenLegendarySound and ChestParticle (texture); absent or "" = silent / engine sparkle.
 Status: in progress (headless done; Studio hand-check pending)
+
+## Items round: short beams
+Beams are one small neon part per chest (counted in `ChestStyle.partCount`), only for rarity >= `Config.Loot.Beam.MinRarity` (rare+), height <= `Beam.Height` (hard cap `MaxHeight` 12, rare 6 / epic 8 / legendary 10). No sky pillars. The client (`client/Loot/ChestVisuals.updateBeams`, one pass for all chests every 0.1 s) fades them by camera distance (`ChestStyle.beamFade`: hidden beyond `Beam.VisibleRadius`, fading over `FadeBand`) through `LocalTransparencyModifier`, shows only the nearest `Beam.MaxActive`, and hides opened chests' beams.

@@ -16,9 +16,12 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local ArtKit = require(Shared:WaitForChild("ArtKit"))
 local Logic = Shared:WaitForChild("logic")
+local SiteGround = require(Logic:WaitForChild("SiteGround"))
 local World = require(Logic:WaitForChild("World"))
 local MassiveRules = require(Logic:WaitForChild("MassiveRules"))
 local Kit = require(Logic:WaitForChild("StructurePlanKitA"))
+
+local SiteGroundTerrain = require(script.Parent.Parent:WaitForChild("SiteGroundTerrain"))
 
 local P = ArtKit.palette(Config.Art.World.Palette)
 
@@ -30,7 +33,6 @@ local EYES_VANISH_DISTANCE = 18 -- studs: watching eyes close when a player come
 local EYES_TRANSPARENCY = 0.1
 local SIGN_DISTANCE = 60
 local NOTE_DISTANCE = 14
-local SAMPLE_STEP = 8 -- studs between terrain height samples over the footprint
 local CARVE_MARGIN = 2 -- studs of extra air around each carved room
 local APPROACH_RUN = 40 -- studs: the ramp from an exit door to the terrain
 local APPROACH_SLOPE = 3 -- run per rise: keeps approach ramps walkable
@@ -124,7 +126,7 @@ local PARTICLES: { [string]: ParticleStyle } = {
 
 local StructureKitA = {}
 
-export type ChestSlot = { Position: Vector3, Depth: number, StructureType: string }
+export type ChestSlot = { Position: Vector3, Depth: number, StructureType: string, Room: string? }
 export type CueSpot = { Position: Vector3, Kind: string, Room: string }
 export type RoomInfo = { Id: string, Name: string, Level: number, Dark: boolean }
 export type Handle = {
@@ -274,25 +276,6 @@ local function carveBox(
 		Workspace.Terrain:FillBlock(cf, size, Enum.Material.Air)
 	end)
 	return ok
-end
-
--- Lowest terrain top under the footprint and the highest.
-local function sampleGround(seed: number, plan: Kit.Plan, base: CFrame): (number, number)
-	local lo, hi = math.huge, -math.huge
-	local x = plan.minX
-	while x <= plan.maxX + SAMPLE_STEP do
-		local z = plan.minZ
-		while z <= plan.maxZ + SAMPLE_STEP do
-			local p = base:PointToWorldSpace(
-				Vector3.new(math.min(x, plan.maxX), 0, math.min(z, plan.maxZ))
-			)
-			local h = World.heightAt(seed, p.X, p.Z)
-			lo, hi = math.min(lo, h), math.max(hi, h)
-			z += SAMPLE_STEP
-		end
-		x += SAMPLE_STEP
-	end
-	return lo, hi
 end
 
 -- A walkable ramp from an exit door out to the terrain, with the hill above it cut away.
@@ -509,10 +492,21 @@ function StructureKitA.build(
 ): Handle
 	local yaw = yawFor(seed, origin)
 	local base = CFrame.new(origin.X, 0, origin.Z) * CFrame.Angles(0, yaw, 0)
-	local lo, hi = sampleGround(seed, plan, base)
-	local ground = math.floor(lo)
+	-- SiteGround levels the footprint (cut + fill, blended skirt, no hard pad) and picks the entrance floor
+	-- height; the terrain inside the footprint then sits at `ground`, so nothing is sunk or buried.
+	local function heightFn(x: number, z: number): number
+		return World.heightAt(seed, x, z)
+	end
+	local cx, cz, hx, hz =
+		SiteGroundTerrain.worldRect(base, plan.minX, plan.maxX, plan.minZ, plan.maxZ)
+	local site = SiteGround.plan(heightFn, cx, cz, hx, hz)
+	local ok, err = pcall(SiteGroundTerrain.apply, site, heightFn)
+	if not ok then
+		warn(`[StructureKitA] site grounding failed: {err}`)
+	end
+	local ground = site.baseY
 	local frame = CFrame.new(origin.X, ground, origin.Z) * CFrame.Angles(0, yaw, 0)
-	local rise = hi - ground
+	local rise = 0 -- terrain inside the footprint is levelled to `ground`
 
 	local model = Instance.new("Model")
 	model.Name = plan.id
@@ -576,6 +570,7 @@ function StructureKitA.build(
 			Position = frame:PointToWorldSpace(Vector3.new(c.x, c.y, c.z)),
 			Depth = c.depth,
 			StructureType = plan.id,
+			Room = c.room,
 		})
 	end
 	local lurkers: { Vector3 } = {}

@@ -13,7 +13,11 @@ export type MetersPayload = {
 	isNight: boolean,
 }
 export type ItemStack = { id: string, count: number, durability: number? }
-export type InventoryPayload = { slots: { [number]: ItemStack? }, selected: number } -- full snapshot, index = slot
+export type InventoryPayload = {
+	slots: { [number]: ItemStack? }, -- full snapshot, index = slot
+	selected: number,
+	equipment: { [string]: ItemStack }?, -- worn gear, Config.Equipment.Slots id -> stack (Items round)
+}
 export type CraftPayload = { recipeId: string }
 export type PlacePayload = { structureId: string, position: Vector3, rotationY: number }
 export type GatherPayload = { node: Instance }
@@ -63,7 +67,19 @@ export type StorageWithdrawPayload = { chest: Instance, chestSlot: number, count
 export type StorageStatePayload = {
 	chest: Instance?, -- nil = closed (out of range, destroyed or StorageCloseRequest)
 	slots: { [number]: ItemStack? }, -- full snapshot, index = chest slot
+	id: string?, -- chest id string (address id for {kind="chest"})
+	rev: number?, -- Config.Storage.RevisionAttribute at snapshot time
 }
+-- Items round: one move path. Addresses: {kind="inv",slot} | {kind="equip",slot=<slot id>} | {kind="chest",id,slot}.
+export type InventoryAddr = { kind: string, slot: number | string, id: string? }
+export type InventoryMovePayload = {
+	from: InventoryAddr,
+	to: InventoryAddr?, -- nil = quick move (shift-click)
+	count: number,
+	rev: number?, -- chest revision the client saw
+	expect: string?, -- item id the client saw at `from` (stale-revision resolution)
+}
+export type InventoryMoveResultPayload = { ok: boolean, reason: string, from: InventoryAddr? }
 -- Fog-of-war: explored cells only (1-based row-major index over cellsPerSide^2), never unexplored layout.
 export type MapDataPayload = {
 	cellSize: number, -- Config.Map.CellSize
@@ -188,6 +204,9 @@ Remotes.SwingBroadcast = "SwingBroadcast" -- server -> other nearby clients (Swi
 -- Loot round (payload types above)
 Remotes.LootOpenRequest = "LootOpenRequest" -- client -> server (LootOpenPayload); handler: type, range, Guard, state (unlooted, near), roll/grant
 Remotes.LootOpened = "LootOpened" -- server -> opening client (LootOpenedPayload); once per open, for feedback/visuals
+-- Items round (inventory revamp)
+Remotes.InventoryMove = "InventoryMove" -- client -> server (InventoryMovePayload); hotbar, grid, equipment, chests
+Remotes.InventoryMoveResult = "InventoryMoveResult" -- server -> client (InventoryMoveResultPayload); refusals only
 Remotes.DebugCommand = "DebugCommand" -- client -> server, Studio only (command: string, arg: any); not in Remotes.all
 
 -- Every remote the server creates eagerly at startup (so clients never wait on a missing folder).
@@ -241,6 +260,8 @@ Remotes.all = {
 	Remotes.SwingBroadcast,
 	Remotes.LootOpenRequest,
 	Remotes.LootOpened,
+	Remotes.InventoryMove,
+	Remotes.InventoryMoveResult,
 }
 
 local function getFolder(): Folder

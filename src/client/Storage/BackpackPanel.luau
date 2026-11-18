@@ -1,0 +1,852 @@
+--!strict
+-- Minecraft-style backpack panel: equipment slots + rotating character, 27-slot grid, hotbar row and (when a
+-- storage chest is open) the 9-slot chest grid. Drag and drop (merge, swap), right-click or long-press to split,
+-- shift-click quick move, tap-select then tap-destination on phones. Every action sends ONE remote
+-- (Remotes.InventoryMove) with typed addresses; the server validates everything. Display and intent only.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Remotes = require(Shared:WaitForChild("Remotes"))
+local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
+local Rarity = require(Shared:WaitForChild("data"):WaitForChild("Rarity"))
+local Equipment = require(Shared:WaitForChild("logic"):WaitForChild("Equipment"))
+local InventoryMove = require(Shared:WaitForChild("logic"):WaitForChild("InventoryMove"))
+local Repair = require(Shared:WaitForChild("logic"):WaitForChild("Repair"))
+local HudConfig = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("HudConfig"))
+local EquipmentViewport = require(script.Parent:WaitForChild("EquipmentViewport"))
+local InventoryMirror = require(script.Parent:WaitForChild("InventoryMirror"))
+local UiConfig = require(script.Parent:WaitForChild("InventoryUiConfig"))
+
+local BackpackPanel = {}
+
+export type ChestInfo = {
+	chest: Instance,
+	id: string,
+	rev: number,
+	slots: { [number]: { id: string, count: number, durability: number? } },
+}
+export type Panel = {
+	toggle: () -> (),
+	open: () -> (),
+	close: () -> (),
+	isOpen: () -> boolean,
+	setChest: (ChestInfo?) -> (),
+	showFull: () -> (), -- "Inventory full" hint for Config.Inventory.FullHintSeconds
+	-- QA / tests: the same entry points the pointer handlers use.
+	move: (from: InventoryMove.Addr, to: InventoryMove.Addr?, count: number) -> (),
+	destroy: () -> (),
+}
+type Stack = { id: string, count: number, durability: number? }
+type SlotView = {
+	addr: InventoryMove.Addr,
+	button: TextButton,
+	inner: Frame,
+	name: TextLabel,
+	count: TextLabel,
+	stroke: UIStroke,
+}
+type Press = {
+	view: SlotView,
+	input: InputObject,
+	start: Vector2,
+	half: boolean,
+	dragging: boolean,
+	touch: boolean,
+}
+
+local function key(addr: InventoryMove.Addr): string
+	return `{addr.kind}:{tostring(addr.slot)}`
+end
+
+local function make(class: string, props: { [string]: any }, parent: Instance?): any
+	local inst = Instance.new(class)
+	for k, v in props do
+		(inst :: any)[k] = v
+	end
+	inst.Parent = parent
+	return inst
+end
+
+local function label(
+	parent: Instance,
+	text: string,
+	size: number,
+	align: Enum.TextXAlignment?
+): TextLabel
+	return make("TextLabel", {
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = UiConfig.Colors.Text,
+		Font = Enum.Font.GothamMedium,
+		TextSize = size,
+		TextXAlignment = align or Enum.TextXAlignment.Left,
+	}, parent)
+end
+
+function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
+	local player = Players.LocalPlayer
+	local playerGui = player:WaitForChild("PlayerGui") :: PlayerGui
+	local connections: { RBXScriptConnection } = {}
+	local destroyed = false
+	local isOpen = false
+	local chestInfo: ChestInfo? = nil
+	local views: { [string]: SlotView } = {}
+	local selection: { addr: InventoryMove.Addr, count: number }? = nil
+	local press: Press? = nil
+	local ghost: TextLabel? = nil
+	local lastTarget: SlotView? = nil
+	local fullToken = 0
+
+	local gui = make("ScreenGui", {
+		Name = UiConfig.GuiName,
+		ResetOnSpawn = false,
+		DisplayOrder = HudConfig.DisplayOrder + UiConfig.DisplayOrderOffset,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, nil) :: ScreenGui
+
+	-- Toggle button (always visible, >= 44 px).
+	local T = UiConfig.ToggleButton
+	local toggleButton = make("TextButton", {
+		Name = "BackpackButton",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(T.RightScale, 0, 0, T.TopPx),
+		Size = UDim2.fromOffset(T.WidthPx, T.HeightPx),
+		BackgroundColor3 = UiConfig.Colors.Panel,
+		BackgroundTransparency = HudConfig.PanelTransparency,
+		BorderSizePixel = 0,
+		Text = T.Text,
+		TextColor3 = UiConfig.Colors.Text,
+		Font = Enum.Font.GothamBold,
+		TextSize = 16,
+	}, gui) :: TextButton
+	make("UICorner", { CornerRadius = UDim.new(0, 8) }, toggleButton)
+
+	-- "Inventory full" hint.
+	local fullHint = make("TextLabel", {
+		Name = "FullHint",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, UiConfig.FullHintY),
+		Size = UDim2.fromOffset(UiConfig.FullHintWidthPx, UiConfig.FullHintHeightPx),
+		BackgroundColor3 = UiConfig.Colors.Panel,
+		BackgroundTransparency = HudConfig.PanelTransparency,
+		BorderSizePixel = 0,
+		Text = InventoryMove.FullText,
+		TextColor3 = UiConfig.Colors.Reject,
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		Visible = false,
+		ZIndex = 5,
+	}, gui) :: TextLabel
+	make("UICorner", { CornerRadius = UDim.new(0, 8) }, fullHint)
+
+	-- Panel shell: titled frame with a scrolling body so nothing is ever cut off on a phone.
+	local panel = make("Frame", {
+		Name = "Panel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, UiConfig.PanelCenterY),
+		BackgroundColor3 = UiConfig.Colors.Panel,
+		BackgroundTransparency = UiConfig.PanelTransparency,
+		BorderSizePixel = 0,
+		Visible = false,
+	}, gui) :: Frame
+	make("UICorner", { CornerRadius = UDim.new(0, 10) }, panel)
+	local title = label(panel, "Backpack", 20)
+	title.Name = "Title"
+	title.Font = Enum.Font.GothamBold
+	title.Position = UDim2.fromOffset(UiConfig.PadPx, 4)
+	title.Size = UDim2.new(1, -(UiConfig.CloseButtonPx + UiConfig.PadPx * 2), 0, UiConfig.TitlePx)
+	local closeButton = make("TextButton", {
+		Name = "Close",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -6, 0, 2),
+		Size = UDim2.fromOffset(UiConfig.CloseButtonPx, UiConfig.CloseButtonPx),
+		BackgroundColor3 = HudConfig.BarColors.health,
+		BorderSizePixel = 0,
+		Text = "X",
+		TextColor3 = UiConfig.Colors.Text,
+		Font = Enum.Font.GothamBold,
+		TextSize = 20,
+	}, panel) :: TextButton
+	make("UICorner", { CornerRadius = UDim.new(0, 8) }, closeButton)
+	local body = make("ScrollingFrame", {
+		Name = "Body",
+		Position = UDim2.fromOffset(UiConfig.PadPx, UiConfig.CloseButtonPx + 6),
+		Size = UDim2.new(1, -UiConfig.PadPx * 2, 1, -(UiConfig.CloseButtonPx + 6 + UiConfig.PadPx)),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 6,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+	}, panel) :: ScrollingFrame
+	local flow = make("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		FillDirection = Enum.FillDirection.Vertical,
+		Padding = UDim.new(0, UiConfig.PadPx),
+	}, body) :: UIListLayout
+
+	local function section(order: number, name: string): (Frame, TextLabel)
+		local frame = make("Frame", {
+			Name = name,
+			LayoutOrder = order,
+			BackgroundTransparency = 1,
+			AutomaticSize = Enum.AutomaticSize.XY,
+			Size = UDim2.new(),
+		}, body) :: Frame
+		make("UIListLayout", {
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, UiConfig.GapPx),
+		}, frame)
+		local header = label(frame, name, 16)
+		header.Name = "Header"
+		header.LayoutOrder = 0
+		header.Font = Enum.Font.GothamBold
+		header.Size = UDim2.fromOffset(180, UiConfig.HeaderPx)
+		return frame, header
+	end
+
+	local equipSection = section(1, UiConfig.Titles.Equipment)
+	local packSection = section(2, UiConfig.Titles.Backpack)
+	local chestSection, chestHeader = section(3, UiConfig.Titles.Chest)
+	chestSection.Visible = false
+	chestHeader.Text = UiConfig.Titles.Chest
+
+	-- Equipment row: left column, character viewport, right column.
+	local equipRow = make("Frame", {
+		Name = "Row",
+		LayoutOrder = 1,
+		BackgroundTransparency = 1,
+		AutomaticSize = Enum.AutomaticSize.XY,
+		Size = UDim2.new(),
+	}, equipSection) :: Frame
+	make("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, UiConfig.GapPx * 2),
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+	}, equipRow)
+	local leftCol = make("Frame", {
+		Name = "Left",
+		LayoutOrder = 1,
+		BackgroundTransparency = 1,
+		AutomaticSize = Enum.AutomaticSize.XY,
+		Size = UDim2.new(),
+	}, equipRow) :: Frame
+	make(
+		"UIListLayout",
+		{ SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, UiConfig.GapPx) },
+		leftCol
+	)
+	local viewportHolder = make("Frame", {
+		Name = "ViewportHolder",
+		LayoutOrder = 2,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(UiConfig.ViewportWidthPx, UiConfig.ViewportHeightPx),
+	}, equipRow) :: Frame
+	local rightCol = make("Frame", {
+		Name = "Right",
+		LayoutOrder = 3,
+		BackgroundTransparency = 1,
+		AutomaticSize = Enum.AutomaticSize.XY,
+		Size = UDim2.new(),
+	}, equipRow) :: Frame
+	make(
+		"UIListLayout",
+		{ SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, UiConfig.GapPx) },
+		rightCol
+	)
+	local viewport = EquipmentViewport.new(viewportHolder)
+
+	local function grid(parent: Instance, order: number): (Frame, UIGridLayout)
+		local frame = make("Frame", {
+			Name = "Grid",
+			LayoutOrder = order,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(),
+			AutomaticSize = Enum.AutomaticSize.XY,
+		}, parent) :: Frame
+		local layout = make("UIGridLayout", {
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			CellSize = UDim2.fromOffset(UiConfig.CellPx, UiConfig.CellPx),
+			CellPadding = UDim2.fromOffset(UiConfig.GapPx, UiConfig.GapPx),
+			FillDirectionMaxCells = Config.Inventory.Columns,
+		}, frame) :: UIGridLayout
+		return frame, layout
+	end
+	local packGrid, packLayout = grid(packSection, 1)
+	local hotbarHeader = label(packSection, UiConfig.Titles.Hotbar, 14)
+	hotbarHeader.LayoutOrder = 2
+	hotbarHeader.Size = UDim2.fromOffset(180, UiConfig.HeaderPx)
+	hotbarHeader.TextColor3 = UiConfig.Colors.Dim
+	local hotGrid, hotLayout = grid(packSection, 3)
+	local chestGrid, chestLayout = grid(chestSection, 1)
+	local gridLayouts: { UIGridLayout } = { packLayout, hotLayout, chestLayout }
+
+	local function refresh() end -- assigned below
+
+	local function showFull()
+		fullToken += 1
+		local token = fullToken
+		fullHint.Visible = true
+		task.delay(Config.Inventory.FullHintSeconds, function()
+			if fullToken == token and not destroyed then
+				fullHint.Visible = false
+			end
+		end)
+	end
+
+	local function stackAt(addr: InventoryMove.Addr): Stack?
+		if addr.kind == "inv" then
+			return mirror.slots()[addr.slot :: number]
+		elseif addr.kind == "equip" then
+			return mirror.equipment()[addr.slot :: string]
+		elseif chestInfo and addr.id == chestInfo.id then
+			return chestInfo.slots[addr.slot :: number]
+		end
+		return nil
+	end
+
+	local function send(from: InventoryMove.Addr, to: InventoryMove.Addr?, count: number)
+		local payload: Remotes.InventoryMovePayload = {
+			from = from,
+			to = to,
+			count = count,
+			rev = if chestInfo then chestInfo.rev else nil,
+			expect = (function(): string?
+				local s = stackAt(from)
+				return if s then s.id else nil
+			end)(),
+		}
+		Remotes.event(Remotes.InventoryMove):FireServer(payload)
+	end
+
+	local function shake(view: SlotView?)
+		if view == nil then
+			return
+		end
+		task.spawn(function()
+			local started = os.clock()
+			local duration = Config.Equipment.ShakeSeconds
+			view.stroke.Color = UiConfig.Colors.Reject
+			view.stroke.Enabled = true
+			while not destroyed and view.inner.Parent ~= nil do
+				local t = os.clock() - started
+				if t >= duration then
+					break
+				end
+				local falloff = 1 - t / duration
+				view.inner.Position = UDim2.fromOffset(
+					math.sin(t * UiConfig.ShakeFrequency) * UiConfig.ShakeAmplitudePx * falloff,
+					0
+				)
+				task.wait()
+			end
+			if view.inner.Parent ~= nil then
+				view.inner.Position = UDim2.new()
+			end
+			refresh()
+		end)
+	end
+
+	-- One move from the UI. Wrong equipment slots are rejected locally with a shake (the server also checks).
+	local function requestMove(from: InventoryMove.Addr, to: InventoryMove.Addr?, count: number)
+		local s = stackAt(from)
+		if s == nil then
+			return
+		end
+		if to ~= nil then
+			if to.kind == "equip" and not Equipment.accepts(to.slot :: string, s.id) then
+				shake(views[key(to)])
+				return
+			end
+			if to.kind == from.kind and to.slot == from.slot and to.id == from.id then
+				return
+			end
+			lastTarget = views[key(to)]
+		end
+		send(from, to, math.clamp(count, 1, s.count))
+	end
+
+	local function dropText(stack: Stack): string
+		local def = ItemCatalog.Items[stack.id]
+		return if def then def.name else stack.id
+	end
+
+	local function makeSlot(
+		parent: Instance,
+		addr: InventoryMove.Addr,
+		order: number,
+		caption: string?
+	): SlotView
+		local button = make("TextButton", {
+			Name = `Slot_{key(addr)}`,
+			LayoutOrder = order,
+			AutoButtonColor = false,
+			BackgroundColor3 = if addr.kind == "equip"
+				then UiConfig.Colors.Equip
+				else UiConfig.Colors.Slot,
+			BackgroundTransparency = UiConfig.SlotTransparency,
+			BorderSizePixel = 0,
+			Text = "",
+			Size = UDim2.fromOffset(UiConfig.CellPx, UiConfig.CellPx),
+			ClipsDescendants = false,
+		}, parent) :: TextButton
+		make("UICorner", { CornerRadius = UDim.new(0, 6) }, button)
+		local stroke = make("UIStroke", {
+			Color = UiConfig.Colors.SlotSelected,
+			Thickness = 2,
+			Enabled = false,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		}, button) :: UIStroke
+		local inner = make("Frame", {
+			Name = "Inner",
+			BackgroundTransparency = 1,
+			Size = UDim2.fromScale(1, 1),
+		}, button) :: Frame
+		local cap = label(inner, caption or "", 11, Enum.TextXAlignment.Left)
+		cap.Name = "Caption"
+		cap.Position = UDim2.fromOffset(3, 1)
+		cap.Size = UDim2.new(1, -6, 0, 13)
+		cap.TextColor3 = UiConfig.Colors.Dim
+		local name = label(inner, "", 12, Enum.TextXAlignment.Center)
+		name.Name = "Name"
+		name.TextWrapped = true
+		name.Position = UDim2.fromScale(0.05, 0.22)
+		name.Size = UDim2.fromScale(0.9, 0.5)
+		local count = label(inner, "", 12, Enum.TextXAlignment.Right)
+		count.Name = "Count"
+		count.Font = Enum.Font.GothamBold
+		count.Position = UDim2.fromScale(0.05, 0.7)
+		count.Size = UDim2.fromScale(0.9, 0.28)
+		local view: SlotView = {
+			addr = addr,
+			button = button,
+			inner = inner,
+			name = name,
+			count = count,
+			stroke = stroke,
+		}
+		views[key(addr)] = view
+		return view
+	end
+
+	for slotId, id in Config.Equipment.Slots do
+		local addr: InventoryMove.Addr = { kind = "equip", slot = id }
+		local column = if slotId <= #Config.Equipment.Slots / 2 then leftCol else rightCol
+		makeSlot(column, addr, slotId, Config.Equipment.SlotLabels[id])
+	end
+	for slot = 1, Config.Inventory.HotbarSize do
+		makeSlot(hotGrid, { kind = "inv", slot = slot }, slot, tostring(slot))
+	end
+	for slot = Config.Inventory.HotbarSize + 1, Config.Inventory.HotbarSize + Config.Inventory.BackpackSize do
+		makeSlot(packGrid, { kind = "inv", slot = slot }, slot, nil)
+	end
+	for slot = 1, Config.Storage.ChestSlots do
+		makeSlot(chestGrid, { kind = "chest", id = "", slot = slot }, slot, nil)
+	end
+
+	local function chestAddr(slot: number): InventoryMove.Addr
+		return { kind = "chest", id = if chestInfo then chestInfo.id else "", slot = slot }
+	end
+
+	refresh = function()
+		local selectedHot = mirror.selectedSlot()
+		for _, view in views do
+			local addr = view.addr
+			if addr.kind == "chest" then
+				addr = chestAddr(addr.slot :: number)
+				view.addr = addr
+			end
+			local stack = stackAt(addr)
+			local def = if stack then ItemCatalog.Items[stack.id] else nil
+			view.name.Text = if stack then dropText(stack) else ""
+			local text = ""
+			if stack and stack.count > 1 then
+				text = `x{stack.count}`
+			elseif stack and def and stack.durability ~= nil then
+				text = Repair.durabilityLabel(def, stack.durability) or "" -- unbreakable items show nothing
+			end
+			view.count.Text = text
+			local picked = selection ~= nil
+				and selection.addr.kind == addr.kind
+				and selection.addr.slot == addr.slot
+				and selection.addr.id == addr.id
+			local rarityColor: Color3? = nil
+			if stack then
+				local c = Rarity.Colors[ItemCatalog.rarityOf(stack.id)]
+				if c and ItemCatalog.rarityOf(stack.id) ~= "common" then
+					rarityColor = Color3.fromRGB(c[1], c[2], c[3])
+				end
+			end
+			if picked then
+				view.stroke.Color = UiConfig.Colors.SlotSelected
+				view.stroke.Enabled = true
+			elseif addr.kind == "inv" and addr.slot == selectedHot then
+				view.stroke.Color = UiConfig.Colors.Hotbar
+				view.stroke.Enabled = true
+			elseif rarityColor then
+				view.stroke.Color = rarityColor
+				view.stroke.Enabled = true
+			else
+				view.stroke.Enabled = false
+			end
+		end
+	end
+
+	-- Layout: wide screens put equipment | backpack | chest in one row, narrow ones stack them (columns shrink
+	-- but cells stay >= UiConfig.MinCellPx).
+	local function relayout()
+		local camera = Workspace.CurrentCamera
+		local screen = if camera then camera.ViewportSize else Vector2.new(1280, 720)
+		local width = math.min(screen.X * UiConfig.PanelWidthScale, UiConfig.PanelMaxWidth)
+		local height = screen.Y * UiConfig.PanelHeightScale
+		panel.Size = UDim2.fromOffset(width, height)
+		local avail = width - UiConfig.PadPx * 2 - 8
+		local gap = UiConfig.GapPx
+		local cell = UiConfig.CellPx
+		local columns = Config.Inventory.Columns
+		local equipW = 2 * (cell + gap) + UiConfig.ViewportWidthPx + gap * 4
+		local packW = columns * (cell + gap)
+		local chestOpen = chestInfo ~= nil
+		local chestW = UiConfig.WideChestColumns * (cell + gap)
+		local wideNeeded = equipW + packW + gap * 4 + (if chestOpen then chestW + gap * 2 else 0)
+		local wide = wideNeeded <= avail
+		flow.FillDirection = if wide
+			then Enum.FillDirection.Horizontal
+			else Enum.FillDirection.Vertical
+		local chestColumns = UiConfig.WideChestColumns
+		if not wide then
+			if columns * (cell + gap) > avail then
+				cell = UiConfig.MinCellPx
+				columns = math.max(4, math.floor(avail / (cell + gap)))
+			end
+			chestColumns = math.min(columns, Config.Storage.ChestSlots)
+		end
+		for _, layout in gridLayouts do
+			layout.CellSize = UDim2.fromOffset(cell, cell)
+			layout.FillDirectionMaxCells = if layout == chestLayout then chestColumns else columns
+		end
+		for _, view in views do
+			view.button.Size = UDim2.fromOffset(cell, cell)
+		end
+	end
+
+	local function setOpen(open: boolean)
+		if open == isOpen or destroyed then
+			return
+		end
+		isOpen = open
+		panel.Visible = open
+		if open then
+			relayout()
+			viewport.refresh()
+		else
+			selection = nil
+			if chestInfo then
+				Remotes.event(Remotes.StorageCloseRequest):FireServer()
+				chestInfo = nil
+				chestSection.Visible = false
+			end
+		end
+		refresh()
+	end
+
+	local function slotUnder(position: Vector2): SlotView?
+		for _, object in playerGui:GetGuiObjectsAtPosition(position.X, position.Y) do
+			for _, view in views do
+				if
+					view.button == object
+					and view.button:IsDescendantOf(panel)
+					and view.button.Visible
+				then
+					if view.addr.kind ~= "chest" or chestInfo ~= nil then
+						return view
+					end
+				end
+			end
+		end
+		return nil
+	end
+
+	local function beginGhost(view: SlotView, at: Vector2)
+		local stack = stackAt(view.addr)
+		if stack == nil then
+			return
+		end
+		local g = make("TextLabel", {
+			Name = "DragGhost",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(UiConfig.GhostPx, UiConfig.GhostPx),
+			Position = UDim2.fromOffset(at.X, at.Y),
+			BackgroundColor3 = UiConfig.Colors.SlotSelected,
+			BackgroundTransparency = 0.35,
+			BorderSizePixel = 0,
+			Text = dropText(stack),
+			TextColor3 = UiConfig.Colors.Text,
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			TextWrapped = true,
+			ZIndex = 20,
+		}, gui) :: TextLabel
+		make("UICorner", { CornerRadius = UDim.new(0, 6) }, g)
+		ghost = g
+	end
+
+	local function endGhost()
+		if ghost then
+			ghost:Destroy()
+			ghost = nil
+		end
+	end
+
+	-- A click or tap (no drag): quick move with shift, else select / move the selected stack here.
+	local function clickSlot(view: SlotView, half: boolean, shiftHeld: boolean)
+		local stack = stackAt(view.addr)
+		if shiftHeld and stack and selection == nil then
+			send(view.addr, nil, stack.count)
+			return
+		end
+		local picked = selection
+		if picked == nil then
+			if stack then
+				local count = if half then math.ceil(stack.count / 2) else stack.count
+				selection = { addr = view.addr, count = count }
+			end
+			refresh()
+			return
+		end
+		selection = nil
+		if
+			picked.addr.kind == view.addr.kind
+			and picked.addr.slot == view.addr.slot
+			and picked.addr.id == view.addr.id
+		then
+			refresh()
+			return
+		end
+		requestMove(picked.addr, view.addr, if half and picked.count > 1 then 1 else picked.count)
+		refresh()
+	end
+
+	local function wire(view: SlotView)
+		table.insert(
+			connections,
+			view.button.InputBegan:Connect(function(input: InputObject)
+				local kind = input.UserInputType
+				local isTouch = kind == Enum.UserInputType.Touch
+				if
+					kind ~= Enum.UserInputType.MouseButton1
+					and kind ~= Enum.UserInputType.MouseButton2
+					and not isTouch
+				then
+					return
+				end
+				local p: Press = {
+					view = view,
+					input = input,
+					start = Vector2.new(input.Position.X, input.Position.Y),
+					half = kind == Enum.UserInputType.MouseButton2,
+					dragging = false,
+					touch = isTouch,
+				}
+				press = p
+				if isTouch then
+					-- Long press = pick up half the stack (then tap the destination).
+					task.delay(Config.Inventory.SplitHoldSeconds, function()
+						if press == p and not p.dragging and selection == nil then
+							local stack = stackAt(view.addr)
+							if stack and stack.count > 1 then
+								press = nil
+								selection = { addr = view.addr, count = math.ceil(stack.count / 2) }
+								refresh()
+							end
+						end
+					end)
+				end
+			end)
+		)
+	end
+	for _, view in views do
+		wire(view)
+	end
+
+	table.insert(
+		connections,
+		UserInputService.InputChanged:Connect(function(input: InputObject)
+			local p = press
+			if p == nil then
+				return
+			end
+			local moving = input.UserInputType == Enum.UserInputType.MouseMovement
+				or (p.touch and input == p.input)
+			if not moving then
+				return
+			end
+			local pos = Vector2.new(input.Position.X, input.Position.Y)
+			if
+				not p.dragging
+				and (pos - p.start).Magnitude >= UiConfig.DragThresholdPx
+				and stackAt(p.view.addr)
+			then
+				p.dragging = true
+				beginGhost(p.view, pos)
+			end
+			if p.dragging and ghost then
+				ghost.Position = UDim2.fromOffset(pos.X, pos.Y)
+			end
+		end)
+	)
+	table.insert(
+		connections,
+		UserInputService.InputEnded:Connect(function(input: InputObject)
+			local p = press
+			if
+				p == nil or not (input == p.input or input.UserInputType == p.input.UserInputType)
+			then
+				return
+			end
+			press = nil
+			local pos = Vector2.new(input.Position.X, input.Position.Y)
+			if p.dragging then
+				endGhost()
+				local target = slotUnder(pos)
+				local stack = stackAt(p.view.addr)
+				if target and stack and target ~= p.view then
+					local count = if p.half then math.ceil(stack.count / 2) else stack.count
+					requestMove(p.view.addr, target.addr, count)
+				end
+				refresh()
+			else
+				local shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+					or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+				clickSlot(p.view, p.half, shift)
+			end
+		end)
+	)
+
+	-- Keys (B / Tab) toggle; never while typing in a text box.
+	table.insert(
+		connections,
+		UserInputService.InputBegan:Connect(function(input: InputObject)
+			if
+				UserInputService:GetFocusedTextBox() ~= nil
+				or input.UserInputType ~= Enum.UserInputType.Keyboard
+			then
+				return
+			end
+			if table.find(UiConfig.Keys, input.KeyCode) then
+				setOpen(not isOpen)
+			end
+		end)
+	)
+	table.insert(
+		connections,
+		toggleButton.Activated:Connect(function()
+			setOpen(not isOpen)
+		end)
+	)
+	table.insert(
+		connections,
+		closeButton.Activated:Connect(function()
+			setOpen(false)
+		end)
+	)
+	mirror.onChange(function()
+		if isOpen then
+			refresh()
+		end
+	end)
+	local camera = Workspace.CurrentCamera
+	if camera then
+		table.insert(
+			connections,
+			camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+				if isOpen then
+					relayout()
+				end
+			end)
+		)
+	end
+
+	-- Server refusals: shake the target slot (wrong slot, busy, full).
+	task.spawn(function()
+		local ev = Remotes.event(Remotes.InventoryMoveResult)
+		if destroyed then
+			return
+		end
+		table.insert(
+			connections,
+			ev.OnClientEvent:Connect(function(p: any)
+				if type(p) ~= "table" or p.ok == true then
+					return
+				end
+				if p.reason == "Full" then
+					showFull()
+				end
+				if isOpen and p.reason ~= "Same" then
+					shake(lastTarget)
+				end
+				lastTarget = nil
+			end)
+		)
+		-- Pickups blocked by a full inventory arrive as a plain Notify (gather, loot, drops).
+		table.insert(
+			connections,
+			Remotes.event(Remotes.Notify).OnClientEvent:Connect(function(_: any, text: any)
+				if text == InventoryMove.FullText then
+					showFull()
+				end
+			end)
+		)
+	end)
+
+	gui.Parent = playerGui
+	refresh()
+
+	return {
+		toggle = function()
+			setOpen(not isOpen)
+		end,
+		open = function()
+			setOpen(true)
+		end,
+		close = function()
+			setOpen(false)
+		end,
+		isOpen = function(): boolean
+			return isOpen
+		end,
+		setChest = function(info: ChestInfo?)
+			chestInfo = info
+			chestSection.Visible = info ~= nil
+			if info and not isOpen then
+				setOpen(true)
+			end
+			if isOpen then
+				relayout()
+			end
+			refresh()
+		end,
+		showFull = function()
+			showFull()
+		end,
+		move = requestMove,
+		destroy = function()
+			destroyed = true
+			for _, c in connections do
+				c:Disconnect()
+			end
+			table.clear(connections)
+			endGhost()
+			viewport.destroy()
+			gui:Destroy()
+		end,
+	}
+end
+
+return BackpackPanel

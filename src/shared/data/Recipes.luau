@@ -3,6 +3,7 @@
 -- Merged into ItemCatalog.Recipes at load. Key = output item id (repair cost reads the recipe of the
 -- item: Config.Repair.CostFraction of its inputs). Stations: Config.Craft.Stations keys.
 
+local Config = require("../Config")
 local Types = require("./Types")
 
 local Recipes = {}
@@ -36,7 +37,9 @@ local list: { Types.Recipe } = {
 		"workbench",
 		{ { id = "Stone", count = 8 }, { id = "Wood", count = 8 } }
 	),
-	r("StorageChest", 1, "workbench", { { id = "Wood", count = 16 } }),
+	r("StorageChest", Config.Storage.CraftStationTier, Config.Storage.CraftStation, {
+		{ id = "Wood", count = Config.Storage.CraftWood },
+	}),
 	r("Wall", 1, "workbench", { { id = "Wood", count = 6 } }),
 	r("Door", 1, "workbench", { { id = "Wood", count = 8 }, { id = "Stone", count = 1 } }),
 	r("SpikeTrap", 1, "workbench", { { id = "Wood", count = 6 }, { id = "Stone", count = 3 } }),

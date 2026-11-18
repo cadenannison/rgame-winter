@@ -265,6 +265,26 @@ for id, def in ItemCatalog.Items do
 	def.lootCategory = tag.category
 end
 
+-- Items round: Config.Items is the single source of truth for stack size, category, equip slot and cold resistance.
+for id, def in ItemCatalog.Items do
+	local entry = Config.Items.Entries[id]
+	local category = (entry and entry.category) or Config.Items.KindCategory[def.kind] or "material"
+	def.category = category
+	def.maxStack = (entry and entry.stack)
+		or Config.Items.CategoryStack[category]
+		or Config.Items.FallbackStack
+	if entry and entry.equipSlot then
+		def.equipSlot = entry.equipSlot
+		def.coldResistance = entry.coldResistance or def.coldResistance
+	end
+end
+
+-- Max stack of an item id (Config.Items.FallbackStack for unknown ids).
+function ItemCatalog.stackOf(id: string): number
+	local def = ItemCatalog.Items[id]
+	return if def then def.maxStack else Config.Items.FallbackStack
+end
+
 -- Rarity of an item id ("common" for unknown ids).
 function ItemCatalog.rarityOf(id: string): RarityData.Rarity
 	local def = ItemCatalog.Items[id]

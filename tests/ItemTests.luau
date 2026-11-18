@@ -142,7 +142,7 @@ return function(check: (string, boolean) -> ())
 		"unbreakable: axe repair refused",
 		select(2, Repair.check(axeDef, axeDef.durability :: number)) == "Unbreakable"
 	)
-	check("unbreakable: axe label n/a", Repair.durabilityLabel(axeDef, 1) == "n/a")
+	check("unbreakable: axe shows no durability label", Repair.durabilityLabel(axeDef, 1) == nil)
 	check("unbreakable: pickaxe still repairable", Repair.isRepairable(pickDef))
 	check(
 		"unbreakable: pickaxe label is a percent",

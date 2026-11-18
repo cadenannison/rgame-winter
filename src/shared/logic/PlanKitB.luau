@@ -503,7 +503,7 @@ function Kit.chest(plan: Plan, roomId: string, fx: number, fz: number, depth: nu
 	local hx, hz = (room.x2 - room.x1) / 2 - 5, (room.z2 - room.z1) / 2 - 5
 	local x, z = cx + fx * hx, cz + fz * hz
 	room.depth = math.max(room.depth, depth)
-	table.insert(plan.chests, { room = roomId, x = x, y = room.y + 1, z = z, depth = depth })
+	table.insert(plan.chests, { room = roomId, x = x, y = room.y, z = z, depth = depth })
 	table.insert(room.clear, { x1 = x - 3, z1 = z - 3, x2 = x + 3, z2 = z + 3 })
 end
 
@@ -860,6 +860,8 @@ function Kit.problems(plan: Plan): { string }
 		local room = plan.byId[c.room]
 		if room == nil or c.x <= room.x1 or c.x >= room.x2 or c.z <= room.z1 or c.z >= room.z2 then
 			bad("chest outside its room")
+		elseif math.abs(c.y - room.y) > 0.01 then
+			bad("chest not on its room floor") -- floor top = room.y (ChestArt pivots at the base)
 		elseif c.depth < 0 or c.depth > Config.Loot.MaxDepthTier then
 			bad("chest depth out of range")
 		elseif c.depth > bestDepth then

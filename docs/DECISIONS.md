@@ -1,4 +1,60 @@
-# Decisions (append-only: YYYY-MM-DD — decision — reason)
+# Decisions
+Append-only log below (YYYY-MM-DD — decision — reason). Read the summary table first; open the body only for the reason or exact rule.
+
+## Summary (one line each, same order as the log)
+| # | Topic | Decision |
+|---|---|---|
+| 1 | Scripts | Rojo owns scripts, MCP owns instances |
+| 2 | Place file | Not in git; world rebuilt by idempotent tools/ scripts |
+| 3 | Tiers | light/standard/full via .kit-tier or KIT_TIER; repo is full |
+| 4 | Studio | Pinned by placeId |
+| 5 | Wally | Package name cadenannison/arctic-survival |
+| 6 | QA bridge | Studio-only BindableFunction in ServerStorage (DebugService.expose) |
+| 7 | Placement | In items system (PlacementService); structures cost one crafted placeable |
+| 8 | Mob drops | Straight to killer's inventory |
+| 9 | Held item | Server-built visual Tool; CoreGui Backpack off |
+| 10 | Client QA bridge | Studio-only BindableFunction in PlayerScripts using real HUD handlers |
+| 11 | Hit confirms | From replicated attributes, no new remote |
+| 12 | Placement rules | One pure shared validator for ghost and server |
+| 13 | Teleport data | Pure shared contract wrapped by Guard.teleportData |
+| 14 | Server mode | Reserved server = run, public = lobby |
+| 15 | Disconnect hold | Meters/inventory held by UserId, Run.RejoinWindowSeconds 300 |
+| 16 | Absent party members | Held from the start so runs can end |
+| 17 | Remote pad join | Moves the character onto the pad server-side |
+| 18 | Phase 3 data | Pure data files in shared/data, ItemCatalog merges them |
+| 19 | Horror values | Tuning in Config; live values server-only; client gets coarse Cues |
+| 20 | Biomes | One per Chebyshev ring; start forest = ring 0 |
+| 21 | Boot hooks | Per-brief Phase3/*Boot and *Client files |
+| 22 | Clothing | (superseded by worn equipment) best piece per slot, resistance summed and capped |
+| 23 | EventSchedule | Pure seeded state machine; EventService publishes coarse flags |
+| 24 | Node depletion | Remembered in ChunkService (wall-clock respawn) |
+| 25 | POI loot tier | By distance to camp, never decreasing outward |
+| 26 | Storage chests | Shared by everyone on the run server |
+| 27 | Cooked buff | Per-player cooked-food credit counter |
+| 28 | Watchtower | TrussPart ladder |
+| 29 | Phase 3 wiring | One module, server/Phase3/Wiring.luau |
+| 30 | Warmth drain | Total clamped to Meters.MaxWarmthDrainMultiplier; warm spots stop drain |
+| 31 | False Night | Applied via DayNightService.setForcedNight |
+| 32 | Spawn multiplier | Event and hot-spring bias clamped to Scaling.MaxSpawnMultiplier, then MaxLiveMobs |
+| 33 | Dark-event coins | Counted per member in RunState, paid by RunPayout inside MaxCoinsPerRun |
+| 34 | Debug give | At most one stack |
+| 35 | Sleeping bag respawn | Deferred (KNOWN_ISSUES) |
+| 36 | Profile v3 receipts | String-keyed receipt log capped by Meta.MaxProcessedReceipts |
+| 37 | Phase 4 boot | Hooks run in both server modes; MetaService owns profile writes |
+| 38 | Live mob cap | One source MAX_LIVE_MOBS (Config/Constants.luau) |
+| 39 | Perks | Captured once per run; multipliers 1 +/- MaxPerkMagnitude |
+| 40 | Perks storage | Share profile.ownedCosmetics, no schema bump |
+| 41 | Meta progress | Wired via nil-safe success hooks in Phase4/Wiring |
+| 42 | Robux grants | DataService.save right after receipt recorded; hand-test only |
+| 43 | rankChange | Stays nil; summary shows record gap |
+| 44 | Hint/swing values | In Config; UI configs keep layout/colours/copy only |
+| 45 | Meta QA | Debug/MetaQA backs up and restores the profile |
+| 46 | Massive B | Axis-aligned rect rooms, PlanKitB, one adapter |
+| 47 | Massive A | Rooms + stair halls, StructurePlanKitA, one adapter |
+| 48 | Config layout | src/shared/Config/ folder: init.luau merges domain modules; public API unchanged |
+| 49 | Quiet gates | check.sh prints one line unless --verbose; full output in .logs/check.log |
+
+## Log
 2026-11-17 — Rojo owns scripts, MCP owns instances — script Source set through MCP is overwritten by Rojo sync.
 2026-11-17 — Place file kept out of git; world rebuilt by idempotent tools/ builders — place edits are not diffable and agents cannot save.
 2026-11-17 — Tier system (light/standard/full), KIT_TIER overrides .kit-tier — match gate cost to risk; .kit-tier is full because tests exist.
@@ -49,3 +105,6 @@
 2026-11-17 — Massive structures B: rooms are axis-aligned rects with doors/ramps in a pure plan (PlanKitB); one adapter builds the large-part shell, carves Terrain voxels and spawns dressing near players.
 
 2026-11-17 — Massive structures A: research station and mine complex are rooms plus stair halls (flat landing + ramp <= 30 degrees) in a pure plan (StructurePlanKitA); one server adapter carves Terrain, builds the large-part shell and spawns dressing near players; Horror hooks (lurker spots, cue spots, RoomAt) are server data on the Handle.
+
+2026-11-18 — Config split into src/shared/Config/ (init.luau merges Core, Debug, Survival, World, Items, Loot, Mobs, Horror, Lighting, Perf, Meta, Ui, Art; shared constants in Constants.luau) — a 3,000-line file cost every agent its full size to edit one section; public Config.X.Y and exported type names are unchanged.
+2026-11-18 — scripts/check.sh and tests/run are quiet by default (one summary line, failures only, full output in .logs/check.log, --verbose restores it) — a passing run printed ~54k chars into every session.

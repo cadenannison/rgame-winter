@@ -6,7 +6,7 @@ Roblox game. Luau + Rojo + Wally. A PM/orchestrator assigns one task at a time; 
 - Load only this file + docs/systems/<system>.md for the system you touch (design intent: docs/specs/<system>.md, index in docs/GDD.md; read only if the brief says so).
 - Scripts live in src/ and sync via Rojo. Never write script Source through MCP. UI is built in code.
 - Every Luau file starts with --!strict. No warnings.
-- Done = scripts/check.sh passes. If behavior changed: scripted playtest (tools/qa), local player, filtered output, no errors.
+- Done = scripts/check.sh passes. Playtest/QA only when the PM brief asks (see Standing agent rules).
 - Client-facing work must also pass docs/PLAYABILITY.md (PC + mobile input, prompt, hint, feedback).
 - After any MCP instance work, end your report with SAVE NEEDED (agents cannot save the place).
 - Final report <=10 lines: files changed, check result, playtest result, open issues.
@@ -25,7 +25,7 @@ Pure logic (no Roblox APIs) -> src/shared/logic/. System index: docs/ARCHITECTUR
 - PascalCase modules/classes/methods; camelCase locals; UPPER_SNAKE constants.
 - Services via game:GetService at file top. task.wait/spawn/delay/defer only (never wait/spawn/delay).
 - Instance.new(class), set properties, set Parent LAST.
-- No magic numbers or asset IDs inline: shared/Config.luau and shared/Assets.luau.
+- No magic numbers or asset IDs inline: shared/Config/ (modules, see docs/INDEX.md) and shared/Assets.luau.
 - Replicated state: Attributes. Behavior groups: CollectionService tags. Never scan Workspace.
 - Every connection/instance has an owner and cleanup (PlayerRemoving, Destroying). No leaks.
 - Heartbeat for simulation; RenderStepped only for camera/visuals. One loop for all players, not a thread per object.
@@ -48,3 +48,12 @@ Pure logic (no Roblox APIs) -> src/shared/logic/. System index: docs/ARCHITECTUR
 ## Process
 - New system: docs/systems/<name>.md from _TEMPLATE.md first, then code. Architectural choice: one line in docs/DECISIONS.md.
 - Shared files (Config, Catalog, Remotes, init.*, ProfileSchema) have one owner per round.
+
+## Standing agent rules
+- Never commit or push.
+- Never run regressions, QA scenarios or playtests: check.sh and headless tests only. Exception: a QA scenario for a changed UI element, and only the one covering it.
+- Update docs/STATUS.md and docs/HAND_TESTS_ROUND.md, then STOP for the PM hand test.
+- Perf.MaxLiveParts stays 6000.
+- Final report <=10 lines.
+- Read only the files the task needs (docs/INDEX.md maps task type -> files). Do not read docs/archive, docs/GDD_full.md, docs/GDD.md or build/ unless the task names them.
+- check.sh is quiet (one summary line, failures only; full output in .logs/check.log); use --verbose only when debugging. Config is a folder (src/shared/Config/, modules listed in docs/INDEX.md): edit the module that owns the section.

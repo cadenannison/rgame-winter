@@ -3,6 +3,7 @@
 -- Saved tables use string keys only (DataStores reject sparse numeric tables): use tostring(id).
 
 local Config = require("../Config")
+local ItemCatalog = require("../ItemCatalog")
 
 export type Profile = {
 	schemaVersion: number,
@@ -27,6 +28,8 @@ export type Profile = {
 	settings: Settings,
 	hintsSeen: { [string]: boolean }, -- Config.Hints.Ids entry -> true
 	processedReceipts: { [string]: number }, -- MarketplaceService PurchaseId -> os.time() granted (capped log)
+	-- v4 (Items round): worn gear, Config.Equipment.Slots entry -> item id. Unknown items/slots are dropped.
+	equipment: { [string]: string },
 }
 
 export type Settings = {
@@ -88,6 +91,7 @@ function ProfileSchema.default(): Profile
 		settings = { reduceScares = Config.Settings.DefaultReduceScares },
 		hintsSeen = {},
 		processedReceipts = {},
+		equipment = {},
 	}
 end
 
@@ -208,6 +212,34 @@ local function sanitizeReceipts(value: any): { [string]: number }
 	return result
 end
 
+-- Keeps only known slots holding a known item that fits that slot (so removed or renamed items never crash a load).
+local function sanitizeEquipment(value: any): { [string]: string }
+	local result: { [string]: string } = {}
+	if type(value) ~= "table" then
+		return result
+	end
+	for _, slot in Config.Equipment.Slots do
+		local id = value[slot]
+		local def = if type(id) == "string" then ItemCatalog.Items[id] else nil
+		if
+			def
+			and def.equipSlot
+			and (def.equipSlot == slot or ProfileSchema.slotAccepts(slot, def.equipSlot))
+		then
+			result[slot] = id
+		end
+	end
+	return result
+end
+
+-- Accessory items are worn in either accessory slot; everything else must match exactly.
+function ProfileSchema.slotAccepts(slot: string, itemSlot: string): boolean
+	if slot == itemSlot then
+		return true
+	end
+	return itemSlot == "Accessory" and (slot == "Accessory1" or slot == "Accessory2")
+end
+
 -- True if this PurchaseId was already granted (ProcessReceipt must then return PurchaseGranted, not regrant).
 function ProfileSchema.hasReceipt(profile: Profile, purchaseId: string): boolean
 	return profile.processedReceipts[purchaseId] ~= nil
@@ -278,6 +310,12 @@ function ProfileSchema.migrate(data: any): boolean
 		data.hintsSeen = sanitizeIdSet(data.hintsSeen, isItemId, meta.MaxHintsSeen)
 		data.processedReceipts = sanitizeReceipts(data.processedReceipts)
 		data.schemaVersion = 3
+		version = 3
+	end
+	-- v3 -> v4: equipment map (old saves have none: start empty; unknown items dropped).
+	if version < 4 then
+		data.equipment = sanitizeEquipment(data.equipment)
+		data.schemaVersion = 4
 	end
 	return true
 end
@@ -380,6 +418,18 @@ function ProfileSchema.validate(data: any): boolean
 		)
 	then
 		return false
+	end
+	if type(data.equipment) ~= "table" then
+		return false
+	end
+	for slot, id in data.equipment do
+		if
+			not table.find(Config.Equipment.Slots, slot)
+			or type(id) ~= "string"
+			or not isItemId(id)
+		then
+			return false
+		end
 	end
 	return validCountMap(data.processedReceipts, isReceiptId, meta.MaxProcessedReceipts, math.huge)
 end

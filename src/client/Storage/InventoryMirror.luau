@@ -10,6 +10,7 @@ export type Stack = { id: string, count: number, durability: number? }
 export type Mirror = {
 	slots: () -> { [number]: Stack },
 	counts: () -> { [string]: number },
+	equipment: () -> { [string]: Stack }, -- worn gear, Config.Equipment.Slots id -> stack
 	selected: () -> Stack?,
 	selectedSlot: () -> number,
 	onChange: (fn: (before: { [string]: number }) -> ()) -> (),
@@ -21,6 +22,7 @@ local InventoryMirror = {}
 function InventoryMirror.start(): Mirror
 	local slots: { [number]: Stack } = {}
 	local counts: { [string]: number } = {}
+	local equipment: { [string]: Stack } = {}
 	local selected = 1
 	local listeners: { (before: { [string]: number }) -> () } = {}
 	local connection: RBXScriptConnection? = nil
@@ -49,6 +51,18 @@ function InventoryMirror.start(): Mirror
 					counts[s.id] = (counts[s.id] or 0) + n
 				end
 			end
+			equipment = {}
+			if type(p.equipment) == "table" then
+				for slotId, s in p.equipment do
+					if
+						type(slotId) == "string"
+						and type(s) == "table"
+						and type(s.id) == "string"
+					then
+						equipment[slotId] = { id = s.id, count = 1 }
+					end
+				end
+			end
 			if type(p.selected) == "number" then
 				selected = p.selected
 			end
@@ -64,6 +78,9 @@ function InventoryMirror.start(): Mirror
 		end,
 		counts = function()
 			return counts
+		end,
+		equipment = function()
+			return equipment
 		end,
 		selected = function(): Stack?
 			return slots[selected]

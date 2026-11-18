@@ -11,6 +11,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local AtmosphereConfig = require(script.Parent:WaitForChild("AtmosphereConfig"))
 local AtmosphereFx = require(script.Parent:WaitForChild("AtmosphereFx"))
+local RightStack = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("RightStack"))
 
 local C = AtmosphereConfig
 local player = Players.LocalPlayer
@@ -24,6 +25,7 @@ end
 
 local started = false
 local gui: ScreenGui? = nil
+local openButton: TextButton? = nil -- lives in the HUD right stack, so it is destroyed here
 local connections: { RBXScriptConnection } = {}
 
 local function corner(parent: Instance)
@@ -45,9 +47,6 @@ function SettingsUi.start()
 
 	local open = Instance.new("TextButton")
 	open.Name = "SettingsButton"
-	open.AnchorPoint = Vector2.new(1, 0.5)
-	open.Position = C.ButtonPosition
-	open.Size = UDim2.fromOffset(C.ButtonSize, C.ButtonSize)
 	open.BackgroundColor3 = C.PanelColor
 	open.BackgroundTransparency = 0.2
 	open.TextColor3 = C.TextColor
@@ -57,7 +56,8 @@ function SettingsUi.start()
 	open.TextWrapped = true
 	open.BorderSizePixel = 0
 	corner(open)
-	open.Parent = screen
+	openButton = open
+	RightStack.attach(open, "Settings") -- stack (UIListLayout) in HUD/RightStack; destroyed in cleanup
 
 	local panel = Instance.new("Frame")
 	panel.Name = "Panel"
@@ -173,6 +173,10 @@ function SettingsUi.stop()
 		c:Disconnect()
 	end
 	table.clear(connections)
+	if openButton then
+		openButton:Destroy()
+		openButton = nil
+	end
 	if gui then
 		gui:Destroy()
 		gui = nil

@@ -67,7 +67,8 @@ function LootRoll.chestWeights(
 	t: Tables,
 	ring: number,
 	structureType: string,
-	depthTier: number
+	depthTier: number,
+	ringBonus: number? -- Config.Loot.RingRarityBonus: rank r weight * (1 + bonus * (r - 1))
 ): Weights
 	local base = t.ringWeights[math.clamp(ring + 1, 1, #t.ringWeights)]
 	local mult = t.structureWeights[structureType]
@@ -78,7 +79,7 @@ function LootRoll.chestWeights(
 		if mult then
 			w *= mult[name] or 1
 		end
-		out[name] = w * (1 + t.depth.PerTier * tier) ^ (i - 1)
+		out[name] = w * (1 + t.depth.PerTier * tier) ^ (i - 1) * (1 + (ringBonus or 0) * (i - 1))
 	end
 	return out
 end
@@ -88,13 +89,15 @@ function LootRoll.pickChestRarity(
 	ring: number,
 	structureType: string,
 	depthTier: number,
-	rng: Rng
+	rng: Rng,
+	ringBonus: number?,
+	excludeTop: boolean? -- never roll the top rarity (a Beacon has exactly one, placed on purpose)
 ): string
-	local picked = LootRoll.weightedPick(
-		LootRoll.chestWeights(t, ring, structureType, depthTier),
-		Rarity.List,
-		rng
-	)
+	local weights = LootRoll.chestWeights(t, ring, structureType, depthTier, ringBonus)
+	if excludeTop then
+		weights[Rarity.List[#Rarity.List]] = 0
+	end
+	local picked = LootRoll.weightedPick(weights, Rarity.List, rng)
 	return picked or Rarity.List[1]
 end
 

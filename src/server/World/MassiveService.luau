@@ -20,10 +20,13 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Logic = Shared:WaitForChild("logic")
 local MassivePlacement = require(Logic:WaitForChild("MassivePlacement"))
+local LootChests = require(Logic:WaitForChild("LootChests"))
 local Server = ServerScriptService:WaitForChild("Server")
 local ChunkService = require(script.Parent:WaitForChild("ChunkService"))
 local LootService = require(Server:WaitForChild("Loot"):WaitForChild("LootService"))
 local ChestArt = require(Server:WaitForChild("Art"):WaitForChild("ChestArt"))
+local MobService = require(Server:WaitForChild("Mobs"):WaitForChild("MobService"))
+local DebugService = require(Server:WaitForChild("Debug"):WaitForChild("DebugService"))
 local DreadService = require(Server:WaitForChild("Horror"):WaitForChild("DreadService"))
 local RunLifecycleService = require(Server:WaitForChild("Run"):WaitForChild("RunLifecycleService"))
 local Structures = script.Parent:WaitForChild("Structures")
@@ -35,7 +38,7 @@ local DREAD_PICK_RANGE = M.DressingSpawnRadius -- nearest player within this of 
 -- Minimal handle surface common to both structure kits.
 type Handle = {
 	Model: Model,
-	ChestSlots: { { Position: Vector3, Depth: number, StructureType: string } },
+	ChestSlots: { { Position: Vector3, Depth: number, StructureType: string, Room: string? } },
 	Update: (playerPositions: { Vector3 }) -> (),
 	Destroy: () -> (),
 	DreadListener: ((position: Vector3, kind: string) -> ())?,
@@ -56,6 +59,7 @@ type Live = {
 	handle: Handle,
 	stamps: { [number]: number },
 	chests: { Instance },
+	chestCount: number, -- real chests this structure holds (selected slots)
 	conns: { RBXScriptConnection },
 }
 
@@ -64,6 +68,7 @@ local MassiveService = {}
 local live: { [string]: Live } = {}
 local liveCount = 0
 local failed: { [string]: boolean } = {}
+local lootSeed: number? = nil -- run seed used for chest picks (Studio /debug seed can change it)
 local openedRarity: { [string]: string } = {} -- chest key -> rarity of chests already opened this run
 local started = false
 local ended = false
@@ -87,7 +92,7 @@ function MassiveService.livePartsEstimate(): number
 	local total = 0
 	for _, entry in live do
 		local def = M.Structures[entry.site.id]
-		total += def.Budget.Parts + #entry.handle.ChestSlots * M.ChestsPerPartAllowance
+		total += def.Budget.Parts + entry.chestCount * M.ChestsPerPartAllowance
 	end
 	return total
 end
@@ -98,7 +103,21 @@ end
 
 local function registerChests(entry: Live)
 	local site, handle = entry.site, entry.handle
+	-- Only a deterministic, spread-out subset of the plan's slots become chests (Config.Loot.Chests).
+	local candidates: { LootChests.Candidate } = {}
 	for i, slot in handle.ChestSlots do
+		table.insert(candidates, { index = i, room = slot.Room, depth = slot.Depth })
+	end
+	local picks = LootChests.selectSlots(
+		site.id,
+		lootSeed or ChunkService.getSeed() or 0,
+		site.key,
+		candidates
+	)
+	entry.chestCount = #picks
+	for _, pick in picks do
+		local i = pick.index
+		local slot = handle.ChestSlots[i]
 		local key = chestKey(site, i)
 		local opened = openedRarity[key]
 		if opened ~= nil then
@@ -114,6 +133,7 @@ local function registerChests(entry: Live)
 			Ring = site.ring,
 			Index = i,
 			ChunkKey = tostring(site.chunks[1]),
+			TopMode = pick.topMode,
 		}, handle.Model)
 		table.insert(entry.chests, chest)
 		table.insert(
@@ -188,7 +208,8 @@ local function build(site: MassivePlacement.Site, seed: number)
 		return
 	end
 	local handle = handleOrErr :: Handle
-	local entry: Live = { site = site, handle = handle, stamps = stamps, chests = {}, conns = {} }
+	local entry: Live =
+		{ site = site, handle = handle, stamps = stamps, chests = {}, chestCount = 0, conns = {} }
 	live[site.key] = entry
 	liveCount += 1
 	handle.DreadListener = function(position: Vector3, _kind: string)
@@ -241,8 +262,27 @@ local function tick()
 			destroyLive(key, true)
 		end
 	end
-	-- 2. build one
+	-- 2. build one (stream out a live structure no player is near when a nearer site is waiting)
 	local positions = playerPositions()
+	if liveCount >= M.MaxLiveStructures and #positions > 0 then
+		for key, entry in table.clone(live) do
+			if
+				distanceToNearest(entry.site, positions)
+				> entry.site.radius + M.DressingDespawnRadius
+			then
+				for _, site in ChunkService.getSites() do
+					if
+						eligible(site)
+						and distanceToNearest(site, positions)
+							< distanceToNearest(entry.site, positions)
+					then
+						destroyLive(key, true)
+						break
+					end
+				end
+			end
+		end
+	end
 	if liveCount < M.MaxLiveStructures and #positions > 0 then
 		local best: MassivePlacement.Site? = nil
 		local bestD = math.huge
@@ -274,6 +314,7 @@ function MassiveService.reset(seed: number?)
 	end
 	table.clear(failed)
 	table.clear(openedRarity)
+	lootSeed = seed
 	LootService.ResetRun(seed)
 end
 
@@ -291,8 +332,14 @@ function MassiveService.start()
 		return ChestArt.build(rarity, CFrame.new(slot.Position), parent)
 	end)
 	LootService.start()
+	DebugService.expose("Massive", MassiveService) -- Studio /debug seed
+	DebugService.expose("Loot", LootService) -- Studio /debug chest
 	MassiveService.reset(ChunkService.getSeed())
 	ChunkService.setExtraPartsProvider(MassiveService.livePartsEstimate)
+	-- Mob spawns are excluded from every massive structure footprint (live or not).
+	MobService.setSpawnBlocker(function(x: number, z: number): boolean
+		return MassivePlacement.blocks(ChunkService.getSites(), x, z)
+	end)
 	unregisterEnd = RunLifecycleService.onRunEnded(function()
 		ended = true
 		MassiveService.reset(nil)
@@ -317,6 +364,7 @@ function MassiveService.stop()
 		unregisterEnd = nil
 	end
 	ChunkService.setExtraPartsProvider(nil)
+	MobService.setSpawnBlocker(nil)
 	MassiveService.reset(nil)
 	started = false
 end

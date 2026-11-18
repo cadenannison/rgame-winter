@@ -1,14 +1,22 @@
 --!strict
--- Pure clothing math. Worn resistance = the best carried piece in each Config.Clothing.Slots slot, summed
+-- Pure clothing math. Worn resistance = the equipped pieces (Equipment), summed
 -- and capped at Config.Clothing.MaxColdResistance. Biomes demand requiredColdResistance; below it the
 -- drain multiplier applies (BiomeLogic / SurvivalService). No Roblox APIs.
 
 local Config = require("../Config")
 local Clothing = require("../data/Clothing")
 local ItemCatalog = require("../ItemCatalog")
+local Equipment = require("./Equipment")
+local Inventory = require("./Inventory")
 
 local ClothingLogic = {}
 
+-- Worn resistance: only equipped pieces count (Items round); the sum over worn items, capped.
+function ClothingLogic.equipped(equip: Inventory.Inv): number
+	return Equipment.resistance(equip)
+end
+
+-- Legacy carried-count form (kept for tests and tooling): best piece per clothing slot among carried ids.
 -- counts: item id -> carried count.
 function ClothingLogic.resistance(counts: { [string]: number }): number
 	local total = 0

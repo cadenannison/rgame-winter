@@ -54,3 +54,22 @@ Nothing here has been played in Studio. Check on PC and phone emulation. Place i
 - Sprint through new terrain: no visible gaps or hitching (chunks fill over a few frames).
 - Place/upgrade a fire in a forest: trees within the clear radius vanish and stay gone after reload.
 - Wolf takes 4-5 Axe hits on day 1 and day 5+, bites harder / spawns more later.
+
+
+## Round 3: items, world, HUD (nothing played in Studio; PC and phone emulation)
+- `/debug structures` and `/debug tp` to the beacon (ResearchStation): 3-4 chests spread over rooms/depth, exactly one top-rarity, short beams, nothing floating or buried. Repeat with 3 seeds (`/debug seed n`). Other classes: small 1-2, medium 2-3, massive 3-5.
+- Beams: only rare+, <= 12 studs, vanish beyond ~60 studs, no sky pillar. FPS fine; only one massive structure live at a time.
+- Fire and workbench placed on a slope sit flush; no half-sunk structures; no grey hard-edged pad; skirt blends into the snow.
+- Mobs never spawn inside a structure footprint. Giant tree: chop from the ground. First chest ever opened shows the one-time hint.
+- Backpack: button, B and Tab toggle; drag/drop, merge, swap, split (right-click, long-press), shift-click; phone tap-then-tap. Hotbar always visible.
+- Equip each of the 8 slots (wrong slot shakes); cold resistance x/12 changes; carried-only clothing no longer counts; gear persists after rejoin.
+- Craft a storage chest (8 wood, workbench), place it (ghost, snap), open it, share with a second player (both edit at once); cannot pick up while non-empty; 5th chest refused with a toast.
+- Wood stacks to 20 then overflows to a new slot; with a full inventory pickup shows "Inventory full".
+- HUD: Craft, Map, Settings, Backpack do not overlap (desktop + phone, clear of jump/Ping/Act); chat does not cover the bars.
+- Real death: readable summary with Return to lobby / Play again; `/debug respawn` clears the panel instantly and nothing blocks input. Check a dead player is not auto-respawned past spectate (known SpawnService gap).
+- Axe slot shows no "n/a" durability.
+
+## Round 4: token-cost refactor (no behavior change; nothing played in Studio)
+- HUD after the HudController split: bars/day/compass/hotbar look and lay out as before (desktop + phone); hotbar keys 1-9, click, mouse wheel (Shift zooms), tap-selected food eats; prompts (gather/hunt/fuel/craft/upgrade/structure) and the Act button label update; hit bursts/sounds on chop and mob hits; onboarding hints and the record toast still fire.
+- World art after the WorldProps split: trees, rocks/ore (and depleted rubble/stump), decor, and every POI (cabin, plane, cave, ruin, campsite, hot spring steam, hearth light) render as before; `/debug gallery world` shows each prop.
+- Config split: any value tweak in src/shared/Config/<Module>.luau still takes effect (spot-check one per module you touch).

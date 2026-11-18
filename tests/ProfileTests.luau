@@ -28,10 +28,10 @@ return function(check: (string, boolean) -> ())
 	check("migrate refuses non-table", not ProfileSchema.migrate("x"))
 
 	-- v1 -> v2 migration (Phase 2 meta fields).
-	check("schema version is 3", Config.SchemaVersion == 3)
+	check("schema version is 4", Config.SchemaVersion == 4)
 	local v1: any = { schemaVersion = 1, coins = 42 }
 	local v1ok = ProfileSchema.migrate(v1)
-	check("migrate v1 ok", v1ok and v1.schemaVersion == 3)
+	check("migrate v1 ok", v1ok and v1.schemaVersion == 4)
 	check("migrate v1 keeps coins", v1.coins == 42)
 	check(
 		"migrate v1 fills stats",
@@ -93,7 +93,7 @@ return function(check: (string, boolean) -> ())
 		achievements = { FirstDawn = true },
 		lastDailyClaim = 1000,
 	}
-	check("migrate v2 ok", ProfileSchema.migrate(v2) and v2.schemaVersion == 3)
+	check("migrate v2 ok", ProfileSchema.migrate(v2) and v2.schemaVersion == 4)
 	check(
 		"migrate v2 keeps v2 data",
 		v2.coins == 90 and v2.maxDays == 5 and v2.kills == 11 and v2.achievements.FirstDawn == true
@@ -233,4 +233,31 @@ return function(check: (string, boolean) -> ())
 			and ProfileSchema.getStat(s, "revivesGiven") == 2
 			and ProfileSchema.getStat(s, "partyRuns") == 0
 	)
+	-- v4: equipment migration (old saves load; unknown items and bad slots dropped)
+	local old: any = { schemaVersion = 3, coins = 7 }
+	check("migrate v3 without equipment ok", ProfileSchema.migrate(old) and old.schemaVersion == 4)
+	check("migrate v3 gives empty equipment", next(old.equipment) == nil)
+	local mixed: any = {
+		schemaVersion = 3,
+		equipment = {
+			Head = "HideHood",
+			Body = "NoSuchItem",
+			Feet = "HideCoat",
+			Bogus = "HideBoots",
+		},
+	}
+	ProfileSchema.migrate(mixed)
+	check(
+		"migrate drops unknown item, wrong slot, bad slot",
+		mixed.equipment.Head == "HideHood"
+			and mixed.equipment.Body == nil
+			and mixed.equipment.Feet == nil
+			and mixed.equipment.Bogus == nil
+	)
+	local junk: any = { schemaVersion = 3, equipment = "x" }
+	check(
+		"migrate junk equipment becomes empty",
+		ProfileSchema.migrate(junk) and next(junk.equipment) == nil
+	)
+	check("default has equipment", ProfileSchema.validate(ProfileSchema.default()))
 end

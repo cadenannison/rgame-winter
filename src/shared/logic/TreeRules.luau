@@ -28,6 +28,21 @@ function TreeRules.foliageBottom(height: number, wantedFraction: number): number
 	return math.clamp(height * wantedFraction, lo, hi)
 end
 
+-- Gather reach measured to the node's SURFACE (an upright cylinder: radius, half height), not its centre:
+-- dx/dz/dy = player root minus node centre. Standing beside a giant trunk at any height along it is distance
+-- (horizontal - radius), so big trees can be chopped from the ground.
+function TreeRules.reachDistance(
+	dx: number,
+	dz: number,
+	dy: number,
+	radius: number,
+	halfHeight: number
+): number
+	local horizontal = math.max(math.sqrt(dx * dx + dz * dz) - radius, 0)
+	local vertical = math.max(math.abs(dy) - halfHeight, 0)
+	return math.sqrt(horizontal * horizontal + vertical * vertical)
+end
+
 -- Collision flags the builder applies (data so tests can assert them): the trunk blocks, foliage never does.
 TreeRules.TRUNK_FLAGS = { CanCollide = true, CanTouch = false }
 TreeRules.FOLIAGE_FLAGS = { CanCollide = false, CanQuery = false, CanTouch = false }

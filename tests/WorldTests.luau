@@ -1,4 +1,5 @@
 --!strict
+local Config = require("../src/shared/Config")
 local WorldLayout = require("../src/shared/logic/WorldLayout")
 
 local PARAMS: WorldLayout.Params = {
@@ -69,4 +70,13 @@ return function(check: (string, boolean) -> ())
 		{ [camp.chunkIndex] = true }
 	)
 	check("world stream keeps pinned", #unloadKeep == #toLoad - 1)
+	-- Gather reach is measured to the trunk surface: a giant trunk (radius 3, 40 tall) is reachable from the ground.
+	local TreeRules = require("../src/shared/logic/TreeRules")
+	local reach = Config.Gather.Range
+	check(
+		"gather: giant trunk reachable from the ground by its surface",
+		TreeRules.reachDistance(reach + 2, 0, -18, 3, 20) <= reach
+			and TreeRules.reachDistance(reach + 4, 0, 0, 3, 20) > reach
+	)
+	check("gather: reach is 0 next to the trunk", TreeRules.reachDistance(2, 0, 5, 3, 20) == 0)
 end

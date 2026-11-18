@@ -35,7 +35,7 @@ return function(check: (string, boolean) -> ())
 			end
 		end
 		if
-			Rarity.rank(name) >= Rarity.rank("rare") and (s.glowColor == nil or s.beamHeight < 20)
+			Rarity.rank(name) >= Rarity.rank("rare") and (s.glowColor == nil or s.beamHeight <= 0)
 		then
 			farOk = false
 		end
@@ -44,7 +44,7 @@ return function(check: (string, boolean) -> ())
 	check("chest: five styles inside budget", allOk and #Rarity.List == 5)
 	check("chest: styles distinct", distinct)
 	check("chest: glow, light, particles, burst and open time grow with rarity", monotonic)
-	check("chest: rare+ has a beam visible from far", farOk)
+	check("chest: rare+ has a short beam (Config.Loot.Beam)", farOk)
 	check(
 		"chest: common has no light or particles",
 		not ChestStyle.hasEffects(ChestStyle.get("common"))

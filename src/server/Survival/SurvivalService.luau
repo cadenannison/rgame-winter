@@ -58,6 +58,7 @@ local holdPredicate: ((Player) -> boolean)? = nil
 local envProvider: ((Player, Vector3) -> EnvExtra?)? = nil
 local causeHandler: ((Player, string) -> ())? = nil
 local reviveHandler: ((Player, Player) -> ())? = nil
+local respawnHandler: ((Player) -> ())? = nil
 local held: { [number]: { meters: SurvivalLogic.State, expires: number } } = {}
 
 local CAUSE_COLD = "Cold"
@@ -296,6 +297,21 @@ local function tickPlayer(player: Player, state: PlayerState, dt: number, isNigh
 	end
 end
 
+-- The one downed -> alive transition (real revive and respawn API): meters, attributes, body, health.
+local function reviveInPlace(player: Player, state: PlayerState): boolean
+	if not SurvivalLogic.revive(state.meters, M, D) then
+		return false
+	end
+	state.revive = nil
+	setDownedAttribute(player, false)
+	local humanoid = getHumanoid(player)
+	if humanoid then
+		clearDownedBody(state, humanoid)
+		humanoid.Health = state.meters.health
+	end
+	return true
+end
+
 local function actorOf(state: PlayerState): DownedLogic.Actor
 	return { downed = state.meters.downed, dead = state.meters.dead }
 end
@@ -338,13 +354,7 @@ local function tickRevive(player: Player, state: PlayerState, dt: number)
 		return
 	end
 	state.revive = nil
-	if SurvivalLogic.revive(targetState.meters, M, D) then
-		setDownedAttribute(target, false)
-		local humanoid = getHumanoid(target)
-		if humanoid then
-			clearDownedBody(targetState, humanoid)
-			humanoid.Health = targetState.meters.health
-		end
+	if reviveInPlace(target, targetState) then
 		local handler = reviveHandler
 		if handler then
 			task.spawn(handler, player, target)
@@ -464,6 +474,43 @@ function SurvivalService.setReviveHandler(fn: ((Player, Player) -> ())?)
 end
 
 -- Wiring (init.server): told what downed a player ("Wolf", "Cold", "Hunger").
+function SurvivalService.setRespawnHandler(fn: ((Player) -> ())?)
+	respawnHandler = fn
+end
+
+-- Respawn API (debug and tools): sends a downed or dead player through the same transitions as a real
+-- revive/spawn. Downed -> revive in place (same path as a teammate revive). Dead -> meters and the
+-- downed/dead attributes reset now and a fresh character loads (setupCharacter resets again, idempotent).
+-- Alive players are left untouched (returns false). The run roster is told through the respawn handler.
+function SurvivalService.respawn(player: Player): boolean
+	local state = states[player]
+	if not state or player.Parent ~= Players then
+		return false
+	end
+	local wasDead = state.meters.dead
+	if wasDead then
+		resetState(player, state)
+	elseif not reviveInPlace(player, state) then
+		return false
+	end
+	local handler = respawnHandler
+	if handler then
+		pcall(handler, player)
+	end
+	if not wasDead then
+		return true
+	end
+	task.spawn(function()
+		local ok = pcall(function()
+			player:LoadCharacterAsync()
+		end)
+		if not ok then
+			warn(`[Survival] respawn LoadCharacterAsync failed for {player.Name}`)
+		end
+	end)
+	return true
+end
+
 function SurvivalService.setCauseHandler(fn: ((Player, string) -> ())?)
 	causeHandler = fn
 end
@@ -580,6 +627,7 @@ function SurvivalService.stop()
 		onPlayerRemoving(player)
 	end
 	table.clear(held)
+	respawnHandler = nil
 	started = false
 end
 

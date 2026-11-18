@@ -1,8 +1,11 @@
 --!strict
--- Shared party chests. Each placed chest owns an Inventory (Config.Storage.ChestSlots). Open/close/deposit/
--- withdraw: type -> range -> rate limit -> state (alive, chest registered, in reach, opened) -> act, with
--- the chest and the player's inventory validated at the action (shared/logic/Storage). Snapshots go only
--- to players who have that chest open. Cleanup on PlayerRemoving and chest Destroying.
+-- Player-placed storage chests (9 slots, shared by the whole party; distinct from loot chests). Open/close:
+-- type -> range -> rate limit -> state (alive, registered, in reach) -> act. Contents move only through
+-- InventoryService's single InventoryMove path: this module supplies the open chest (range checked at the
+-- action) and owns the revision counter (Config.Storage.RevisionAttribute, bumped on every change). Two
+-- players on one chest: a stale revision is re-synced and applied only if the source item is unchanged
+-- (shared/logic/InventoryMove). Snapshots go only to players who have the chest open. Cleanup on
+-- PlayerRemoving and chest Destroying. Non-empty chests refuse pick-up (canPickUp).
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -12,7 +15,6 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local Inventory = require(Shared.logic.Inventory)
-local Storage = require(Shared.logic.Storage)
 local Structures = require(Shared.data.Structures)
 local Guard = require(script.Parent.Parent.Net.Guard)
 local InventoryService = require(script.Parent.InventoryService)
@@ -20,19 +22,13 @@ local ServerUtil = require(script.Parent.ServerUtil)
 
 local T = Structures.Tuning
 local RATE_KEY = "Storage"
-local REFUSAL: { [string]: string } = {
-	ChestFull = "Chest is full",
-	InventoryFull = "Inventory full",
-	BadSlot = "Nothing there",
-	EmptySlot = "Nothing there",
-	BadCount = "Not that many",
-	BadArgs = "Cannot do that",
-	UnknownItem = "Cannot store that",
-}
+local TOO_FAR_TEXT = "Too far from the chest"
 
 local StorageService = {}
 
-local chests: { [Instance]: Inventory.Inv } = {}
+type Record = { inv: Inventory.Inv, revision: number, id: string }
+
+local chests: { [Instance]: Record } = {}
 local viewers: { [Instance]: { [Player]: true } } = {}
 local opened: { [Player]: Instance } = {}
 local connections: { RBXScriptConnection } = {}
@@ -45,15 +41,20 @@ end
 
 local function snapshot(chest: Instance?): Remotes.StorageStatePayload
 	local slots: { [number]: Remotes.ItemStack? } = {}
-	local inv = if chest then chests[chest] else nil
-	if inv then
-		for i, s in inv.slots do
+	local rec = if chest then chests[chest] else nil
+	if rec then
+		for i, s in rec.inv.slots do
 			if s then
 				slots[i] = { id = s.id, count = s.count, durability = s.durability }
 			end
 		end
 	end
-	return { chest = chest, slots = slots }
+	return {
+		chest = chest,
+		slots = slots,
+		id = if rec then rec.id else nil,
+		rev = if rec then rec.revision else nil,
+	}
 end
 
 local function send(player: Player, chest: Instance?)
@@ -69,6 +70,17 @@ local function sendToViewers(chest: Instance)
 			send(player, chest)
 		end
 	end
+end
+
+-- Contents changed: bump the revision (attribute + record) and refresh every viewer.
+local function changed(chest: Instance)
+	local rec = chests[chest]
+	if rec == nil then
+		return
+	end
+	rec.revision += 1
+	chest:SetAttribute(Config.Storage.RevisionAttribute, rec.revision)
+	sendToViewers(chest)
 end
 
 -- Closes whatever chest the player has open (and tells their client when notifyClient).
@@ -96,8 +108,10 @@ function StorageService.register(chest: Instance)
 		return
 	end
 	nextId += 1
-	chests[chest] = Inventory.new(Config.Storage.ChestSlots)
-	chest:SetAttribute(T.ChestIdAttribute, `chest{nextId}`)
+	local id = `chest{nextId}`
+	chests[chest] = { inv = Inventory.new(Config.Storage.ChestSlots), revision = 0, id = id }
+	chest:SetAttribute(T.ChestIdAttribute, id)
+	chest:SetAttribute(Config.Storage.RevisionAttribute, 0)
 	CollectionService:AddTag(chest, Config.Build.StorageTag)
 	chest.Destroying:Once(function()
 		local set = viewers[chest]
@@ -113,7 +127,42 @@ end
 
 -- Contents of a chest (QA and tests).
 function StorageService.getInventory(chest: Instance): Inventory.Inv?
-	return chests[chest]
+	local rec = chests[chest]
+	return if rec then rec.inv else nil
+end
+
+-- A chest may be picked up only while empty.
+function StorageService.canPickUp(chest: Instance): (boolean, string?)
+	local rec = chests[chest]
+	if rec == nil then
+		return false, "Not a storage chest"
+	end
+	for i = 1, rec.inv.size do
+		if rec.inv.slots[i] ~= nil then
+			return false, "Empty the chest first"
+		end
+	end
+	return true, nil
+end
+
+-- Chests this player has placed and that still exist.
+function StorageService.ownedCount(player: Player): number
+	local n = 0
+	for chest in chests do
+		if chest:GetAttribute(Config.Build.OwnerAttribute) == player.UserId then
+			n += 1
+		end
+	end
+	return n
+end
+
+-- Refusal text when the player may not place another chest (Config.Storage.MaxPerPlayer), else nil.
+-- PlacementService calls this before spending the item.
+function StorageService.placeRefusal(player: Player): string?
+	if StorageService.ownedCount(player) >= Config.Storage.MaxPerPlayer then
+		return `You can place at most {Config.Storage.MaxPerPlayer} storage chests`
+	end
+	return nil
 end
 
 -- Validates the chest argument at the action: registered, tagged, alive in Workspace, within reach.
@@ -133,6 +182,29 @@ local function reachableChest(player: Player, arg: unknown): Instance?
 	return inst
 end
 
+-- The player's open chest for InventoryService's move path; range/alive re-checked at every move.
+local function provide(player: Player): InventoryService.ChestCtx?
+	local chest: Instance? = opened[player]
+	if chest == nil then
+		return nil
+	end
+	local rec = chests[chest]
+	if rec == nil or reachableChest(player, chest) == nil then
+		return nil
+	end
+	return {
+		inv = rec.inv,
+		id = rec.id,
+		revision = rec.revision,
+		changed = function()
+			changed(chest)
+		end,
+		resync = function()
+			send(player, chest)
+		end,
+	}
+end
+
 local function onOpen(player: Player, payload: unknown)
 	if type(payload) ~= "table" or typeof((payload :: any).chest) ~= "Instance" then
 		return
@@ -143,6 +215,7 @@ local function onOpen(player: Player, payload: unknown)
 	end
 	local chest = reachableChest(player, chestArg)
 	if chest == nil then
+		notify(player, TOO_FAR_TEXT)
 		return
 	end
 	close(player, false)
@@ -153,8 +226,7 @@ local function onOpen(player: Player, payload: unknown)
 		viewers[chest] = set
 	end
 	set[player] = true
-	local id = chest:GetAttribute(T.ChestIdAttribute)
-	player:SetAttribute(Config.Storage.OpenAttribute, if type(id) == "string" then id else "")
+	player:SetAttribute(Config.Storage.OpenAttribute, chests[chest].id)
 	send(player, chest)
 end
 
@@ -165,75 +237,9 @@ local function onClose(player: Player)
 	close(player, true)
 end
 
--- shared body of deposit/withdraw after type and range checks
-local function transfer(
-	player: Player,
-	chestArg: unknown,
-	slot: number,
-	count: number,
-	deposit: boolean
-)
-	if not Guard.rateLimit(player, RATE_KEY, Config.Net.StorageRateInterval) then
-		return
-	end
-	local chest = reachableChest(player, chestArg)
-	if chest == nil or opened[player] ~= chest then
-		return
-	end
-	local inv = InventoryService.get(player)
-	local chestInv = chests[chest]
-	if inv == nil or chestInv == nil then
-		return
-	end
-	local ok, reason
-	if deposit then
-		ok, reason = Storage.deposit(chestInv, inv, slot, count)
-	else
-		ok, reason = Storage.withdraw(chestInv, inv, slot, count)
-	end
-	if not ok then
-		notify(player, REFUSAL[reason] or "Cannot do that")
-		return
-	end
-	InventoryService.sync(player)
-	sendToViewers(chest)
-end
-
-local function onDeposit(player: Player, payload: unknown)
-	if type(payload) ~= "table" then
-		return
-	end
-	local p: any = payload
-	if
-		typeof(p.chest) ~= "Instance"
-		or not Guard.inRange(p.slot, 1, Config.Inventory.HotbarSize + Config.Inventory.BackpackSize)
-		or not Guard.inRange(p.count, 1, Config.Inventory.MaxStack)
-	then
-		return
-	end
-	transfer(player, p.chest, p.slot, p.count, true)
-end
-
-local function onWithdraw(player: Player, payload: unknown)
-	if type(payload) ~= "table" then
-		return
-	end
-	local p: any = payload
-	if
-		typeof(p.chest) ~= "Instance"
-		or not Guard.inRange(p.chestSlot, 1, Config.Storage.ChestSlots)
-		or not Guard.inRange(p.count, 1, Config.Inventory.MaxStack)
-	then
-		return
-	end
-	transfer(player, p.chest, p.chestSlot, p.count, false)
-end
-
 -- Same paths as the remotes (QA and server callers).
 StorageService.handleOpen = onOpen
 StorageService.handleClose = onClose
-StorageService.handleDeposit = onDeposit
-StorageService.handleWithdraw = onWithdraw
 
 -- Called by StructureService's loop: closes chests the player walked away from or died beside.
 function StorageService.tick()
@@ -252,6 +258,7 @@ function StorageService.start()
 		return
 	end
 	started = true
+	InventoryService.setChestProvider(provide)
 	table.insert(
 		connections,
 		Remotes.event(Remotes.StorageOpenRequest).OnServerEvent:Connect(onOpen)
@@ -259,14 +266,6 @@ function StorageService.start()
 	table.insert(
 		connections,
 		Remotes.event(Remotes.StorageCloseRequest).OnServerEvent:Connect(onClose)
-	)
-	table.insert(
-		connections,
-		Remotes.event(Remotes.StorageDepositRequest).OnServerEvent:Connect(onDeposit)
-	)
-	table.insert(
-		connections,
-		Remotes.event(Remotes.StorageWithdrawRequest).OnServerEvent:Connect(onWithdraw)
 	)
 	table.insert(
 		connections,
@@ -284,6 +283,7 @@ function StorageService.stop()
 	table.clear(chests)
 	table.clear(viewers)
 	table.clear(opened)
+	InventoryService.setChestProvider(nil)
 	started = false
 end
 

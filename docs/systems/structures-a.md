@@ -27,3 +27,6 @@ Playtest checklist (hand, Studio):
 Status: in progress (headless done; Studio hand-check pending)
 
 Integration: wired by src/server/World/MassiveService.luau + MassivePlacement (see docs/systems/world-gen.md). Studio hand-check pending.
+
+## Items round
+Kit A now levels the footprint with SiteGround (entrance floor = plan base height, blended skirt) instead of sitting at the lowest sample; only `Config.Loot.Chests`-many of the plan's chest slots become chests (`ChestSlot.Room` added for the spread). See loot.md / world-gen.md.

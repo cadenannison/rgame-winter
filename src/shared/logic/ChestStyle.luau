@@ -39,8 +39,8 @@ ChestStyle.Budget = {
 	MaxLightRange = 24,
 	MaxLightBrightness = 3,
 	MaxParticleRate = Config.Perf.MaxParticleRate,
-	MaxBeamHeight = 160,
-	MaxBeamWidth = 4,
+	MaxBeamHeight = Config.Loot.Beam.MaxHeight, -- hard cap (12): short beams only, no sky pillars
+	MaxBeamWidth = 1.5,
 	MaxEffectChests = math.floor(Config.Perf.MaxParticleEmitters / 3), -- nearby chests with live light + emitter
 	EffectRadius = 90, -- studs: light/particles/pulse only inside this
 	RefreshSeconds = 0.5, -- nearby-set sweep interval
@@ -107,8 +107,8 @@ local STYLES: { [string]: Style } = {
 		lightBrightness = 1.2,
 		particleRate = 6,
 		particleLifetime = 1.6,
-		beamHeight = 34,
-		beamWidth = 0.7,
+		beamHeight = 6,
+		beamWidth = 0.5,
 		beamTransparency = 0.72,
 		openSeconds = 0.5,
 		lidAngle = 105,
@@ -130,8 +130,8 @@ local STYLES: { [string]: Style } = {
 		lightBrightness = 1.8,
 		particleRate = 12,
 		particleLifetime = 2,
-		beamHeight = 70,
-		beamWidth = 1.4,
+		beamHeight = 8,
+		beamWidth = 0.7,
 		beamTransparency = 0.62,
 		openSeconds = 0.65,
 		lidAngle = 110,
@@ -153,8 +153,8 @@ local STYLES: { [string]: Style } = {
 		lightBrightness = 2.6,
 		particleRate = 20,
 		particleLifetime = 2.4,
-		beamHeight = 130,
-		beamWidth = 3,
+		beamHeight = Config.Loot.Beam.Height,
+		beamWidth = 1,
 		beamTransparency = 0.5,
 		openSeconds = 0.9,
 		lidAngle = 115,
@@ -209,6 +209,18 @@ function ChestStyle.pulse(style: Style, t: number): number
 	return math.clamp(style.glowTransparency + s * style.pulseAmount, 0, 1)
 end
 
+-- Beam fade by camera distance: 0 = fully visible, 1 = hidden (client LocalTransparencyModifier). Visible out to
+-- radius - band, fading to hidden at `radius`.
+function ChestStyle.beamFade(distance: number, radius: number, band: number): number
+	if distance <= radius - band then
+		return 0
+	end
+	if distance >= radius then
+		return 1
+	end
+	return (distance - (radius - band)) / band
+end
+
 -- Problems with one style against the budget (empty = OK).
 function ChestStyle.validate(rarity: string, style: Style): { string }
 	local B = ChestStyle.Budget
@@ -222,14 +234,23 @@ function ChestStyle.validate(rarity: string, style: Style): { string }
 	if style.particleRate > B.MaxParticleRate then
 		table.insert(problems, `{rarity}: particle rate over budget`)
 	end
-	if style.beamHeight > B.MaxBeamHeight or style.beamWidth > B.MaxBeamWidth then
+	local beamHeight = Config.Loot.Beam
+	if
+		style.beamHeight > B.MaxBeamHeight
+		or style.beamHeight > beamHeight.Height
+		or style.beamWidth > B.MaxBeamWidth
+	then
 		table.insert(problems, `{rarity}: beam over budget`)
 	end
-	if
-		Rarity.rank(rarity) >= Rarity.rank("rare")
-		and (style.glowColor == nil or style.beamHeight <= 0)
-	then
-		table.insert(problems, `{rarity}: rare+ chests need a glow and a beam to be seen from far`)
+	local wantsBeam = Rarity.rank(rarity) >= Rarity.rank(beamHeight.MinRarity)
+	if wantsBeam and (style.glowColor == nil or style.beamHeight <= 0) then
+		table.insert(
+			problems,
+			`{rarity}: {beamHeight.MinRarity}+ chests need a glow and a short beam`
+		)
+	end
+	if not wantsBeam and style.beamHeight > 0 then
+		table.insert(problems, `{rarity}: below Beam.MinRarity must not have a beam`)
 	end
 	return problems
 end

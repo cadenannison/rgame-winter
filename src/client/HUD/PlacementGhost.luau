@@ -17,6 +17,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 local Placement = require(Shared:WaitForChild("logic"):WaitForChild("Placement"))
+local SiteGround = require(Shared:WaitForChild("logic"):WaitForChild("SiteGround"))
 
 local B = Config.Build
 local G = B.Ghost
@@ -270,13 +271,17 @@ function PlacementGhost.start(opts: Options): Ghost
 			return
 		end
 		local snapped = Placement.snapPoint(point.X, point.Z, B.GridStep)
-		-- Same ground probe as the server's place handler.
-		local hit = Workspace:Raycast(
-			Vector3.new(snapped.x, root.Position.Y + B.GroundRayHeight, snapped.z),
-			Vector3.new(0, -B.GroundRayLength, 0),
-			params
-		)
-		if hit == nil then
+		-- Same footprint ground snap as the server's place handler (SiteGround.snapGround).
+		local rootY = root.Position.Y
+		local groundY = SiteGround.snapGround(function(cx: number, cz: number): number?
+			local hit = Workspace:Raycast(
+				Vector3.new(cx, rootY + B.GroundRayHeight, cz),
+				Vector3.new(0, -B.GroundRayLength, 0),
+				params
+			)
+			return if hit then hit.Position.Y else nil
+		end, snapped.x, snapped.z, def.sizeX, def.sizeZ, rotation)
+		if groundY == nil then
 			p.Transparency = 1
 			text.Text = ""
 			current = nil
@@ -298,7 +303,7 @@ function PlacementGhost.start(opts: Options): Ghost
 			litFires = litFires(),
 			buildExempt = B.RangeExempt[structureId] == true,
 		})
-		local ground = Vector3.new(snapped.x, hit.Position.Y, snapped.z)
+		local ground = Vector3.new(snapped.x, groundY, snapped.z)
 		p.CFrame = CFrame.new(ground + Vector3.new(0, def.sizeY / 2, 0))
 			* CFrame.Angles(0, math.rad(rotation), 0)
 		p.Transparency = G.Transparency

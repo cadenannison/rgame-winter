@@ -8,6 +8,7 @@
 local Config = require("../Config")
 local MassiveRules = require("./MassiveRules")
 local PoiPlan = require("./PoiPlan")
+local SiteGround = require("./SiteGround")
 local World = require("./World")
 local WorldLayout = require("./WorldLayout")
 
@@ -153,8 +154,18 @@ function MassivePlacement.plan(layout: WorldLayout.Layout): { Site }
 				local z = (rng() * 2 - 1) * span
 				if acceptable(layout, sites, id, x, z, radius) then
 					local lo, hi, median = MassivePlacement.relief(layout.seed, x, z, radius)
+					local function heightFn(sx: number, sz: number): number
+						return World.heightAt(layout.seed, sx, sz)
+					end
+					-- The builder yaws by quarter turns: the site must work in either orientation.
+					local hx, hz = def.MinFootprintX / 2, def.MinFootprintZ / 2
+					local ground = SiteGround.plan(heightFn, x, z, hx, hz)
+					local groundTurned = SiteGround.plan(heightFn, x, z, hz, hx)
+					-- SiteGround rejects steep, cliffy and watery sites; the placement loop relocates.
 					if
-						hi - lo <= M.MaxSiteRelief
+						ground.ok
+						and groundTurned.ok
+						and hi - lo <= M.MaxSiteRelief
 						and lo - depthY - M.KillMargin >= Config.Terrain.KillHeight
 					then
 						table.insert(sites, {

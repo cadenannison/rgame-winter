@@ -7,7 +7,10 @@ local Config = require("../Config")
 local Clothing = require("./Clothing")
 local Types = require("./Types")
 
-local STACK = Config.Inventory.MaxStack
+-- Stack sizes come from Config.Items (ItemCatalog stamps the final value); these defaults mirror it.
+local function stackOf(category: string): number
+	return Config.Items.CategoryStack[category] or Config.Items.FallbackStack
+end
 local TOOL_DURABILITY = 60 -- matches ItemCatalog Phase 1 tools
 local WEAPON_DURABILITY = 45
 local METAL = Config.Durability.MetalToolMultiplier
@@ -20,18 +23,55 @@ local Items = {}
 
 local list: { Types.ItemDef } = {
 	-- Resources
-	{ id = "IronOre", name = "Iron Ore", kind = "resource", maxStack = STACK },
-	{ id = "IronIngot", name = "Iron Ingot", kind = "resource", maxStack = STACK },
-	{ id = "FrostShard", name = "Frost Shard", kind = "resource", maxStack = STACK },
-	{ id = "WardenCore", name = "Warden Core", kind = "resource", maxStack = 5 },
-	{ id = "MatriarchFang", name = "Matriarch Fang", kind = "resource", maxStack = 5 },
-	{ id = "ColossusHeart", name = "Colossus Heart", kind = "resource", maxStack = 5 },
-	{ id = "WhiteoutPelt", name = "Whiteout Pelt", kind = "resource", maxStack = 5 },
+	{ id = "IronOre", name = "Iron Ore", kind = "resource", maxStack = stackOf("material") },
+	{ id = "IronIngot", name = "Iron Ingot", kind = "resource", maxStack = stackOf("material") },
+	{
+		id = "FrostShard",
+		name = "Frost Shard",
+		kind = "resource",
+		maxStack = stackOf("rareMaterial"),
+	},
+	{
+		id = "WardenCore",
+		name = "Warden Core",
+		kind = "resource",
+		maxStack = stackOf("rareMaterial"),
+	},
+	{
+		id = "MatriarchFang",
+		name = "Matriarch Fang",
+		kind = "resource",
+		maxStack = stackOf("rareMaterial"),
+	},
+	{
+		id = "ColossusHeart",
+		name = "Colossus Heart",
+		kind = "resource",
+		maxStack = stackOf("rareMaterial"),
+	},
+	{
+		id = "WhiteoutPelt",
+		name = "Whiteout Pelt",
+		kind = "resource",
+		maxStack = stackOf("rareMaterial"),
+	},
 	-- Food (buffs: shared/data/Food.luau EatBuffs)
-	{ id = "RawFish", name = "Raw Fish", kind = "food", maxStack = STACK, hunger = 10 },
-	{ id = "CookedMeat", name = "Cooked Meat", kind = "food", maxStack = STACK, hunger = 45 },
-	{ id = "CookedFish", name = "Cooked Fish", kind = "food", maxStack = STACK, hunger = 35 },
-	{ id = "Stew", name = "Stew", kind = "food", maxStack = 10, hunger = 70 },
+	{ id = "RawFish", name = "Raw Fish", kind = "food", maxStack = stackOf("meat"), hunger = 10 },
+	{
+		id = "CookedMeat",
+		name = "Cooked Meat",
+		kind = "food",
+		maxStack = stackOf("meat"),
+		hunger = 45,
+	},
+	{
+		id = "CookedFish",
+		name = "Cooked Fish",
+		kind = "food",
+		maxStack = stackOf("meat"),
+		hunger = 35,
+	},
+	{ id = "Stew", name = "Stew", kind = "food", maxStack = stackOf("stew"), hunger = 70 },
 	-- Tools
 	{
 		id = "StonePickaxe",
@@ -84,13 +124,13 @@ local list: { Types.ItemDef } = {
 		ammoId = "Arrow",
 		repairable = true,
 	},
-	{ id = "Arrow", name = "Arrow", kind = "ammo", maxStack = STACK },
+	{ id = "Arrow", name = "Arrow", kind = "ammo", maxStack = stackOf("ammo") },
 	-- Lights (counter-play to the Stalker and the dark)
 	{
 		id = "Torch",
 		name = "Torch",
 		kind = "light",
-		maxStack = 1,
+		maxStack = stackOf("torch"),
 		durability = TORCH_BURN_SECONDS,
 		lightRadius = 20,
 		repelsStalker = true,
@@ -109,7 +149,7 @@ local list: { Types.ItemDef } = {
 		id = "Flare",
 		name = "Flare",
 		kind = "light",
-		maxStack = 5,
+		maxStack = Config.Items.Entries.Flare.stack or stackOf("light"),
 		durability = FLARE_BURN_SECONDS,
 		lightRadius = 40,
 		repelsStalker = true,
@@ -136,7 +176,8 @@ for _, p in PLACEABLES do
 		id = p[1],
 		name = p[2],
 		kind = "placeable",
-		maxStack = if p[1] == "Wall" then 10 else 1,
+		maxStack = Config.Items.Entries[p[1]] and Config.Items.Entries[p[1]].stack
+			or stackOf("placeable"),
 		structureId = p[1],
 	})
 end

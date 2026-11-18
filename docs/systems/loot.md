@@ -10,3 +10,10 @@ Playtest checklist: (hand) 1. open a chest near a structure: items land in the h
 Status: wired (integration round): MassiveService registers chest slots, sets the ChestArt builder, calls start()/ResetRun; Studio hand-check pending
 
 Integration notes: call `LootService.start()` once at boot; `ResetRun(seed)` at run start/end; structure builders feed ChestSlots (Position, Depth, StructureType) plus Ring from the chunk's biome ring. Seed defaults to the Workspace world-seed attribute. Drop tuning constants are local to LootService (could move to Config.Loot on a contract change).
+
+## Items round: counts, beacon, beams, first-open hint
+- Counts: `Config.Loot.Chests` (Small 1-2, Medium 2-3, Massive 3-5, Beacon 3-4 with `TopRarity = 1`) + `StructureClass` / `DefaultClass`. `LootChests.selectSlots(structureType, runSeed, key, candidates)` (pure) picks which plan slots become real chests: deterministic from the run seed and the structure key, spread over distinct rooms first and different depth tiers; the Beacon's deepest pick is `topMode = "force"` (legendary), the rest `"exclude"` (never legendary). MassiveService registers only the picks (`Index` stays the plan slot index). POI crates (PoiService) are single crates and unchanged.
+- Rings: `Config.Loot.RingRarityBonus[ring + 1]` multiplies rarity weights (`1 + bonus * (rank - 1)`) via `LootChests.ringBonus`; it never changes the count.
+- `LootService.RegisterDebugChest(slot, rarity, parent)` (Studio `/debug chest`); `LootService.CurrentSeed()`.
+- First chest hint: `CueResolve.HintDefs` id `FirstChest` (trigger `lootChestNearby`, done `lootChestOpened`), completed in `client/Atmosphere/AtmosphereHints` only on the real `LootOpened` reply; shows once, never again.
+- Tests: tests/ChestCountsTests.luau (ranges, one top rarity, determinism, spread, ring weighting, beams).

@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Quality gates. Tier: light | standard | full (KIT_TIER overrides .kit-tier).
+# Quiet by default: one summary line, or on failure the first 30 lines of the failing gate.
+# Full output always goes to .logs/check.log. --verbose (or CHECK_VERBOSE=1) prints everything.
 set -euo pipefail
 export PATH="$HOME/.rokit/bin:$PATH"
 cd "$(dirname "$0")/.."
-mkdir -p Packages ServerPackages build
+VERBOSE="${CHECK_VERBOSE:-0}"
+[ "${1:-}" = "--verbose" ] && VERBOSE=1
+mkdir -p Packages ServerPackages build .logs
+LOG=".logs/check.log"
+: > "$LOG"
+PASSED=""
 TIER="${KIT_TIER:-$(tr -d '[:space:]' < .kit-tier)}"
 DEFS_URL="https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/main/scripts/globalTypes.None.d.luau"
 DEFS=".luau-types/globalTypes.None.d.luau"
@@ -17,13 +24,26 @@ esac
 gate() {
 	local name="$1"
 	shift
-	if "$@"; then
-		echo "PASS $name"
+	local out
+	out="$(mktemp)"
+	{
+		echo "=== $name ==="
+	} >> "$LOG"
+	if "$@" > "$out" 2>&1; then
+		cat "$out" >> "$LOG"
+		[ "$VERBOSE" = "1" ] && { echo "PASS $name"; cat "$out"; }
+		PASSED="$PASSED $name"
+		if [ "$name" = "tests" ]; then TEST_COUNT="$(grep -o '^tests: [0-9]* passed' "$out" | grep -o '[0-9]*' || true)"; fi
+		rm -f "$out"
 	else
-		echo "FAIL $name" >&2
+		cat "$out" >> "$LOG"
+		echo "FAIL $name (first 30 lines; full: $LOG)" >&2
+		grep -v '^ok ' "$out" | head -30 >&2
+		rm -f "$out"
 		exit 1
 	fi
 }
+TEST_COUNT=0
 
 gate stylua stylua --check src tests
 gate selene selene src tests
@@ -44,7 +64,7 @@ if [ "$TIER" != "light" ]; then
 fi
 
 if [ "$TIER" = "full" ]; then
-	gate tests lune run tests/run
+	gate tests lune run tests/run -- $([ "$VERBOSE" = "1" ] && echo --verbose)
 fi
 
-echo "OK tier=$TIER"
+echo "OK tier=$TIER:$PASSED (tests ok: $TEST_COUNT) log=$LOG"

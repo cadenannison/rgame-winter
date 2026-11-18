@@ -98,6 +98,12 @@ CueResolve.HintDefs = {
 		text = "A storage chest keeps your spare gear. Use it to open.",
 	},
 	{
+		id = "FirstChest",
+		trigger = "lootChestNearby",
+		done = { "lootChestOpened" },
+		text = "A loot chest. Walk up and press the Open prompt (E, or tap Open) to see what is inside. Rarer chests glow.",
+	},
+	{
 		id = "Map",
 		trigger = "hasMap",
 		done = { "mapOpened" },

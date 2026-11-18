@@ -10,7 +10,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local ItemCatalog = require(Shared.ItemCatalog)
+local InventoryMove = require(Shared.logic.InventoryMove)
 local ItemsGather = require(Shared.logic.ItemsGather)
+local TreeRules = require(Shared.logic.TreeRules)
 local Guard = require(script.Parent.Parent.Net.Guard)
 local SwingRelay = require(script.Parent.Parent.Atmosphere.SwingRelay)
 local InventoryService = require(script.Parent.InventoryService)
@@ -142,7 +144,18 @@ local function onGather(player: Player, node: unknown)
 	if root == nil or not root:IsA("BasePart") or pos == nil then
 		return
 	end
-	if (root.Position - pos).Magnitude > Config.Gather.Range then
+	-- Reach is measured to the node's surface (trunk radius), so giant trees can be chopped from the ground.
+	local reach = (root.Position - pos).Magnitude
+	if target:IsA("BasePart") then
+		reach = TreeRules.reachDistance(
+			root.Position.X - pos.X,
+			root.Position.Z - pos.Z,
+			root.Position.Y - pos.Y,
+			math.max(target.Size.X, target.Size.Z) / 2,
+			target.Size.Y / 2
+		)
+	end
+	if reach > Config.Gather.Range then
 		return
 	end
 	-- 3. rate limit
@@ -180,6 +193,13 @@ local function onGather(player: Player, node: unknown)
 	local hits = (target:GetAttribute(ItemCatalog.NodeHitsAttribute) :: number?)
 		or Config.Gather.HitsToDeplete
 	hits -= 1
+	local nodeYield = ItemCatalog.Nodes[kind]
+	if
+		hits <= 0 and not InventoryService.canAdd(player, nodeYield.yieldId, nodeYield.yieldCount)
+	then
+		notify(player, InventoryMove.FullText) -- the last hit waits until there is room (nothing is lost)
+		return
+	end
 	InventoryService.wearSelected(player, Config.Gather.ToolDurabilityPerUse)
 	if hits > 0 then
 		target:SetAttribute(ItemCatalog.NodeHitsAttribute, hits)
@@ -192,7 +212,7 @@ local function onGather(player: Player, node: unknown)
 		def.yieldCount + bonusYield(player, def.yieldCount)
 	)
 	if left > 0 then
-		notify(player, "Inventory full.")
+		notify(player, InventoryMove.FullText)
 	end
 	setDepleted(target, true)
 end

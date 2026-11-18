@@ -1,14 +1,22 @@
 --!strict
--- Headless tests for pure logic in src/shared/logic. Run: lune run tests/run
+-- Headless tests for pure logic in src/shared/logic. Run: lune run tests/run [-- --verbose]
 
 local Clamp = require("../src/shared/logic/Clamp")
 local NumberFormat = require("../src/shared/logic/NumberFormat")
 
+-- Lune-only module; indirect so luau-analyze (no lune definitions) does not resolve it.
+local lunePath = "@lune/process"
+local lune: (string) -> any = require :: any
+local verbose = table.find(lune(lunePath).args, "--verbose") ~= nil
 local failures = 0
+local passes = 0
 
 local function check(name: string, ok: boolean)
 	if ok then
-		print(`ok   {name}`)
+		passes += 1
+		if verbose then
+			print(`ok   {name}`)
+		end
 	else
 		failures += 1
 		print(`FAIL {name}`)
@@ -37,6 +45,7 @@ require("./PlayabilityTests")(check)
 require("./TeleportTests")(check)
 require("./RunTests")(check)
 require("./DownedTests")(check) -- death/downed/revive (round: death)
+require("./DeathPanelTests")(check)
 require("./PadTests")(check)
 require("./LobbyTests")(check)
 require("./DataTests")(check) -- brief 12 (Phase 3 data)
@@ -55,7 +64,12 @@ require("./LootServiceTests")(check) -- loot server (agent H)
 require("./StructureBTests")(check) -- massive structures B (agent K)
 require("./StructureATests")(check) -- massive structures A (agent J)
 require("./MassiveWiringTests")(check) -- integration: massive placement + chunk hooks
+require("./SiteGroundTests")(check) -- items round: terrain grounding (agent A)
+require("./ChestCountsTests")(check) -- items round: chest counts, beacon top rarity, beams (agent A)
+require("./InventoryTests")(check) -- items round: move path, stacks, chests, migration (agent B)
+require("./EquipmentTests")(check) -- items round: equipment slots and worn resistance (agent B)
 
+print(`tests: {passes} passed, {failures} failed`)
 if failures > 0 then
 	error(`{failures} test(s) failed`)
 end

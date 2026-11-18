@@ -12,11 +12,13 @@ local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local ItemCatalog = require(Shared.ItemCatalog)
 local Placement = require(Shared.logic.Placement)
+local SiteGround = require(Shared.logic.SiteGround)
 local Guard = require(script.Parent.Parent.Net.Guard)
 local InventoryService = require(script.Parent.InventoryService)
 local CraftingService = require(script.Parent.CraftingService)
 local FireService = require(script.Parent.Parent.Survival.FireService)
 local StructureService = require(script.Parent.StructureService)
+local StorageService = require(script.Parent.StorageService)
 
 local B = Config.Build
 local MAX_ID_LENGTH = 32
@@ -105,20 +107,15 @@ local function ownedCount(player: Player): number
 	return n
 end
 
--- Placed structures of one role (per-role caps: storage chests).
-local function roleCount(role: string): number
-	local n = 0
-	for inst in placed do
-		local id = inst:GetAttribute(B.StructureAttribute)
-		local d = if type(id) == "string" then ItemCatalog.Structures[id] else nil
-		if d and d.role == role then
-			n += 1
-		end
-	end
-	return n
-end
-
-local function groundY(x: number, z: number, nearY: number): number?
+-- Ground under the whole footprint (SiteGround.snapGround): the highest surface under the model's corners,
+-- edges and centre plus SinkMargin, so a campfire or bench is never partly buried. The client ghost snaps the same way.
+local function groundY(
+	x: number,
+	z: number,
+	nearY: number,
+	def: ItemCatalog.StructureDef,
+	rotation: number
+): number?
 	local chunks = Workspace:FindFirstChild(Config.World.ChunkFolderName)
 	if chunks == nil then
 		return nil
@@ -126,12 +123,15 @@ local function groundY(x: number, z: number, nearY: number): number?
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
 	params.FilterDescendantsInstances = { chunks, Workspace.Terrain } -- ground is Terrain voxels plus POI floors
-	local hit = Workspace:Raycast(
-		Vector3.new(x, nearY + B.GroundRayHeight, z),
-		Vector3.new(0, -B.GroundRayLength, 0),
-		params
-	)
-	return if hit then hit.Position.Y else nil
+	local function cast(cx: number, cz: number): number?
+		local hit = Workspace:Raycast(
+			Vector3.new(cx, nearY + B.GroundRayHeight, cz),
+			Vector3.new(0, -B.GroundRayLength, 0),
+			params
+		)
+		return if hit then hit.Position.Y else nil
+	end
+	return SiteGround.snapGround(cast, x, z, def.sizeX, def.sizeZ, rotation)
 end
 
 local function notify(player: Player, text: string)
@@ -234,14 +234,19 @@ local function onPlace(player: Player, structureId: unknown, position: unknown, 
 		itemCount = InventoryService.count(player, def.itemId),
 		litFires = litFires,
 		buildExempt = B.RangeExempt[def.id] == true,
-		roleCount = if def.role == "storage" then roleCount("storage") else nil,
-		roleMax = if def.role == "storage" then Config.Storage.MaxChestsPerRun else nil,
 	})
 	if not result.ok then
 		notify(player, result.reason)
 		return
 	end
-	local y = groundY(x, z, root.Position.Y)
+	if def.role == "storage" then
+		local refusal = StorageService.placeRefusal(player)
+		if refusal then
+			notify(player, refusal)
+			return
+		end
+	end
+	local y = groundY(x, z, root.Position.Y, def, rotation)
 	if y == nil then
 		notify(player, "NoGround")
 		return

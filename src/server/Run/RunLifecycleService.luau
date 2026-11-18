@@ -442,6 +442,13 @@ function RunLifecycleService.Start()
 		return
 	end
 	started = true
+	-- Respawn (SurvivalService.respawn): a downed/dead member becomes alive again in the roster.
+	SurvivalService.setRespawnHandler(function(player: Player)
+		local current = run
+		if current and not ended then
+			RunState.respawn(current, player.UserId)
+		end
+	end)
 	table.insert(connections, Players.PlayerAdded:Connect(onPlayerAdded))
 	table.insert(connections, Players.PlayerRemoving:Connect(onPlayerRemoving))
 	table.insert(

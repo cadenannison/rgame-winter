@@ -1,6 +1,6 @@
 --!strict
--- Sets Player ColdResistance (Config.Biome.ColdResistanceAttribute) from the clothing a player carries:
--- best piece per slot, capped (shared/logic/ClothingLogic). One loop for all players. Brief 13/18 read the
+-- Sets Player ColdResistance (Config.Biome.ColdResistanceAttribute) from the gear a player WEARS (equipment
+-- slots, not the carried grid), capped (shared/logic/ClothingLogic). One loop for all players. Brief 13/18 read the
 -- attribute for biome drain; the client HUD shows it.
 
 local Players = game:GetService("Players")
@@ -23,18 +23,10 @@ function ClothingService.get(player: Player): number
 	return if type(v) == "number" then v else 0
 end
 
+-- Only worn (equipped) pieces count; carried gear in the grid does nothing.
 local function refresh(player: Player)
-	local inv = InventoryService.get(player)
-	local counts: { [string]: number } = {}
-	if inv then
-		for i = 1, inv.size do
-			local stack = inv.slots[i]
-			if stack then
-				counts[stack.id] = (counts[stack.id] or 0) + stack.count
-			end
-		end
-	end
-	local value = ClothingLogic.resistance(counts)
+	local equip = InventoryService.getEquipment(player)
+	local value = if equip then ClothingLogic.equipped(equip) else 0
 	if player:GetAttribute(Config.Biome.ColdResistanceAttribute) ~= value then
 		player:SetAttribute(Config.Biome.ColdResistanceAttribute, value)
 	end
@@ -52,6 +44,7 @@ function ClothingService.start()
 	for _, player in Players:GetPlayers() do
 		onAdded(player)
 	end
+	InventoryService.onEquipmentChanged(refresh) -- immediate on equip/unequip and on profile load
 	table.insert(
 		connections,
 		RunService.Heartbeat:Connect(function(dt: number)

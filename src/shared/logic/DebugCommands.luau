@@ -1,9 +1,12 @@
 --!strict
 -- Pure validation for DebugService commands. No Roblox APIs.
 
+local Rarity = require("../data/Rarity")
+
 export type Limits = {
 	maxDay: number,
 	maxClockSpeed: number,
+	maxSeed: number?, -- "seed" argument upper bound (default 2147483646)
 	ringCount: number,
 	darkEvents: { string },
 	itemIds: { string }?, -- valid "give" args (ItemCatalog ids)
@@ -26,6 +29,11 @@ DebugCommands.NAMES = {
 	"runSummary",
 	"mode",
 	"gallery",
+	"structures",
+	"tp",
+	"chest",
+	"seed",
+	"respawn",
 }
 
 -- Commands that only call registered handlers (no attribute is written by DebugService).
@@ -35,7 +43,47 @@ DebugCommands.ACTION_ONLY = {
 	runSummary = true,
 	mode = true,
 	gallery = true,
+	structures = true, -- nearest massive structures with distance and ring
+	tp = true, -- teleport next to a structure / ring / player, grounded
+	chest = true, -- spawn a loot chest of a rarity in front of the player
+	seed = true, -- print or set the run seed
+	respawn = true, -- the real revive/respawn transition (SurvivalService.respawn)
 } :: { [string]: boolean }
+
+export type TpTarget = { kind: string, index: number?, id: string?, ring: number?, name: string? }
+
+-- "/debug tp structure [n|Id]" | "ring <n>" | "<player name>" -> normalized target (nil = unusable).
+function DebugCommands.parseTp(arg: unknown, ringCount: number): TpTarget?
+	if type(arg) ~= "string" then
+		return nil
+	end
+	local text = string.match(arg, "^%s*(.-)%s*$") or ""
+	if text == "" or #text > 40 then
+		return nil
+	end
+	local word, rest = string.match(text, "^(%S+)%s*(.-)$")
+	local lower = string.lower(word or "")
+	if lower == "structure" then
+		if rest == "" then
+			return { kind = "structure", index = 1 }
+		end
+		local n = tonumber(rest)
+		if n ~= nil then
+			if n % 1 ~= 0 or n < 1 or n > 64 then
+				return nil
+			end
+			return { kind = "structure", index = n }
+		end
+		return { kind = "structure", index = 1, id = rest }
+	elseif lower == "ring" then
+		local n = tonumber(rest)
+		if n == nil or n % 1 ~= 0 or n < 1 or n > ringCount then
+			return nil
+		end
+		return { kind = "ring", ring = n }
+	end
+	return { kind = "player", name = text }
+end
 
 local function isNumber(v: unknown): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
@@ -93,6 +141,29 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 			return true, arg
 		end
 		return false, "unknown gallery set"
+	elseif name == "structures" or name == "respawn" then
+		return true, nil
+	elseif name == "tp" then
+		local target = DebugCommands.parseTp(arg, limits.ringCount)
+		if target == nil then
+			return false, "tp needs structure [n|Id], ring <n> or a player name"
+		end
+		return true, target
+	elseif name == "chest" then
+		local r = if type(arg) == "string" then string.lower(arg) else ""
+		if not Rarity.isRarity(r) then
+			return false, "chest needs a rarity: " .. table.concat(Rarity.List, ", ")
+		end
+		return true, r
+	elseif name == "seed" then
+		if arg == nil or arg == "" then
+			return true, nil -- print
+		end
+		local n = if type(arg) == "string" then tonumber(arg) else arg
+		if not isInt(n, 0, limits.maxSeed or 2147483646) then
+			return false, "seed must be a whole number"
+		end
+		return true, n
 	elseif name == "mode" then
 		-- Studio-only: persists the next Test's server mode ("clear" removes the override).
 		if arg == "run" or arg == "lobby" or arg == "clear" then

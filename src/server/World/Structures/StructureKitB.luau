@@ -13,22 +13,21 @@ local ArtKit = require(Shared:WaitForChild("ArtKit"))
 local Logic = Shared:WaitForChild("logic")
 local Kit = require(Logic:WaitForChild("PlanKitB"))
 local MassiveRules = require(Logic:WaitForChild("MassiveRules"))
+local SiteGround = require(Logic:WaitForChild("SiteGround"))
 local World = require(Logic:WaitForChild("World"))
 local Server = ServerScriptService:WaitForChild("Server")
 local PoiStructures = require(Server:WaitForChild("World"):WaitForChild("PoiStructures"))
+local SiteGroundTerrain = require(Server:WaitForChild("World"):WaitForChild("SiteGroundTerrain"))
 
 local P = ArtKit.palette(Config.Art.World.Palette)
 local MASSIVE = Config.Massive
-local GROUND_SAMPLES = 5 -- per axis, median of terrain heights over the footprint
-local PAD_SKIN = 4 -- studs of biome-material top layer on the pad
-local PAD_AIR_HEIGHT = 60
 local DREAD_COOLDOWN = 20 -- seconds between dread hook calls per zone
 local QUARTER_TURN = math.pi / 2
 
 local StructureKitB = {}
 
 export type Footprint = { radius: number, halfX: number, halfZ: number }
-export type ChestSlot = { Position: Vector3, Depth: number, StructureType: string }
+export type ChestSlot = { Position: Vector3, Depth: number, StructureType: string, Room: string? }
 export type DreadZone = { Position: Vector3, Radius: number, Kind: string }
 export type Handle = {
 	Model: Model,
@@ -52,13 +51,6 @@ local KIT_STYLES: { [string]: PoiStructures.Style } = {
 	Water = { color = P.Spring, material = Enum.Material.Glass, transparency = 0.5 },
 	Ice = { color = P.Ice, material = Enum.Material.Ice },
 	Brass = { color = Color3.fromRGB(196, 152, 72), material = Enum.Material.Metal },
-}
-
-local PAD_MATERIAL: { [string]: Enum.Material } = {
-	Snow = Enum.Material.Snow,
-	Glacier = Enum.Material.Glacier,
-	Slate = Enum.Material.Slate,
-	Ice = Enum.Material.Ice,
 }
 
 local function styleOf(name: string): PoiStructures.Style
@@ -121,20 +113,6 @@ local function makePart(b: Kit.Box, base: CFrame): Part
 	return part
 end
 
--- Median terrain height over the footprint: the structure's ground level.
-local function groundLevel(seed: number, x: number, z: number, halfX: number, halfZ: number): number
-	local heights: { number } = {}
-	for i = 0, GROUND_SAMPLES - 1 do
-		for j = 0, GROUND_SAMPLES - 1 do
-			local fx = i / (GROUND_SAMPLES - 1) * 2 - 1
-			local fz = j / (GROUND_SAMPLES - 1) * 2 - 1
-			table.insert(heights, World.heightAt(seed, x + fx * halfX, z + fz * halfZ))
-		end
-	end
-	table.sort(heights)
-	return heights[(#heights + 1) // 2]
-end
-
 type RoomState = {
 	room: Kit.Room,
 	items: { Kit.Dress },
@@ -148,31 +126,26 @@ function StructureKitB.build(
 	seed: number,
 	parent: Instance
 ): Handle
+	-- Terrain: SiteGround levels the whole pad area (Config.SiteGround) with a blended skirt, in the biome
+	-- material (no grey hard-edged pad), then every underground volume is carved.
+	local pad = plan.pad
 	local halfX, halfZ = plan.footprintX / 2, plan.footprintZ / 2
-	local groundY = groundLevel(seed, origin.X, origin.Z, halfX, halfZ)
+	local siteHalfX = math.max(halfX, if pad then pad.halfX else 0)
+	local siteHalfZ = math.max(halfZ, if pad then pad.halfZ else 0)
+	if plan.yaw % 2 == 1 then
+		siteHalfX, siteHalfZ = siteHalfZ, siteHalfX
+	end
+	local function heightFn(x: number, z: number): number
+		return World.heightAt(seed, x, z)
+	end
+	local site = SiteGround.plan(heightFn, origin.X, origin.Z, siteHalfX, siteHalfZ)
+	local groundY = site.baseY
 	local base = CFrame.new(origin.X, groundY, origin.Z)
 		* CFrame.Angles(0, plan.yaw * QUARTER_TURN, 0)
 	local terrain = Workspace.Terrain
-
-	-- Terrain: flat pad (levels hills, fills dips), then carve every underground volume.
-	local pad = plan.pad
-	if pad then
-		local top = PAD_MATERIAL[pad.top] or Enum.Material.Snow
-		terrain:FillBlock(
-			base * CFrame.new(0, PAD_AIR_HEIGHT / 2, 0),
-			Vector3.new(pad.halfX * 2, PAD_AIR_HEIGHT, pad.halfZ * 2),
-			Enum.Material.Air
-		)
-		terrain:FillBlock(
-			base * CFrame.new(0, -(pad.depth + PAD_SKIN) / 2, 0),
-			Vector3.new(pad.halfX * 2, pad.depth - PAD_SKIN, pad.halfZ * 2),
-			Enum.Material.Rock
-		)
-		terrain:FillBlock(
-			base * CFrame.new(0, -PAD_SKIN / 2, 0),
-			Vector3.new(pad.halfX * 2, PAD_SKIN, pad.halfZ * 2),
-			top
-		)
+	local ok, err = pcall(SiteGroundTerrain.apply, site, heightFn)
+	if not ok then
+		warn(`[StructureKitB] site grounding failed: {err}`)
 	end
 	for _, c in plan.carves do
 		terrain:FillBlock(
@@ -196,6 +169,7 @@ function StructureKitB.build(
 			Position = base:PointToWorldSpace(Vector3.new(c.x, c.y, c.z)),
 			Depth = c.depth,
 			StructureType = plan.id,
+			Room = c.room,
 		})
 	end
 

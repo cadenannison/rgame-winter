@@ -5,6 +5,7 @@
 
 local Chunks = require("../src/shared/data/Chunks")
 local Config = require("../src/shared/Config")
+local ChestStyle = require("../src/shared/logic/ChestStyle")
 local PerfBudget = require("../src/shared/logic/PerfBudget")
 local WorldLayout = require("../src/shared/logic/WorldLayout")
 local ForestPlacement = require("../src/shared/logic/ForestPlacement")
@@ -280,6 +281,31 @@ return function(check: (string, boolean) -> ())
 	check("liveparts: full stream window (no structures) leaves a 10% margin", fullTotal <= limit)
 	check("liveparts: 3x3 core + live structures + chests leaves a 10% margin", coreTotal <= limit)
 	check("liveparts: Perf.MaxLiveParts never raised", Config.Perf.MaxLiveParts == 6000)
+	-- Items round: one massive structure live at a time, <= Loot.Chests Massive.Max chests (each with at most
+	-- one beam part, counted in ChestStyle.partCount), so the structure estimate is small and bounded.
+	local maxChestRule = 0
+	for _, rule in Config.Loot.Chests do
+		maxChestRule = math.max(maxChestRule, rule.Max)
+	end
+	local chestParts = 0
+	for _, style in ChestStyle.Styles do
+		chestParts = math.max(chestParts, ChestStyle.partCount(style))
+	end
+	check("liveparts: one massive structure live", Config.Massive.MaxLiveStructures == 1)
+	check(
+		"liveparts: MaxChestsPerStructure covers the Loot.Chests maximum",
+		Config.Massive.MaxChestsPerStructure >= maxChestRule
+	)
+	check(
+		"liveparts: chest allowance covers a chest's parts incl. its beam",
+		2 + Config.Massive.ChestsPerPartAllowance >= chestParts
+	)
+	check(
+		"liveparts: massive live parts (structure + chests) <= Massive.MaxLiveParts + chests",
+		structureParts()
+			<= Config.Massive.MaxLiveParts
+				+ Config.Massive.MaxLiveStructures * Config.Massive.MaxChestsPerStructure * Config.Massive.ChestsPerPartAllowance
+	)
 	check("trees: placed trees tall with canopy above head clearance", placedOk)
 	check("liveparts: worst window trees <= MaxLiveTrees", worstTrees <= Config.Perf.MaxLiveTrees)
 	check(

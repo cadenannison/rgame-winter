@@ -14,6 +14,21 @@ local HudConfig = {
 	-- Workspace attribute (Vector3) the server publishes for the camp position.
 	CampAttribute = Config.World.CampAttribute,
 	GuiName = "Hud",
+	-- Right-hand button stack (Craft, Map, Settings): one UIListLayout so they never overlap. >= 44 px targets.
+	RightStack = {
+		GuiName = "RightStack",
+		Width = 88,
+		ButtonHeight = 44,
+		Gap = 6,
+		TopOffset = 8,
+		RightScale = 0.985,
+		Order = { Craft = 1, Map = 2, Settings = 3 } :: { [string]: number },
+	},
+	-- Default Chat window (TextChatService) is moved below the top-left HUD so it never covers the bars.
+	Chat = {
+		PositionOffset = UDim2.fromScale(0, 0.37),
+		SizeOffset = UDim2.fromScale(0, -0.09),
+	},
 	DisplayOrder = 5,
 	-- Phone-safe: bars/hotbar scale with an aspect-locked, size-capped container.
 	MinWidth = 280,
@@ -121,7 +136,8 @@ local HudConfig = {
 		Ping = {
 			Key = Enum.KeyCode.Q,
 			ButtonSize = 56, -- px (>= 44), right edge, clear of Act (y .62-.78) and the jump button
-			ButtonPosition = UDim2.fromScale(0.97, 0.4),
+			-- Left of the right-hand button stack (RightStack.Width + gap), top aligned with it: never overlaps it.
+			ButtonPosition = UDim2.new(0.985, -96, 0, 36),
 			WheelRadiusPx = 84,
 			WheelButtonSize = 56,
 			MarkerSize = UDim2.fromOffset(110, 44),

@@ -95,7 +95,16 @@ function HudMath.parseDebug(text: string, names: { string }): (boolean, string, 
 			return true, name, false
 		end
 		return false, name .. " needs true/false", nil
-	elseif name == "darkEvent" or name == "give" or name == "spawnMob" then
+	elseif
+		name == "darkEvent"
+		or name == "give"
+		or name == "spawnMob"
+		or name == "structures"
+		or name == "tp"
+		or name == "chest"
+		or name == "seed"
+		or name == "respawn"
+	then
 		return true, name, rest or "" -- string arg (darkEvent: empty string clears)
 	end
 	local n = tonumber(rest or "")

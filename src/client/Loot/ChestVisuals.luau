@@ -27,6 +27,7 @@ local SOUND_VOLUME = 0.7
 local SOUND_LIFETIME = 4
 local BURST_LIFETIME_PAD = 0.5
 local BURST_SPEED = 8
+local BEAM_REFRESH_SECONDS = 0.1 -- beam distance fade update interval
 
 type Rec = {
 	model: Model,
@@ -36,6 +37,7 @@ type Rec = {
 	active: boolean,
 	light: PointLight?,
 	emitter: ParticleEmitter?,
+	beam: BasePart?,
 	conn: RBXScriptConnection?,
 }
 
@@ -172,6 +174,7 @@ local function track(inst: Instance)
 		active = false,
 		light = nil,
 		emitter = nil,
+		beam = nil,
 		conn = nil,
 	}
 	rec.conn = inst:GetAttributeChangedSignal(L.ChestOpenedAttribute):Connect(function()
@@ -190,6 +193,47 @@ local function pulseActive(t: number)
 				glow.Transparency = ChestStyle.pulse(rec.style, t)
 			end
 		end
+	end
+end
+
+-- Beams (rare+, short): visible only within Beam.VisibleRadius of the camera (distance fade), and only the
+-- nearest Beam.MaxActive. One pass for every chest; purely client side.
+local function updateBeams()
+	local cam = Workspace.CurrentCamera
+	if not cam then
+		return
+	end
+	local origin = cam.CFrame.Position
+	local beam = L.Beam
+	local seen: { { rec: Rec, part: BasePart, dist: number } } = {}
+	for _, rec in recs do
+		if rec.style.beamHeight > 0 then
+			local part = rec.beam
+			if part == nil or part.Parent == nil then
+				local found = rec.model:FindFirstChild("Beam")
+				part = if found and found:IsA("BasePart") then found else nil
+				rec.beam = part
+			end
+			local base = baseOf(rec)
+			if part and base then
+				if rec.opened then
+					part.LocalTransparencyModifier = 1
+				else
+					table.insert(
+						seen,
+						{ rec = rec, part = part, dist = (base.Position - origin).Magnitude }
+					)
+				end
+			end
+		end
+	end
+	table.sort(seen, function(a, b)
+		return a.dist < b.dist
+	end)
+	for i, e in seen do
+		e.part.LocalTransparencyModifier = if i > beam.MaxActive
+			then 1
+			else ChestStyle.beamFade(e.dist, beam.VisibleRadius, beam.FadeBand)
 	end
 end
 
@@ -241,6 +285,7 @@ function ChestVisuals.start()
 		track(inst)
 	end
 	local acc = B.RefreshSeconds
+	local beamAcc = BEAM_REFRESH_SECONDS
 	table.insert(
 		connections,
 		RunService.RenderStepped:Connect(function(dt: number)
@@ -248,6 +293,11 @@ function ChestVisuals.start()
 			if acc >= B.RefreshSeconds then
 				acc = 0
 				sweep()
+			end
+			beamAcc += dt
+			if beamAcc >= BEAM_REFRESH_SECONDS then
+				beamAcc = 0
+				updateBeams()
 			end
 			pulseActive(os.clock())
 		end)

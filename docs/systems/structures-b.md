@@ -15,3 +15,6 @@ Playtest checklist (hand): 1 walk into each structure and reach every room; 2 ta
 Status: in progress (headless done; Studio hand-check pending)
 
 Integration: wired by src/server/World/MassiveService.luau + MassivePlacement (see docs/systems/world-gen.md). Studio hand-check pending.
+
+## Items round
+The hard-edged `Kit.pad` fill (grey Rock + Slate top) is replaced by SiteGround levelling with a blended skirt in the biome material. Chest slots carry `Room`; chests are on the floor (`y = room.y`). Counts: `Config.Loot.Chests`. See loot.md / world-gen.md.

@@ -9,12 +9,9 @@ local UserInputService = game:GetService("UserInputService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
+local RightStack = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("RightStack"))
 
 local TOGGLE_KEY = Enum.KeyCode.M
-local MAP = Config.Map
-local BUTTON_SIZE = UDim2.fromOffset(MAP.ButtonWidthPx, MAP.ButtonHeightPx) -- >= 44 px touch target
--- Top-right, directly under the Craft button (same anchor column); clear of Ping (y 0.4) and Shoot.
-local BUTTON_POSITION = UDim2.new(MAP.ButtonScaleX, 0, MAP.ButtonScaleY, MAP.ButtonOffsetYPx)
 local PANEL_SCALE = 0.7
 local DOT_SIZE = 10
 local DOT_INTERVAL = 0.25
@@ -40,14 +37,11 @@ function MapView.start(): () -> ()
 
 	local button = Instance.new("TextButton")
 	button.Name = "MapButton"
-	button.Size = BUTTON_SIZE
-	button.AnchorPoint = Vector2.new(1, 0)
-	button.Position = BUTTON_POSITION
 	button.Text = "Map (M)"
 	button.TextScaled = true
 	button.BackgroundColor3 = COLOR_PANEL
 	button.TextColor3 = COLOR_CELL
-	button.Parent = gui
+	RightStack.attach(button, "Map") -- stack (UIListLayout) in HUD/RightStack; destroyed in cleanup below
 
 	local panel = Instance.new("Frame")
 	panel.Name = "MapPanel"
@@ -146,6 +140,7 @@ function MapView.start(): () -> ()
 		for _, c in conns do
 			c:Disconnect()
 		end
+		button:Destroy()
 		gui:Destroy()
 		started = false
 	end

@@ -39,6 +39,7 @@ export type Slot = {
 	Ring: number?, -- biome ring 0..3 (default 0)
 	Index: number?, -- chest index inside the structure
 	ChunkKey: string?, -- owning chunk (informational)
+	TopMode: string?, -- "force" top rarity / "exclude" it / nil (Beacon rule, see LootChests.selectSlots)
 }
 export type ArtBuilder = (slot: Slot, rarity: string, parent: Instance) -> Instance
 
@@ -116,6 +117,27 @@ function LootService.UnregisterChest(chest: Instance)
 	end
 end
 
+local function registerWith(
+	slot: Slot,
+	rarity: string,
+	items: { LootRoll.Stack },
+	parent: Instance
+): Instance
+	local depth = math.clamp(slot.Depth, 0, L.MaxDepthTier)
+	local chest = artBuilder(slot, rarity, parent)
+	chest:SetAttribute(L.ChestRarityAttribute, rarity)
+	chest:SetAttribute(L.ChestStructureAttribute, slot.StructureType)
+	chest:SetAttribute(L.ChestDepthAttribute, depth)
+	chest:SetAttribute(L.ChestOpenedAttribute, false)
+	local rec: Record = { slot = slot, rarity = rarity, items = items, opened = false }
+	rec.destroying = chest.Destroying:Connect(function()
+		LootService.UnregisterChest(chest)
+	end)
+	chests[chest] = rec
+	CollectionService:AddTag(chest, L.ChestTag)
+	return chest
+end
+
 function LootService.RegisterChest(slot: Slot, parent: Instance): Instance
 	local plan = LootChests.plan(LootTables, pool, currentSeed(), {
 		x = slot.Position.X,
@@ -125,19 +147,29 @@ function LootService.RegisterChest(slot: Slot, parent: Instance): Instance
 		structureType = slot.StructureType,
 		ring = slot.Ring or 0,
 		index = slot.Index,
+		topMode = slot.TopMode,
 	})
-	local chest = artBuilder(slot, plan.rarity, parent)
-	chest:SetAttribute(L.ChestRarityAttribute, plan.rarity)
-	chest:SetAttribute(L.ChestStructureAttribute, slot.StructureType)
-	chest:SetAttribute(L.ChestDepthAttribute, math.clamp(slot.Depth, 0, L.MaxDepthTier))
-	chest:SetAttribute(L.ChestOpenedAttribute, false)
-	local rec: Record = { slot = slot, rarity = plan.rarity, items = plan.items, opened = false }
-	rec.destroying = chest.Destroying:Connect(function()
-		LootService.UnregisterChest(chest)
-	end)
-	chests[chest] = rec
-	CollectionService:AddTag(chest, L.ChestTag)
-	return chest
+	return registerWith(slot, plan.rarity, plan.items, parent)
+end
+
+-- Studio debug (DebugService "chest"): a chest of a chosen rarity; its contents are rolled for that rarity
+-- from the run seed and the position, like any other chest.
+function LootService.RegisterDebugChest(slot: Slot, rarity: string, parent: Instance): Instance
+	local plan = LootChests.plan(LootTables, pool, currentSeed(), {
+		x = slot.Position.X,
+		y = slot.Position.Y,
+		z = slot.Position.Z,
+		depth = math.clamp(slot.Depth, 0, L.MaxDepthTier),
+		structureType = slot.StructureType,
+		ring = slot.Ring or 0,
+		index = slot.Index,
+	})
+	local rng = LootChests.makeRng(plan.seed)
+	return registerWith(slot, rarity, LootRoll.rollChest(LootTables, pool, rarity, rng), parent)
+end
+
+function LootService.CurrentSeed(): number
+	return currentSeed()
 end
 
 local function removeDrop(drop: Instance)

@@ -14,6 +14,7 @@ local Remotes = require(Shared.Remotes)
 local DebugCommands = require(Shared.logic.DebugCommands)
 local ItemCatalog = require(Shared.ItemCatalog)
 local Guard = require(script.Parent.Parent.Net.Guard)
+local Rarity = require(Shared.data.Rarity)
 
 export type Handler = (player: Player, arg: unknown) -> ()
 
@@ -31,6 +32,7 @@ local started = false
 local limits: DebugCommands.Limits = {
 	maxDay = D.MaxDay,
 	maxClockSpeed = D.MaxClockSpeed,
+	maxSeed = D.MaxSeed,
 	ringCount = D.RingCount,
 	darkEvents = D.DarkEvents,
 	itemIds = (function(): { string }
@@ -146,6 +148,173 @@ local function onCharacterAdded(player: Player)
 	end
 end
 
+-- Built-in handlers (items round): structures, tp, chest, seed, respawn. Services are required lazily so this
+-- module never creates a require cycle; everything runs server side after DebugService.run validated the arg.
+local function say(player: Player, text: string)
+	print(`[Debug] {text}`)
+	Remotes.event(Remotes.Notify):FireClient(player, "build", text)
+end
+
+local function rootOf(player: Player): BasePart?
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	return if root and root:IsA("BasePart") then root else nil
+end
+
+-- Live services come through the expose() registry (init.server / MassiveService), never a static require:
+-- SurvivalService and others already depend on this module.
+local function worldService(name: string): any
+	local api = exposed[name]
+	if api == nil then
+		error(`service {name} not exposed (run server only)`)
+	end
+	return api
+end
+
+-- Sites sorted nearest first from a point: { site, distance }.
+local function sitesByDistance(from: Vector3): { { site: any, distance: number } }
+	local out: { { site: any, distance: number } } = {}
+	for _, site in worldService("Chunk").getSites() do
+		local dx, dz = site.x - from.X, site.z - from.Z
+		table.insert(out, { site = site, distance = math.sqrt(dx * dx + dz * dz) })
+	end
+	table.sort(out, function(a, b)
+		return a.distance < b.distance
+	end)
+	return out
+end
+
+-- Teleports the character to (x, z) on the ground (pure height field, chunk loaded first).
+local function teleportGrounded(player: Player, x: number, z: number)
+	local character = player.Character
+	if character == nil then
+		return
+	end
+	local chunks = worldService("Chunk")
+	chunks.ensureLoadedAround(x, z)
+	local ground = chunks.heightAt(x, z) or Config.Terrain.BaseHeight
+	character:PivotTo(CFrame.new(x, ground + D.TeleportLift, z))
+end
+
+local function onStructures(player: Player)
+	local root = rootOf(player)
+	if root == nil then
+		return
+	end
+	local list = sitesByDistance(root.Position)
+	if #list == 0 then
+		say(player, "no massive structures in this world")
+		return
+	end
+	for i = 1, math.min(#list, D.NearestListMax) do
+		local e = list[i]
+		say(
+			player,
+			`{i}. {e.site.key} ring {e.site.ring} {math.floor(e.distance)} studs at ({math.floor(
+				e.site.x
+			)}, {math.floor(e.site.z)})`
+		)
+	end
+end
+
+local function onTeleport(player: Player, target: unknown)
+	local t = target :: DebugCommands.TpTarget
+	local root = rootOf(player)
+	if root == nil then
+		return
+	end
+	if t.kind == "ring" then
+		DebugService.run(player, "teleportRing", t.ring)
+	elseif t.kind == "structure" then
+		local list = sitesByDistance(root.Position)
+		if t.id then
+			local filtered = {}
+			for _, e in list do
+				if string.lower(e.site.id) == string.lower(t.id) then
+					table.insert(filtered, e)
+				end
+			end
+			list = filtered
+		end
+		local e = list[t.index or 1]
+		if e == nil then
+			say(player, "no such structure")
+			return
+		end
+		-- outside the footprint, on the side facing the player's current position, grounded
+		local dx, dz = root.Position.X - e.site.x, root.Position.Z - e.site.z
+		local len = math.sqrt(dx * dx + dz * dz)
+		local ux, uz = if len > 0.001 then dx / len else 1, if len > 0.001 then dz / len else 0
+		local reach = e.site.radius + D.TeleportStructureGap
+		teleportGrounded(player, e.site.x + ux * reach, e.site.z + uz * reach)
+		say(player, `at {e.site.key} (ring {e.site.ring})`)
+	else
+		local want = string.lower(t.name or "")
+		for _, other in Players:GetPlayers() do
+			local otherRoot = rootOf(other)
+			if
+				other ~= player
+				and otherRoot
+				and string.sub(string.lower(other.Name), 1, #want) == want
+			then
+				teleportGrounded(
+					player,
+					otherRoot.Position.X + D.TeleportPlayerOffset,
+					otherRoot.Position.Z
+				)
+				say(player, `at {other.Name}`)
+				return
+			end
+		end
+		say(player, `no player matching {t.name}`)
+	end
+end
+
+local function onChest(player: Player, rarity: unknown)
+	local root = rootOf(player)
+	if root == nil or not Rarity.isRarity(rarity) then
+		return
+	end
+	local flat = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+	local dir = if flat.Magnitude > 0.001 then flat.Unit else Vector3.new(0, 0, -1)
+	local pos = root.Position + dir * D.ChestSpawnDistance
+	local ground = worldService("Chunk").heightAt(pos.X, pos.Z) or root.Position.Y
+	local at = Vector3.new(pos.X, math.max(ground, root.Position.Y - D.TeleportLift), pos.Z)
+	worldService("Loot").RegisterDebugChest({
+		Position = at,
+		Depth = 0,
+		StructureType = "debug",
+		Index = os.time() % 100000,
+	}, rarity :: string, Workspace)
+	say(player, `spawned a {rarity} chest`)
+end
+
+local function onSeed(player: Player, value: unknown)
+	local chunks = worldService("Chunk")
+	if type(value) ~= "number" then
+		say(player, `world seed {chunks.getSeed()}`)
+		return
+	end
+	-- Chest rolls and picks change; structures rebuild near players. The world layout is fixed per run.
+	worldService("Massive").reset(value :: number)
+	say(player, `run (loot) seed set to {value}; world layout stays {chunks.getSeed()}`)
+end
+
+local function onRespawn(player: Player)
+	-- The one real revive/respawn path (docs/systems/hud.md: SurvivalService.respawn), never attributes by hand.
+	if not worldService("Survival").respawn(player) then
+		say(player, "respawn: already alive")
+	end
+end
+
+local function registerBuiltins()
+	DebugService.register("structures", onStructures)
+	DebugService.register("tp", onTeleport)
+	DebugService.register("chest", onChest)
+	DebugService.register("seed", onSeed)
+	DebugService.register("respawn", onRespawn)
+end
+
 local function onPlayerAdded(player: Player)
 	if playerConnections[player] then
 		return
@@ -189,6 +358,7 @@ function DebugService.start()
 		return
 	end
 	started = true
+	registerBuiltins()
 	local remote = Remotes.event(Remotes.DebugCommand)
 	table.insert(
 		connections,

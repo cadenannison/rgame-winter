@@ -18,6 +18,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local DownedLogic = require(Shared:WaitForChild("logic"):WaitForChild("DownedLogic"))
+local DeathPanelState = require(Shared:WaitForChild("logic"):WaitForChild("DeathPanelState"))
 
 local D = Config.Downed
 
@@ -25,7 +26,8 @@ local UI = {
 	GuiName = "DownedUi",
 	DisplayOrder = 5,
 	MinButton = 48, -- px, phone-safe
-	PanelColor = Color3.fromRGB(10, 14, 20), -- opaque dark
+	PanelColor = Color3.fromRGB(10, 14, 20),
+	PanelTransparency = 0.12, -- only the run summary is fully opaque (SummaryScreen)
 	TextColor = Color3.fromRGB(255, 255, 255),
 	DangerColor = Color3.fromRGB(255, 120, 110),
 	AccentColor = Color3.fromRGB(255, 214, 110),
@@ -65,7 +67,8 @@ local function newPanel(parent: Instance, name: string, size: UDim2, position: U
 	frame.Position = position
 	frame.Size = size
 	frame.BackgroundColor3 = UI.PanelColor
-	frame.BackgroundTransparency = 0
+	frame.BackgroundTransparency = UI.PanelTransparency
+	frame.Active = false -- only shown panels take input (set in refresh)
 	frame.BorderSizePixel = 0
 	frame.Visible = false
 	local corner = Instance.new("UICorner")
@@ -363,8 +366,19 @@ function DownedUi.start(): () -> ()
 		local meDead = isFlag(localPlayer, D.DeadAttribute)
 		local me: DownedLogic.Actor = { downed = meDowned, dead = meDead }
 
+		-- Authoritative state -> visibility (pure mapping, re-evaluated every scan, CharacterAdded and respawn).
+		local panelView = DeathPanelState.resolve({
+			downed = meDowned,
+			dead = meDead,
+			runEnded = false,
+			hasSummary = false,
+			inLobby = false,
+			dismissed = false,
+		})
+
 		-- Own downed banner.
-		downPanel.Visible = meDowned and not meDead
+		downPanel.Visible = panelView.showRevive
+		downPanel.Active = panelView.showRevive
 		if meDowned then
 			local left = localPlayer:GetAttribute(D.BleedAttribute)
 			local secs = if type(left) == "number" then left else 0
@@ -411,8 +425,10 @@ function DownedUi.start(): () -> ()
 		end
 
 		-- Spectator mode.
-		deadPanel.Visible = meDead
-		if meDead then
+		deadPanel.Visible = panelView.showSpectate
+		deadPanel.Active = panelView.showSpectate
+		gui.Enabled = panelView.visible or revivePanel.Visible
+		if panelView.showSpectate then
 			if D.SpectateOnDeath then
 				local current = spectated
 				local stillValid = false
@@ -457,6 +473,18 @@ function DownedUi.start(): () -> ()
 			returnButton.Text = "Return to lobby"
 		end
 	end
+
+	-- Re-evaluate immediately on every authoritative state change (not only on the scan tick).
+	for _, attribute in { D.StateAttribute, D.DeadAttribute } do
+		local changed = localPlayer:GetAttributeChangedSignal(attribute):Connect(refresh)
+		table.insert(cleanups, function()
+			changed:Disconnect()
+		end)
+	end
+	local charAdded = localPlayer.CharacterAdded:Connect(refresh)
+	table.insert(cleanups, function()
+		charAdded:Disconnect()
+	end)
 
 	task.spawn(function()
 		while not destroyed do

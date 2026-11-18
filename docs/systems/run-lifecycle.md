@@ -9,3 +9,6 @@ Return to lobby: Config.Downed.ReturnRemoteName request, allowed only for a dead
 Exploit surface: players not in teleport data are kicked (Config.Run.RefusedMessage); payout recomputed server-side; DailyClaimRequest carries no payload and is rate-limited.
 Playtest checklist: tools/qa/lobby-to-run.luau (debugBegin/debugEnd on the real end path, fake TeleportAdapter); full run with a real death is hand-tested on a published place.
 Status: done
+
+## Respawn
+- `RunState.respawn(run, userId)`: downed/dead -> alive (held and alive unchanged). RunLifecycleService.Start registers it as `SurvivalService.setRespawnHandler` so `SurvivalService.respawn(player)` (debug/tools) keeps run bookkeeping in step. Ignored after the run ended.

@@ -23,7 +23,9 @@ export type ItemDef = {
 	ammoId: string?, -- item consumed per shot
 	clothingSlot: string?, -- Config.Clothing.Slots entry
 	clothingTier: number?, -- 1..Config.Clothing.MaxTier
-	coldResistance: number?, -- resistance points while worn
+	coldResistance: number?, -- resistance points while worn (stamped from Config.Items)
+	category: string?, -- Config.Items category (stamped by ItemCatalog)
+	equipSlot: string?, -- Config.Equipment.Slots entry it can be worn in (stamped by ItemCatalog)
 	lightRadius: number?, -- light items: studs of light (torch/lantern/flare)
 	repelsStalker: boolean?, -- lit light repels the Stalker (Config.Stalker.TorchRepelRadius / FlareRepelRadius)
 	endsHunt: boolean?, -- using it ends an active hunt (flare)

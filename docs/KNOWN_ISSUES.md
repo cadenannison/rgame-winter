@@ -9,7 +9,7 @@
 - Thin ice has no hole: a broken patch turns to water color but stays solid (damage + warmth penalty + IceCrack cue only).
 - Lurker "looked at" uses a look-direction heuristic (camera look dot > Lurkers.LookDotThreshold), not a real line-of-sight test.
 - Stalker knockback moves the character directly (PivotTo), not with physics; it can clip on uneven ground.
-- Storage chests are shared server-wide (run server = the party), not per party.
+- Storage chests are per chest (9 slots, one revision counter each) and open to the whole party on that run server; each player may place at most Config.Storage.MaxPerPlayer.
 - Map notifications reuse an existing Notify kind (no dedicated "map" toast style).
 - Sleeping bag respawnPoint flag is not implemented: the spawn provider has no per-player hook and Player.RespawnLocation needs a SpawnLocation per bag; players always respawn at camp. The bag still acts as a warm spot.
 - E/Act prefers gather when a tree/rock is within prompt range, even if a chest/door is closer; a chest placed beside a tree opens only after stepping away from the tree.

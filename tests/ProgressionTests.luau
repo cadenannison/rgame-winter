@@ -170,8 +170,10 @@ return function(check: (string, boolean) -> ())
 	-- Shared storage capacity and validation.
 	local chest = Inventory.new(Config.Storage.ChestSlots)
 	local player = Inventory.new(Config.Inventory.HotbarSize + Config.Inventory.BackpackSize)
+	-- Wood stacks to 20 (Config.Items), so 30 wood fills slots 1 (20) and 2 (10); the axe is slot 3.
 	Inventory.add(player, "Wood", 30, ItemCatalog.Items.Wood.maxStack)
 	Inventory.add(player, "Axe", 1, 1, 40)
+	local axeSlot = 3
 	check("storage: chest has the configured slots", chest.size == Config.Storage.ChestSlots)
 	check(
 		"storage: deposit moves items",
@@ -181,7 +183,7 @@ return function(check: (string, boolean) -> ())
 	)
 	check(
 		"storage: durability travels with the item",
-		Storage.deposit(chest, player, 2, 1)
+		Storage.deposit(chest, player, axeSlot, 1)
 			and chest.slots[2] ~= nil
 			and (chest.slots[2] :: any).durability == 40
 	)

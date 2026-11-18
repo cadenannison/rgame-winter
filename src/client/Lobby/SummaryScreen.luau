@@ -11,6 +11,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local LobbyLogic = require(Shared:WaitForChild("logic"):WaitForChild("LobbyLogic"))
+local DeathPanelState = require(Shared:WaitForChild("logic"):WaitForChild("DeathPanelState"))
 local LobbyConfig = require(script.Parent.LobbyConfig)
 local UiKit = require(script.Parent.UiKit)
 local LobbyState = require(script.Parent.LobbyState)
@@ -22,9 +23,11 @@ local LOOK = {
 	PanelColor = Color3.fromRGB(8, 11, 16),
 	PanelScale = Vector2.new(0.92, 0.88),
 	PanelMaxSize = Vector2.new(520, 480),
-	TitleMaxText = 40,
-	RowMaxText = 28,
-	RowHeight = 34,
+	TitleMaxText = 48,
+	RowMaxText = 34,
+	RowHeight = 44,
+	ButtonHeight = 56, -- phone-safe big buttons
+	ContentZ = 16, -- above the opaque background (panel ZIndex 15)
 	StrokeThickness = 2,
 	StrokeColor = Color3.new(0, 0, 0),
 	TextColor = Color3.new(1, 1, 1),
@@ -68,6 +71,10 @@ function SummaryScreen.start(
 	local cleanups: { () -> () } = {}
 	local destroyed = false
 	local shownAt = 0
+	local hasSummary = false -- real RunSummary data received (an empty payload never shows the panel)
+	local runEnded = false
+	local dismissed = false
+	local D = Config.Downed
 
 	local joinRemote = Remotes.event(Remotes.PadJoinRequest)
 	local summaryRemote = Remotes.event(Remotes.RunSummary)
@@ -94,7 +101,7 @@ function SummaryScreen.start(
 	local body = Instance.new("ScrollingFrame")
 	body.Name = "Body"
 	body.Position = UDim2.fromOffset(0, LobbyConfig.MinButton + 6)
-	body.Size = UDim2.new(1, 0, 1, -(LobbyConfig.MinButton * 2 + 18))
+	body.Size = UDim2.new(1, 0, 1, -(LobbyConfig.MinButton + LOOK.ButtonHeight + 18))
 	body.BackgroundTransparency = 1
 	body.BorderSizePixel = 0
 	body.ScrollBarThickness = 6
@@ -106,7 +113,7 @@ function SummaryScreen.start(
 	list.Parent = body
 	body.Parent = panel
 	local requeue =
-		UiKit.button(panel, "Requeue", "Queue again [R]", UDim2.new(1, 0, 0, LobbyConfig.MinButton))
+		UiKit.button(panel, "Requeue", "Queue again [R]", UDim2.new(1, 0, 0, LOOK.ButtonHeight))
 	requeue.AnchorPoint = Vector2.new(0, 1)
 	requeue.Position = UDim2.fromScale(0, 1)
 	outline(requeue, LOOK.RowMaxText)
@@ -115,18 +122,24 @@ function SummaryScreen.start(
 		panel,
 		"ReturnToLobby",
 		"Return to lobby",
-		UDim2.new(0.5, -4, 0, LobbyConfig.MinButton)
+		UDim2.new(0.5, -4, 0, LOOK.ButtonHeight)
 	)
 	returnButton.AnchorPoint = Vector2.new(1, 1)
 	returnButton.Position = UDim2.fromScale(1, 1)
 	returnButton.BackgroundColor3 = LOOK.ReturnColor
 	returnButton.Visible = false
 	outline(returnButton, LOOK.RowMaxText)
+	for _, child in panel:GetDescendants() do
+		if child:IsA("GuiObject") then
+			child.ZIndex = LOOK.ContentZ -- content always above the opaque background
+		end
+	end
 	local returnRemote: RemoteEvent? = nil
 	local function requestReturn()
 		if state.isLobby() or not panel.Visible then
 			return
 		end
+		returnButton.Text = "Returning..."
 		if not returnRemote then
 			returnRemote = Remotes.event(Remotes.ReturnToLobbyRequest)
 		end
@@ -136,11 +149,32 @@ function SummaryScreen.start(
 		state.toast("Returning to the lobby...")
 	end
 
-	local function hide()
-		panel.Visible = false
+	local refreshRequeue: () -> ()
+
+	-- Visibility comes only from authoritative state (alive/downed/dead attributes, run ended, real data).
+	local function applyVisibility()
+		local view = DeathPanelState.resolve({
+			downed = player:GetAttribute(D.StateAttribute) == true,
+			dead = player:GetAttribute(D.DeadAttribute) == true,
+			runEnded = runEnded,
+			hasSummary = hasSummary,
+			inLobby = state.isLobby(),
+			dismissed = dismissed,
+		})
+		local show = view.mode == "summary"
+		panel.Visible = show
+		panel.Active = show -- a hidden panel never swallows input
+		if show then
+			refreshRequeue()
+		end
 	end
 
-	local function refreshRequeue()
+	local function hide()
+		dismissed = true
+		applyVisibility()
+	end
+
+	function refreshRequeue()
 		if not panel.Visible then
 			return
 		end
@@ -151,12 +185,12 @@ function SummaryScreen.start(
 				then `Queue again: pad {padIndex} [R]`
 				else "All pads busy - wait a moment"
 			returnButton.Visible = false
-			requeue.Size = UDim2.new(1, 0, 0, LobbyConfig.MinButton)
+			requeue.Size = UDim2.new(1, 0, 0, LOOK.ButtonHeight)
 		else
 			local left = math.max(0, math.ceil(Config.Run.SummarySeconds - (os.clock() - shownAt)))
 			UiKit.setEnabled(requeue, true)
 			requeue.Text = `Play again ({left}s)`
-			requeue.Size = UDim2.new(0.5, -4, 0, LobbyConfig.MinButton)
+			requeue.Size = UDim2.new(0.5, -4, 0, LOOK.ButtonHeight)
 			returnButton.Visible = true
 		end
 	end
@@ -182,6 +216,7 @@ function SummaryScreen.start(
 	local function addRow(text: string, order: number, color: Color3?)
 		local rowLabel = UiKit.label(body, `Row{order}`, text, UDim2.new(1, -8, 0, LOOK.RowHeight))
 		rowLabel.LayoutOrder = order
+		rowLabel.ZIndex = LOOK.ContentZ
 		outline(rowLabel, LOOK.RowMaxText)
 		if color then
 			rowLabel.TextColor3 = color
@@ -193,6 +228,13 @@ function SummaryScreen.start(
 			return
 		end
 		local data = payload :: any
+		if type(data.daysSurvived) ~= "number" then
+			return -- no real summary data: never show an empty opaque panel
+		end
+		hasSummary = true
+		returnButton.Text = "Return to lobby"
+		runEnded = true
+		dismissed = false
 		for _, child in body:GetChildren() do
 			if child:IsA("GuiObject") then
 				child:Destroy()
@@ -239,13 +281,12 @@ function SummaryScreen.start(
 			row(`Tip: {tip}`, LobbyConfig.MutedColor)
 		end
 		shownAt = os.clock()
-		panel.Visible = true
+		applyVisibility()
 		if data.personalBest == true then
 			state.cue("PersonalBest")
 		else
 			state.play("SummarySound")
 		end
-		refreshRequeue()
 	end
 
 	close.MouseButton1Click:Connect(hide)
@@ -271,7 +312,18 @@ function SummaryScreen.start(
 	table.insert(cleanups, function()
 		input:Disconnect()
 	end)
-	table.insert(cleanups, state.subscribe(refreshRequeue))
+	table.insert(cleanups, state.subscribe(applyVisibility))
+	-- Re-evaluate on every authoritative change: attributes, CharacterAdded (respawn, debug respawn).
+	for _, attribute in { D.StateAttribute, D.DeadAttribute } do
+		local changed = player:GetAttributeChangedSignal(attribute):Connect(applyVisibility)
+		table.insert(cleanups, function()
+			changed:Disconnect()
+		end)
+	end
+	local charAdded = player.CharacterAdded:Connect(applyVisibility)
+	table.insert(cleanups, function()
+		charAdded:Disconnect()
+	end)
 
 	if qa then
 		qa.requeue = doRequeue -- same function as the button and R
@@ -286,7 +338,7 @@ function SummaryScreen.start(
 	end
 	task.spawn(function()
 		while not destroyed do
-			refreshRequeue()
+			applyVisibility()
 			task.wait(LobbyConfig.TimerStepSeconds * 2)
 		end
 	end)

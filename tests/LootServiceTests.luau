@@ -68,7 +68,7 @@ return function(check: (string, boolean) -> ())
 	check("lootsvc: rng stays in [0,1)", rngOk)
 
 	-- weights respected (ring 2, ruin, depth 0): observed share vs expected within tolerance
-	local weights = LootRoll.chestWeights(LootTables, 2, "ruin", 0)
+	local weights = LootRoll.chestWeights(LootTables, 2, "ruin", 0, LootChests.ringBonus(2))
 	local total = 0
 	for _, name in Rarity.List do
 		total += weights[name]

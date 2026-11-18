@@ -180,6 +180,7 @@ local partyCount = 1
 local ringProvider: ((Vector3) -> number)? = nil
 local eventBudgetMultiplier = 1 -- EventService spawn modifier (blizzard / false night)
 local spawnBiasProvider: ((Vector3) -> number)? = nil -- hot springs attract mobs
+local spawnBlocker: ((x: number, z: number) -> boolean)? = nil -- true = no natural spawn here (structure footprints)
 local killedListeners: { (Model, string, Player?) -> () } = {}
 local spawnHooks: { (infos: { PlayerInfo }, day: number, now: number) -> () } = {}
 local spawnAccum = 0
@@ -463,6 +464,10 @@ local function trySpawn(infos: { PlayerInfo })
 	local kind = KIND_BY_NAME[spawnTable[pick].kind]
 	if not kind or costUsed + kind.cost > budget then
 		return
+	end
+	local blocker = spawnBlocker
+	if blocker and blocker(x, z) then
+		return -- inside a structure footprint (massive structures keep their own dressing/horror spawns)
 	end
 	local ground = groundAt(x, z, anchor.Y)
 	if ground then
@@ -962,6 +967,11 @@ end
 -- Brief 18: hot-spring spawn bias fn(position) -> multiplier (1 = none). Nil-safe.
 function MobService.setSpawnBiasProvider(fn: ((Vector3) -> number)?)
 	spawnBiasProvider = fn
+end
+
+-- World wiring (MassiveService): fn(x, z) -> true when natural mob spawns are not allowed at that point. Nil-safe.
+function MobService.setSpawnBlocker(fn: ((x: number, z: number) -> boolean)?)
+	spawnBlocker = fn
 end
 
 -- Called once per kill (any source) with (model, kindName, killer?). Used by BossService.

@@ -19,6 +19,7 @@ local InventoryMirror =
 	require(script.Parent.Parent:WaitForChild("Storage"):WaitForChild("InventoryMirror"))
 
 local C = AtmosphereConfig
+local LOOT_OPENED_ACTION = "lootChestOpened" -- CueResolve.HintDefs FirstChest done action (= Config.Loot.FirstOpenHintId)
 local FORGE_ITEM = "Forge" -- placeable item id (data/Items) that builds the forge station
 local player = Players.LocalPlayer
 
@@ -184,6 +185,8 @@ local function evaluate()
 		coldRing = ring >= 1 and resist <= 0,
 		chestNearby = from ~= nil
 			and nearestWithin(Config.Build.StorageTag, from, Config.Hints.LookupRange),
+		lootChestNearby = from ~= nil
+			and nearestWithin(Config.Loot.ChestTag, from, Config.Loot.OpenRange * 2),
 		hasMap = mirror ~= nil and ((mirror.counts()[Config.Map.ItemId] or 0) > 0),
 		hasForge = mirror ~= nil and ((mirror.counts()[FORGE_ITEM] or 0) > 0),
 		inParty = #Players:GetPlayers() > 1,
@@ -268,6 +271,13 @@ function AtmosphereHints.start(isRun: boolean)
 			connections,
 			Remotes.event(Remotes.MapData).OnClientEvent:Connect(function()
 				report("mapOpened", false)
+			end)
+		)
+		-- First loot chest hint completes only on a real open (the server's LootOpened reply).
+		table.insert(
+			connections,
+			Remotes.event(Remotes.LootOpened).OnClientEvent:Connect(function()
+				report(LOOT_OPENED_ACTION, false)
 			end)
 		)
 		-- Forge hint completes when a forge station that this player owns appears (real placement).

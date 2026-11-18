@@ -4,6 +4,7 @@ ServerPackages/*
 !ServerPackages/.gitkeep
 sourcemap.json
 build/
+.logs/
 .luau-types/
 *.rbxl
 *.rbxl.lock

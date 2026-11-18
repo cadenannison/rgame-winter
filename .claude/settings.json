@@ -10,6 +10,14 @@
       "Bash(git status:*)",
       "Bash(git diff:*)"
     ],
-    "deny": ["Bash(git commit:*)", "Bash(git push:*)"]
+    "deny": [
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Read(.logs/**)",
+      "Read(docs/archive/**)",
+      "Read(build/**)",
+      "Read(.luau-types/**)",
+      "Read(roblox.yml)"
+    ]
   }
 }

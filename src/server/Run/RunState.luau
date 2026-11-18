@@ -96,6 +96,17 @@ function RunState.revive(run: Run, userId: number, now: number): boolean
 	return false
 end
 
+-- Debug/real respawn: a downed or dead member becomes alive again (held and alive stay as they are).
+function RunState.respawn(run: Run, userId: number): boolean
+	local m = run.members[userId]
+	if m and (m.status == "downed" or m.status == "dead") then
+		m.status = "alive"
+		m.downDeadline = 0
+		return true
+	end
+	return false
+end
+
 function RunState.setDead(run: Run, userId: number)
 	local m = run.members[userId]
 	if m then
