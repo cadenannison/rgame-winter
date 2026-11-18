@@ -36,3 +36,9 @@ Nothing committed since Phase 0. Place ids: placeId 130366229723914 (Studio inst
 - Night: Config.Lighting.MoonAmbient / MoonOutdoorAmbient / MoonBrightness / MoonExposure are the readable-night floors (DayNightService); events may still darken below.
 - Interaction audio muted via Config.Feedback.MutedSounds (swing, chop, mob hit) and no CraftSound on structure interact; hook points listed in docs/ART.md.
 - Not verified in Studio: voxel top vs heightAt mismatch (if the camp is still buried, raycast Terrain at the footprint).
+
+## Round: bug fixes + sprint/forage + blizzard (orchestrated; headless only)
+- check.sh tier=full green (1464 checks). No playtest, QA scenario or MCP.
+- Done: InputGuard on all handlers; GroundProbe (campfire/spawn/structures) + `/debug groundcheck`; Drop on G; deny/craft sounds muted; durability kept on drop; sprint; forage/nodes/relics + 3 recipes (13 items); blizzard rework (1.5 days, no overlay, wind snow, 60-stud whiteout); `/debug forage|sprint|blizzard`.
+- Open: campfire root cause unconfirmed (use groundcheck); coin credit from nodes/relics not wired into RunPayout; forage respawn assumes Day increments at dawn; forage parts not counted by ChunkService (headroom only); Rope has no use; "StructureBeacon" glow tag unused; blizzard streak sign/whiteout/wind numbers untuned; lobby Leave key still Q.
+- Next: PM hand-test docs/HAND_TESTS_ROUND.md (new section at the end).

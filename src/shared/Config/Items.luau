@@ -143,7 +143,80 @@ export type CookingConfig = {
 	MaxStationBuffMultiplier: number,
 }
 
+-- Forage, nodes and relics (placed lazily near players by server/Forage/ForageService; placeholder visuals).
+-- Rings are biome ring indices 0..3 (0 start forest, 1 frozen lake, 2 mountains, 3 deep tundra).
+export type ForageKind = {
+	itemId: string,
+	name: string,
+	verb: string, -- prompt verb ("Pick")
+	minRing: number,
+	maxRing: number,
+	weight: number, -- relative pick weight among kinds valid at the spot
+	minCount: number, -- items per pick (1-3 parts each)
+	maxCount: number,
+	color: { number }, -- {r, g, b} 0-255, chosen to read on snow
+	size: { number }, -- {x, y, z} studs (one Part)
+	material: string, -- Enum.Material member name
+}
+
+export type ForageNodeKind = {
+	itemId: string,
+	name: string,
+	verb: string,
+	minRing: number,
+	maxRing: number,
+	weight: number,
+	toolType: string, -- "pickaxe" | "axe"
+	minTier: number, -- Config.ToolTier value the selected tool must reach
+	minCount: number,
+	maxCount: number,
+	color: { number },
+	size: { number },
+	material: string,
+}
+
+export type ForageConfig = {
+	Enabled: boolean,
+	CellSize: number, -- studs: placement grid (one deterministic roll set per cell)
+	SpawnRadius: number, -- studs around a player in which cells are populated
+	DespawnRadius: number, -- cells farther than this from every player are released to the pool
+	UpdateInterval: number, -- seconds between population passes (one loop for all players)
+	MaxSpawnsPerPass: number, -- instances created per pass (smooths the cost)
+	MaxLiveParts: number, -- hard cap on live forage/node/relic parts
+	PartHeadroom: number, -- keep ChunkService parts + forage below Perf.MaxLiveParts - this
+	ForagePerCellMax: number, -- forage roll slots per cell
+	ForageChance: number, -- chance each slot yields a pickup (0..1)
+	NodeChance: number, -- chance a cell holds a resource node (0..1)
+	EdgeMargin: number, -- studs from the world edge where nothing spawns
+	SiteMargin: number, -- extra studs around a structure site radius kept clear
+	AvoidTags: { string }, -- CollectionService tags whose instances keep AvoidRadius clear
+	AvoidRadius: number,
+	GroundHalfSize: number, -- studs: SiteGround footprint half size sampled under each pickup
+	GroundLift: number, -- studs a pickup floats above the ground
+	NodeTag: string, -- extra tag on every forage instance (Config.Gather.NodeTag is also applied)
+	KindAttribute: string, -- instance attribute: forage class ("forage" | "node" | "relic")
+	CountAttribute: string, -- instance attribute: items this pick gives
+	Forage: { ForageKind },
+	Nodes: { ForageNodeKind },
+	Relic: {
+		itemId: string,
+		name: string,
+		minRing: number, -- structure sites in rings below this get none
+		minPerSite: number,
+		maxPerSite: number,
+		RadiusMin: number, -- x site radius (>= 1 keeps relics outside the footprint)
+		RadiusMax: number,
+		color: { number },
+		size: { number },
+		material: string,
+		minCount: number,
+		maxCount: number,
+	},
+	CoinValues: { [string]: number }, -- coin credit per item picked up (claimed at run end via ForageService)
+}
+
 export type Sections = {
+	Forage: ForageConfig,
 	Inventory: InventoryConfig,
 	ToolTier: ToolTierConfig,
 	Gather: GatherConfig,
@@ -158,6 +231,207 @@ export type Sections = {
 }
 
 local Sections: Sections = {
+	Forage = {
+		Enabled = true,
+		CellSize = 48,
+		SpawnRadius = 150,
+		DespawnRadius = 210,
+		UpdateInterval = 1.5,
+		MaxSpawnsPerPass = 24,
+		MaxLiveParts = 240,
+		PartHeadroom = 400,
+		ForagePerCellMax = 2,
+		ForageChance = 0.45,
+		NodeChance = 0.07,
+		EdgeMargin = 24,
+		SiteMargin = 10,
+		AvoidTags = { "LootChest", "Campfire", "StorageChest", "StructureBlocker", "Workbench" },
+		AvoidRadius = 8,
+		GroundHalfSize = 1.5,
+		GroundLift = 0.2,
+		NodeTag = "ForagePickup",
+		KindAttribute = "ForageClass",
+		CountAttribute = "ForageCount",
+		Forage = {
+			{
+				itemId = "Stick",
+				name = "Stick",
+				verb = "Pick up",
+				minRing = 0,
+				maxRing = 3,
+				weight = 5,
+				minCount = 1,
+				maxCount = 3,
+				color = { 120, 80, 40 },
+				size = { 2.4, 0.4, 0.5 },
+				material = "Wood",
+			},
+			{
+				itemId = "Pinecone",
+				name = "Pinecone",
+				verb = "Pick up",
+				minRing = 0,
+				maxRing = 1,
+				weight = 3,
+				minCount = 1,
+				maxCount = 3,
+				color = { 95, 60, 35 },
+				size = { 0.9, 1.1, 0.9 },
+				material = "Wood",
+			},
+			{
+				itemId = "Winterberry",
+				name = "Winterberries",
+				verb = "Pick",
+				minRing = 0,
+				maxRing = 2,
+				weight = 3,
+				minCount = 1,
+				maxCount = 3,
+				color = { 200, 40, 60 },
+				size = { 1.1, 1, 1.1 },
+				material = "SmoothPlastic",
+			},
+			{
+				itemId = "FrostMushroom",
+				name = "Frost Mushroom",
+				verb = "Pick",
+				minRing = 1,
+				maxRing = 3,
+				weight = 2,
+				minCount = 1,
+				maxCount = 2,
+				color = { 110, 140, 230 },
+				size = { 1, 1.2, 1 },
+				material = "SmoothPlastic",
+			},
+			{
+				itemId = "IceShard",
+				name = "Ice Shards",
+				verb = "Pick up",
+				minRing = 1,
+				maxRing = 3,
+				weight = 2,
+				minCount = 1,
+				maxCount = 2,
+				color = { 90, 215, 235 },
+				size = { 0.8, 1.8, 0.8 },
+				material = "Ice",
+			},
+			{
+				itemId = "FrozenReed",
+				name = "Frozen Reeds",
+				verb = "Pick",
+				minRing = 1,
+				maxRing = 3,
+				weight = 3,
+				minCount = 1,
+				maxCount = 3,
+				color = { 190, 170, 110 },
+				size = { 0.5, 2.6, 0.5 },
+				material = "Grass",
+			},
+		},
+		Nodes = {
+			{
+				itemId = "Coal",
+				name = "Coal Seam",
+				verb = "Mine",
+				minRing = 1,
+				maxRing = 3,
+				weight = 4,
+				toolType = "pickaxe",
+				minTier = 1,
+				minCount = 2,
+				maxCount = 4,
+				color = { 35, 35, 40 },
+				size = { 4, 3, 4 },
+				material = "Slate",
+			},
+			{
+				itemId = "IceBlock",
+				name = "Ice Block",
+				verb = "Chip",
+				minRing = 1,
+				maxRing = 3,
+				weight = 3,
+				toolType = "pickaxe",
+				minTier = 1,
+				minCount = 1,
+				maxCount = 3,
+				color = { 150, 225, 245 },
+				size = { 4, 3.5, 4 },
+				material = "Ice",
+			},
+			{
+				itemId = "ScrapMetal",
+				name = "Scrap Pile",
+				verb = "Salvage",
+				minRing = 2,
+				maxRing = 3,
+				weight = 3,
+				toolType = "pickaxe",
+				minTier = 2,
+				minCount = 1,
+				maxCount = 3,
+				color = { 130, 100, 80 },
+				size = { 3.5, 2, 3.5 },
+				material = "CorrodedMetal",
+			},
+			{
+				itemId = "Bone",
+				name = "Bone Pile",
+				verb = "Dig",
+				minRing = 0,
+				maxRing = 3,
+				weight = 3,
+				toolType = "axe",
+				minTier = 1,
+				minCount = 1,
+				maxCount = 3,
+				color = { 225, 220, 205 },
+				size = { 3, 1.5, 3 },
+				material = "Concrete",
+			},
+			{
+				itemId = "Crystal",
+				name = "Crystal Cluster",
+				verb = "Mine",
+				minRing = 3,
+				maxRing = 3,
+				weight = 1,
+				toolType = "pickaxe",
+				minTier = 3,
+				minCount = 1,
+				maxCount = 2,
+				color = { 170, 110, 240 },
+				size = { 3, 4.5, 3 },
+				material = "Glass",
+			},
+		},
+		Relic = {
+			itemId = "RelicFragment",
+			name = "Relic Fragment",
+			minRing = 1,
+			minPerSite = 1,
+			maxPerSite = 2,
+			RadiusMin = 1.15,
+			RadiusMax = 1.6,
+			color = { 235, 190, 80 },
+			size = { 1.4, 0.6, 1.4 },
+			material = "Metal",
+			minCount = 1,
+			maxCount = 1,
+		},
+		CoinValues = {
+			Coal = 1,
+			IceBlock = 1,
+			Bone = 1,
+			ScrapMetal = 2,
+			Crystal = 8,
+			RelicFragment = 5,
+		},
+	},
 	Inventory = {
 		HotbarSize = 9, -- hotbar slots (indices 1..HotbarSize), keys 1-9
 		BackpackSize = 27, -- extra slots after the hotbar (3 rows of 9)
@@ -283,6 +557,13 @@ local Sections: Sections = {
 		},
 		Entries = {
 			Hide = { category = "animalPart" },
+			Bone = { category = "animalPart" },
+			Crystal = { category = "rareMaterial" },
+			IceShard = { category = "rareMaterial" },
+			RelicFragment = { category = "rareMaterial" },
+			Pinecone = { category = "berries" },
+			Winterberry = { category = "berries" },
+			FrostMushroom = { category = "berries" },
 			FrostShard = { category = "rareMaterial" },
 			ColossusHeart = { category = "rareMaterial" },
 			MatriarchFang = { category = "rareMaterial" },

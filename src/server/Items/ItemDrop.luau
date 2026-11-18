@@ -20,7 +20,7 @@ local SPREAD = 2.5 -- studs between drops of one overflow
 local FOLDER_NAME = "ItemDrops"
 local DROP_COLOR = Color3.fromRGB(235, 200, 120)
 
-export type Adder = (Player, string, number) -> number -- returns the leftover
+export type Adder = (Player, string, number, number?) -> number -- (taker, id, count, durability) returns the leftover
 
 local ItemDrop = {}
 
@@ -42,7 +42,8 @@ local function folder(): Instance
 end
 
 -- Drops `count` of `id` at `at` (feet position). `pickUp` adds to a taker's inventory and returns the leftover.
-function ItemDrop.spawn(id: string, count: number, at: Vector3, pickUp: Adder)
+-- `durability` (tools) rides on the drop and is restored on pickup.
+function ItemDrop.spawn(id: string, count: number, at: Vector3, pickUp: Adder, durability: number?)
 	if count <= 0 or ItemCatalog.Items[id] == nil then
 		return
 	end
@@ -76,7 +77,7 @@ function ItemDrop.spawn(id: string, count: number, at: Vector3, pickUp: Adder)
 		then
 			return
 		end
-		local left = pickUp(taker, id, remaining)
+		local left = pickUp(taker, id, remaining, durability)
 		if left <= 0 then
 			remove(part)
 		elseif left < remaining then

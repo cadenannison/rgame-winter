@@ -112,6 +112,7 @@ function AtmosphereClient.start(mode: string)
 		end)
 
 		AtmosphereAmbient.start()
+		require(Atmosphere:WaitForChild("BlizzardFx")).start()
 		DayBanner.start()
 	end)
 end

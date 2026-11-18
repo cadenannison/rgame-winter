@@ -49,7 +49,6 @@ local renderConn: RBXScriptConnection? = nil
 local warnKind = ""
 local warnLevel = 0
 local warnToken = 0
-local blizzardLevel = 1
 
 local function lerp(a: number, b: number, t: number): number
 	return a + (b - a) * t
@@ -67,29 +66,16 @@ end
 
 local function computeTarget()
 	local dark = Workspace:GetAttribute(Config.Events.ActiveAttribute)
-	local level = math.clamp(blizzardLevel, 1, MAX_LEVEL)
+	-- No full-screen tint/haze for blizzards: that look is BlizzardFx (snow streaks + whiteout fog).
 	if Workspace:GetAttribute(Config.Blizzard.ActiveAttribute) == true then
-		target = look(
-			0.25 + 0.15 * level,
-			-0.05 * level,
-			0.05,
-			-0.15 * level,
-			Color3.fromRGB(235, 244, 255)
-		)
-	elseif dark == "FalseNight" then
+		dark = ""
+	end
+	if dark == "FalseNight" then
 		target = look(0.2, -0.28, 0.1, -0.35, Color3.fromRGB(150, 165, 215))
 	elseif dark == "TheQuiet" then
 		target = look(0.05, -0.05, 0, -0.55, Color3.fromRGB(235, 235, 240))
 	elseif dark == "DeepFreeze" then
 		target = look(0.15, 0, 0.05, -0.2, Color3.fromRGB(205, 232, 255))
-	elseif warnKind == "WarnBlizzard" then
-		target = look(
-			0.08 * warnLevel,
-			-0.02 * warnLevel,
-			0,
-			-0.05 * warnLevel,
-			Color3.fromRGB(240, 246, 255)
-		)
 	elseif warnKind == "WarnTheQuiet" then
 		target = look(0.02 * warnLevel, 0, 0, -0.15 * warnLevel, Color3.fromRGB(240, 240, 245))
 	elseif warnKind == "WarnDeepFreeze" then
@@ -194,13 +180,7 @@ local function onCue(payload: Remotes.CuePayload)
 		or kind == "WarnDeepFreeze"
 	then
 		setWarn(kind, math.max(level, 1))
-	elseif kind == "EventStart" then
-		warnKind, warnLevel = "", 0
-		warnToken += 1
-		if payload.event == "Blizzard" then
-			blizzardLevel = math.max(level, 1)
-		end
-	elseif kind == "EventEnd" then
+	elseif kind == "EventStart" or kind == "EventEnd" then
 		warnKind, warnLevel = "", 0
 		warnToken += 1
 	else

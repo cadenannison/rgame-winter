@@ -214,7 +214,24 @@ export type DurabilityConfig = {
 	UnbreakableItems: { [string]: boolean }, -- item ids that never lose durability (the starting Axe)
 }
 
+-- Sprint (owner: Agent 2). Extend this type and the table below.
+export type SprintConfig = {
+	SpeedMultiplier: number, -- walk speed multiplier while sprinting (1.3 = +30%)
+	ExtraHungerPerSecond: number, -- hunger lost per second on top of the normal drain, only while moving
+	MinHungerToStart: number, -- hunger needed to begin a sprint
+	MinHungerToKeep: number, -- sprint ends when hunger falls to this
+	MinMoveSpeed: number, -- studs/s of horizontal speed that counts as moving (cost applies only above it)
+	RateInterval: number, -- Guard interval for SprintRequest (seconds)
+	Attribute: string, -- Player attribute: true while the server has the player sprinting
+	Key: string, -- Enum.KeyCode member name held to sprint (PC)
+	ButtonSizePx: number, -- mobile toggle button (>= 44)
+	ButtonOffsetPx: { number }, -- {x, y} px offset of the button from the screen's right/bottom edge
+	IndicatorText: string, -- HUD label shown only while sprinting
+	NoHungerText: string, -- toast when sprint is refused for low hunger
+}
+
 export type Sections = {
+	Sprint: SprintConfig,
 	Time: TimeConfig,
 	Meters: MeterConfig,
 	Fire: FireConfig,
@@ -231,6 +248,20 @@ export type Sections = {
 local FIRE_R0 = Constants.FIRE_R0
 
 local Sections: Sections = {
+	Sprint = {
+		SpeedMultiplier = 1.3, -- walk speed multiplier while sprinting
+		ExtraHungerPerSecond = 0.25, -- on top of HungerDrainPerSecond (0.15): sprinting costs ~2.7x hunger
+		MinHungerToStart = 20,
+		MinHungerToKeep = 8,
+		MinMoveSpeed = 2,
+		RateInterval = 0.15,
+		Attribute = "Sprinting",
+		Key = "LeftShift",
+		ButtonSizePx = 64,
+		ButtonOffsetPx = { 96, 250 },
+		IndicatorText = "SPRINTING",
+		NoHungerText = "Too hungry to sprint",
+	},
 	-- Time and day/night. Replicated via Workspace attributes below.
 	Time = {
 		DayLengthSeconds = 360, -- real seconds per in-game day (GDD: ~6 min)

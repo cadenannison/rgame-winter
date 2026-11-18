@@ -2,6 +2,7 @@
 -- Studio-only debug commands. Inert (start() is a no-op, run() rejects) on published servers.
 -- Each command writes state to attributes (Config.Debug.*) and notifies plug-in handlers from the registry.
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -15,6 +16,7 @@ local DebugCommands = require(Shared.logic.DebugCommands)
 local TpResolve = require(Shared.logic.TpResolve)
 local ItemCatalog = require(Shared.ItemCatalog)
 local Guard = require(script.Parent.Parent.Net.Guard)
+local GroundProbe = require(script.Parent.Parent.World.GroundProbe)
 local Rarity = require(Shared.data.Rarity)
 
 export type Handler = (player: Player, arg: unknown) -> ()
@@ -126,7 +128,9 @@ function DebugService.run(player: Player, name: unknown, arg: unknown): (boolean
 		setInvincible(player, value :: boolean)
 	elseif command == "teleportRing" then
 		player:SetAttribute(D.PlayerRingAttribute, value :: number)
-	elseif DebugCommands.ACTION_ONLY[command] then
+	elseif
+		DebugCommands.ACTION_ONLY[command] or (command == "blizzard" and type(value) == "table")
+	then
 		if #(registry[command] or {}) == 0 then
 			return false, "no handler registered"
 		end
@@ -315,7 +319,83 @@ local function onRespawn(player: Player)
 	end
 end
 
+-- Planned height (World.heightAt) vs the real built terrain (raycast) at the player and the nearest fire.
+local function onGroundCheck(player: Player)
+	local root = rootOf(player)
+	if root == nil then
+		return
+	end
+	local chunks = worldService("Chunk")
+	local function line(label: string, x: number, z: number, nearY: number): string
+		local planned: number = chunks.heightAt(x, z) or nearY
+		local real = GroundProbe.raycastY(x, z, planned)
+		if real == nil then
+			return `{label}: heightAt {string.format("%.2f", planned)}, no terrain hit (chunk unbuilt?)`
+		end
+		return `{label}: heightAt {string.format("%.2f", planned)}, raycast {string.format(
+			"%.2f",
+			real
+		)}, delta {string.format("%.2f", real - planned)}`
+	end
+	say(player, line("player", root.Position.X, root.Position.Z, root.Position.Y))
+	local nearest: BasePart? = nil
+	local best = math.huge
+	for _, fire in CollectionService:GetTagged(Config.Fire.Tag) do
+		if fire:IsA("BasePart") then
+			local d = (fire.Position - root.Position).Magnitude
+			if d < best then
+				best, nearest = d, fire
+			end
+		end
+	end
+	if nearest == nil then
+		say(player, "no fire found")
+		return
+	end
+	say(player, line("fire", nearest.Position.X, nearest.Position.Z, nearest.Position.Y))
+	local bottom = nearest.Position.Y - nearest.Size.Y / 2
+	say(
+		player,
+		`fire bottom {string.format("%.2f", bottom)} ({string.format("%.1f", best)} studs away)`
+	)
+end
+
+local function onBlizzard(player: Player, arg: unknown)
+	if type(arg) ~= "table" then
+		return -- boolean toggles are handled through the world attribute
+	end
+	local BlizzardService = worldService("Blizzard")
+	local a = arg :: { action: string, value: number? }
+	if a.action == "start" then
+		say(
+			player,
+			if BlizzardService.DebugStart() then "blizzard started" else "blizzard already active"
+		)
+	elseif a.action == "stop" then
+		BlizzardService.DebugStop()
+		say(player, "blizzard stopped")
+	elseif a.action == "intensity" then
+		BlizzardService.DebugSetIntensity(a.value)
+		say(player, `blizzard intensity {a.value}`)
+	end
+end
+
+local function onForage(player: Player)
+	local ForageService = worldService("Forage")
+	say(player, `forage: spawned {ForageService.DebugSpawnNear(player)} around you`)
+end
+
+local function onSprint(player: Player, arg: unknown)
+	local SurvivalService = worldService("Survival")
+	local ok = SurvivalService.DebugSetSprint(player, arg == true)
+	say(player, `sprint {if arg == true then "on" else "off"}: {if ok then "ok" else "refused"}`)
+end
+
 local function registerBuiltins()
+	DebugService.register("blizzard", onBlizzard)
+	DebugService.register("forage", onForage)
+	DebugService.register("sprint", onSprint)
+	DebugService.register("groundcheck", onGroundCheck)
 	DebugService.register("structures", onStructures)
 	DebugService.register("tp", onTeleport)
 	DebugService.register("chest", onChest)

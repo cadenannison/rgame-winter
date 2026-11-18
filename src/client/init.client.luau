@@ -46,6 +46,7 @@ if mode == Config.Teleport.ModeLobby then
 else
 	HudController.start()
 	NightFeedback.start()
+	require(script.Sprint.SprintClient).start() -- sprint key/touch toggle + indicator
 	require(script.HUD.DownedUi).start() -- downed banner, revive prompt, spectate + return to lobby
 	-- Phase 3 boot hooks (each file owned by one brief; stubs until filled). See docs/INTEGRATION.md.
 	require(script.Phase3.WorldGenClient).start() -- brief 13

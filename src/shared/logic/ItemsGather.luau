@@ -6,11 +6,15 @@ local Inventory = require("./Inventory")
 
 local ItemsGather = {}
 
+-- Node toolType "hand" (forage, relics) is harvestable with any held item or none.
 -- Returns (ok, reason). reason: "UnknownNode" | "NoTool" | "WrongTool" | "TierTooLow" | "Ok".
 function ItemsGather.canHarvest(nodeKind: string, tool: Inventory.Stack?): (boolean, string)
 	local node = ItemCatalog.Nodes[nodeKind]
 	if node == nil then
 		return false, "UnknownNode"
+	end
+	if node.toolType == "hand" then
+		return true, "Ok" -- hand-picked forage needs no tool
 	end
 	if tool == nil then
 		return false, "NoTool"

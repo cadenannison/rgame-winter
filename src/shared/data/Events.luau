@@ -62,10 +62,10 @@ Events.Dark = {
 -- Blizzard cadence stays in Config.Time (BlizzardMinGap/MaxGap days, BlizzardWarningSeconds).
 Events.Blizzard = {
 	warningSeconds = 45, -- equals Config.Time.BlizzardWarningSeconds (tested)
-	durationSeconds = 150,
+	durationSeconds = Config.Blizzard.DurationDays * Config.Time.DayLengthSeconds, -- ~9 min
 	warmthDrainMultiplier = 1.8,
 	dreadGainMultiplier = 1.5,
-	fogEnd = 120,
+	fogEnd = Config.Blizzard.PeakVisibility,
 	warningCue = "WarnBlizzard",
 } :: Types.BlizzardDef
 

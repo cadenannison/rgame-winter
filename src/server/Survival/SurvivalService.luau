@@ -13,6 +13,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local SurvivalLogic = require(Shared.logic.SurvivalLogic)
+local SprintLogic = require(Shared.logic.SprintLogic)
 local DownedLogic = require(Shared.logic.DownedLogic)
 local DownedPose = require(script.Parent.DownedPose)
 local Guard = require(script.Parent.Parent.Net.Guard)
@@ -26,6 +27,8 @@ local D = Config.Downed
 local WARMTH_ATTRIBUTE = M.WarmthAttribute -- replicated rounded meters (health is on the Humanoid)
 local HUNGER_ATTRIBUTE = M.HungerAttribute
 local RATE_KEY = "Revive"
+local SPRINT_KEY = "Sprint"
+local SP = Config.Sprint
 local HEALTH_EPSILON = 0.01 -- ignore Humanoid health differences below this
 
 type PlayerState = {
@@ -35,6 +38,8 @@ type PlayerState = {
 	revive: { target: Player, remaining: number, lastRefresh: number }?,
 	jumpPower: number?, -- humanoid jump values saved while downed (restored on revive)
 	jumpHeight: number?,
+	sprintWanted: boolean, -- last validated SprintRequest
+	sprinting: boolean, -- server-resolved sprint flag (speed applied, hunger cost charged)
 	lastHit: string?, -- what last dealt outside damage ("Wolf"); the cause if that damage downs them
 	restore: SurvivalLogic.State?, -- held meters to apply on the first character after a rejoin
 }
@@ -107,6 +112,14 @@ local function setDownedAttribute(player: Player, downed: boolean)
 	player:SetAttribute(D.ReviveProgressAttribute, nil)
 end
 
+local function clearSprint(player: Player, state: PlayerState)
+	state.sprintWanted = false
+	if state.sprinting then
+		state.sprinting = false
+		player:SetAttribute(SP.Attribute, false)
+	end
+end
+
 -- Lying/crawling pose with no jumping (ragdoll-free: joints stay intact).
 local function applyDownedBody(state: PlayerState, humanoid: Humanoid)
 	humanoid.WalkSpeed = D.DownedWalkSpeed
@@ -142,6 +155,7 @@ end
 local function kill(player: Player, state: PlayerState)
 	SurvivalLogic.kill(state.meters)
 	state.revive = nil
+	clearSprint(player, state)
 	setDownedAttribute(player, false)
 	player:SetAttribute(D.DeadAttribute, true)
 	local humanoid = getHumanoid(player)
@@ -176,6 +190,7 @@ local function goDown(player: Player, state: PlayerState)
 		return
 	end
 	SurvivalLogic.down(state.meters, D)
+	clearSprint(player, state)
 	setDownedAttribute(player, true)
 	local humanoid = getHumanoid(player)
 	if humanoid then
@@ -189,6 +204,9 @@ local function resetState(player: Player, state: PlayerState)
 	state.sentKey = ""
 	state.jumpPower = nil
 	state.jumpHeight = nil
+	state.sprintWanted = false
+	state.sprinting = false
+	player:SetAttribute(SP.Attribute, false)
 	setDownedAttribute(player, false)
 	player:SetAttribute(D.DeadAttribute, false)
 end
@@ -263,6 +281,7 @@ local function tickPlayer(player: Player, state: PlayerState, dt: number, isNigh
 	elseif not m.dead then
 		local root = humanoid.RootPart
 		local inFire = root ~= nil and FireService.isWarm(root.Position)
+		local buffSpeed: number? = nil
 		local env: SurvivalLogic.Env =
 			{ inFire = inFire, isNight = isNight, invincible = isInvincible(player) }
 		local provider = envProvider
@@ -275,17 +294,35 @@ local function tickPlayer(player: Player, state: PlayerState, dt: number, isNigh
 				env.regenBonus = extra.regenBonus
 				local speed = extra.speed
 				if type(speed) == "number" and speed == speed then
-					local walk = Config.WALK_SPEED
-						* math.clamp(
-							speed,
-							1 - Config.Buffs.MaxSpeedBonus,
-							1 + Config.Buffs.MaxSpeedBonus
-						)
-					if math.abs(humanoid.WalkSpeed - walk) > HEALTH_EPSILON then
-						humanoid.WalkSpeed = walk
-					end
+					buffSpeed = math.clamp(
+						speed,
+						1 - Config.Buffs.MaxSpeedBonus,
+						1 + Config.Buffs.MaxSpeedBonus
+					)
 				end
 			end
+		end
+		-- Sprint: server resolves the flag (gated on hunger/downed/dead) and owns WalkSpeed while it applies.
+		local sprinting =
+			SprintLogic.resolve(state.sprintWanted, state.sprinting, m.hunger, m.downed, m.dead, SP)
+		if state.sprintWanted and not sprinting then
+			state.sprintWanted = false -- gate failed (hunger): the client must request again
+		end
+		local wasSprinting = state.sprinting
+		state.sprinting = sprinting
+		if sprinting ~= wasSprinting then
+			player:SetAttribute(SP.Attribute, sprinting)
+		end
+		if buffSpeed ~= nil or sprinting or wasSprinting then
+			local walk = SprintLogic.speed(Config.WALK_SPEED * (buffSpeed or 1), sprinting, SP)
+			if math.abs(humanoid.WalkSpeed - walk) > HEALTH_EPSILON then
+				humanoid.WalkSpeed = walk
+			end
+		end
+		if sprinting and root then
+			local v = root.AssemblyLinearVelocity
+			local cost = SprintLogic.hungerCost(true, Vector3.new(v.X, 0, v.Z).Magnitude, dt, SP)
+			m.hunger = math.max(m.hunger - cost, 0)
 		end
 		if SurvivalLogic.step(m, env, M, dt) then
 			reportCause(player, meterCause(m))
@@ -411,12 +448,53 @@ local function onReviveRequest(player: Player, target: unknown)
 	state.revive = { target = other, remaining = D.ReviveSeconds, lastRefresh = os.clock() }
 end
 
+-- Handler order: type -> range (n/a) -> rate limit -> state -> act. The client only says what it wants;
+-- the tick re-gates every frame and owns WalkSpeed and the hunger cost.
+local function setSprintWanted(player: Player, wanted: boolean): boolean
+	local state = states[player]
+	if not state then
+		return false
+	end
+	local m = state.meters
+	if wanted and not SprintLogic.canStart(m.hunger, m.downed, m.dead, SP) then
+		if not (state.sprinting and SprintLogic.canKeep(m.hunger, m.downed, m.dead, SP)) then
+			state.sprintWanted = false
+			if m.hunger < SP.MinHungerToStart and not m.downed and not m.dead then
+				Remotes.event(Remotes.Notify):FireClient(player, "sprint", SP.NoHungerText)
+			end
+			return false
+		end
+	end
+	state.sprintWanted = wanted
+	return wanted
+end
+
+local function onSprintRequest(player: Player, payload: unknown)
+	if type(payload) ~= "table" then
+		return
+	end
+	local active = (payload :: { active: unknown }).active
+	if type(active) ~= "boolean" then
+		return
+	end
+	if not Guard.rateLimit(player, SPRINT_KEY, SP.RateInterval) then
+		return
+	end
+	setSprintWanted(player, active)
+end
+
 local function onPlayerAdded(player: Player)
 	if states[player] then
 		return
 	end
-	local state: PlayerState =
-		{ meters = SurvivalLogic.new(M), connections = {}, sentKey = "", revive = nil }
+	local state: PlayerState = {
+		meters = SurvivalLogic.new(M),
+		connections = {},
+		sentKey = "",
+		revive = nil,
+		sprintWanted = false,
+		sprinting = false,
+	}
 	local hold = held[player.UserId]
 	held[player.UserId] = nil
 	if hold and os.clock() < hold.expires then
@@ -517,6 +595,17 @@ function SurvivalService.markHit(player: Player, source: string)
 	end
 end
 
+-- Debug (orchestrator wires /debug sprint): same gating as the remote, no rate limit. Returns whether the
+-- request was accepted; the tick still re-gates and owns speed and hunger cost.
+function SurvivalService.DebugSetSprint(player: Player, on: boolean): boolean
+	return setSprintWanted(player, on)
+end
+
+function SurvivalService.isSprinting(player: Player): boolean
+	local state = states[player]
+	return state ~= nil and state.sprinting
+end
+
 -- Public API for other systems (food, mobs, items). All server-side.
 function SurvivalService.getMeters(player: Player): SurvivalLogic.State?
 	local state = states[player]
@@ -583,6 +672,13 @@ function SurvivalService.start()
 		Remotes.event(Remotes.ReviveRequest).OnServerEvent
 			:Connect(function(player: Player, target: unknown)
 				onReviveRequest(player, target)
+			end)
+	)
+	table.insert(
+		connections,
+		Remotes.event(Remotes.SprintRequest).OnServerEvent
+			:Connect(function(player: Player, payload: unknown)
+				onSprintRequest(player, payload)
 			end)
 	)
 	table.insert(

@@ -127,8 +127,9 @@ local function darkDuration(def: DarkDef, p: Params): number
 	return math.min(def.durationSeconds, p.events.MaxDurationSeconds)
 end
 
+-- Blizzards run their own length (Config.Blizzard.DurationDays); MaxDurationSeconds caps dark events only.
 local function blizzardDuration(p: Params): number
-	return math.min(p.blizzard.durationSeconds, p.events.MaxDurationSeconds)
+	return p.blizzard.durationSeconds
 end
 
 -- Next blizzard: BlizzardMinGap..BlizzardMaxGap days (randomized) after `fromTime`. The first one
@@ -270,6 +271,28 @@ function EventSchedule.forceBlizzard(state: State, now: number, p: Params): bool
 	state.bStartAt = now + p.blizzard.warningSeconds
 	state.bEndAt = state.bStartAt + blizzardDuration(p)
 	return true
+end
+
+-- Debug: start a blizzard immediately (no warning). Returns false during another event.
+function EventSchedule.startBlizzardNow(state: State, now: number, p: Params): boolean
+	if state.dPhase ~= "idle" or state.bPhase ~= "idle" then
+		return false
+	end
+	state.bWarnAt = now
+	state.bStartAt = now
+	state.bEndAt = now + blizzardDuration(p)
+	return true
+end
+
+-- Debug: end an active or warning blizzard on the next step.
+function EventSchedule.stopBlizzardNow(state: State, now: number)
+	if state.bPhase == "active" then
+		state.bEndAt = now
+	elseif state.bPhase == "warning" then
+		state.bPhase = "idle"
+		state.bWarnAt = now + 1e9
+		state.bStartAt = now + 1e9
+	end
 end
 
 -- Advances the schedule to `now`; returns transitions in order.

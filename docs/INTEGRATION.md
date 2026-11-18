@@ -62,3 +62,11 @@ Config is split into `src/shared/Config/<Module>.luau` (which module holds which
 
 ## Debug and QA (docs/systems/debug-service.md)
 - `server/Debug/DebugService` (Studio-only, `Remotes.DebugCommand`, `logic/DebugCommands`). QA scenarios `tools/qa/*` (README there); RUN-mode needs Workspace `ServerMode="run"` or `/debug mode run`.
+
+## Input, ground, sprint, forage, blizzard (round: bugfix + sprint/forage + blizzard)
+- Input: every client input handler calls `src/client/Input/InputGuard.blocked(gameProcessed)` first (logic in shared/logic/InputGate). Drop = G (`Config.Ui.DropKeyName`), Ping = Q. Deny/craft sounds muted via `Config.Ui.MutedSounds`.
+- Ground: `server/World/GroundProbe.groundY(x, z, fallbackY)` raycasts real terrain (heightAt = headless fallback); used by camp fire (re-verified 6 Heartbeats, shared/logic/GroundFix), spawn pad, StructureKitA/B grounding, forage spawns. `/debug groundcheck`.
+- Drop/pickup carries durability: `ItemDrop.spawn` and `InventoryService.add` take optional durability.
+- Sprint: remote `SprintRequest` (Remotes.luau); server `SurvivalService` gates (hunger, downed, dead), sets speed, attribute `Sprinting`; logic shared/logic/SprintLogic; client src/client/Sprint/SprintClient; `Config.Sprint` (Survival.luau). `/debug sprint on|off` -> `SurvivalService.DebugSetSprint`.
+- Forage: `server/Forage/ForageService` (started by GatherService; lazy, pooled, part-capped), data shared/data/Forage, plan shared/logic/ForagePlan; `Config.Forage` (Items.luau); items/nodes/recipes merged in ItemCatalog. Forage picked with E via GatherRequest (toolType "hand"). `/debug forage` -> `ForageService.DebugSpawnNear`. `ForageService.takeCoinCredit(player)` NOT yet paid out in RunPayout.
+- Blizzard: `server/Events/BlizzardService` (duration = Config.Blizzard.DurationDays x day length; Workspace attr `BlizzardIntensity`); client `Atmosphere/BlizzardFx` (snow emitters, whiteout, fire highlights), math shared/logic/BlizzardWind. No overlay; vignette <= 0.08. `/debug blizzard start|stop|intensity <0..1>` (true/false still toggles the attribute). Debug services reach DebugService via `DebugService.expose` ("Blizzard", "Forage", "Survival"), never static require.

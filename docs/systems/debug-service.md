@@ -16,3 +16,4 @@ Status: in progress
 
 ## Items round commands (chat: `/debug <cmd> [arg]`, Studio only)
 `structures` (5 nearest massive structures: key, ring, distance), `tp structure [n|Id]` / `tp ring <n>` / `tp <player>` (grounded, outside the footprint), `chest <rarity>` (a chest 8 studs ahead), `seed [n]` (print the world seed, or reset structures/loot with seed n; the world layout stays fixed per run), `respawn` (SurvivalService.respawn: the same transition as a real revive/respawn). All are ACTION_ONLY; arguments validated by `DebugCommands.validate` / `parseTp`; services are reached through `DebugService.expose` (Chunk, Survival from init.server; Massive, Loot from MassiveService).
+- `groundcheck`: player and nearest fire, World.heightAt vs real terrain raycast (GroundProbe) and the delta. ACTION_ONLY.

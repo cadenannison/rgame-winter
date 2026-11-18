@@ -79,7 +79,7 @@ local Sections: Sections = {
 		Target = { Stroke = { 110, 230, 150 }, Tint = { 30, 85, 60 }, Thickness = 2 },
 		Hover = { Stroke = { 190, 255, 210 }, Tint = { 50, 130, 90 }, Thickness = 3 },
 		ToggleKeyName = "B",
-		DropKeyName = "Q",
+		DropKeyName = "G",
 		DropButtonText = "Drop",
 		DropButtonWidthPx = 72,
 		DragThresholdPx = 8,
@@ -143,7 +143,13 @@ local Sections: Sections = {
 		SwingSeconds = 0.25, -- procedural swing length (used when Assets.SwingAnimation is empty)
 		SwingAngle = 70, -- degrees the arm swings
 		SoundVolume = 0.6, -- volume of action sounds
-		MutedSounds = { SwingSound = true, ChopSound = true, MobHitSound = true }, -- audio pass: remove to enable (docs/ART.md hook points)
+		MutedSounds = {
+			SwingSound = true,
+			ChopSound = true,
+			MobHitSound = true,
+			DenySound = true,
+			CraftSound = true,
+		}, -- audio pass: remove to enable (docs/ART.md hook points)
 		HitParticleCount = 10, -- particles per hit burst
 		HitParticleColor = { 235, 225, 200 }, -- chips/snow burst color
 		HitParticleSpeed = 12, -- studs/s burst speed

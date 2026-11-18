@@ -22,6 +22,7 @@ local MassiveRules = require(Logic:WaitForChild("MassiveRules"))
 local Kit = require(Logic:WaitForChild("StructurePlanKitA"))
 
 local SiteGroundTerrain = require(script.Parent.Parent:WaitForChild("SiteGroundTerrain"))
+local GroundProbe = require(script.Parent.Parent:WaitForChild("GroundProbe"))
 
 local P = ArtKit.palette(Config.Art.World.Palette)
 
@@ -495,7 +496,7 @@ function StructureKitA.build(
 	-- SiteGround levels the footprint (cut + fill, blended skirt, no hard pad) and picks the entrance floor
 	-- height; the terrain inside the footprint then sits at `ground`, so nothing is sunk or buried.
 	local function heightFn(x: number, z: number): number
-		return World.heightAt(seed, x, z)
+		return GroundProbe.groundY(x, z, World.heightAt(seed, x, z)) -- real terrain, planned height as fallback
 	end
 	local cx, cz, hx, hz =
 		SiteGroundTerrain.worldRect(base, plan.minX, plan.maxX, plan.minZ, plan.maxZ)

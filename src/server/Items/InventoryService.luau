@@ -197,13 +197,18 @@ function InventoryService.count(player: Player, id: string): number
 end
 
 -- Returns the leftover that did not fit (0 = all added).
-function InventoryService.add(player: Player, id: string, count: number): number
+function InventoryService.add(
+	player: Player,
+	id: string,
+	count: number,
+	durability: number?
+): number
 	local inv = inventories[player]
 	local def = ItemCatalog.Items[id]
 	if inv == nil or def == nil or not Guard.isNumber(count) or count <= 0 then
 		return count
 	end
-	local left = Inventory.add(inv, id, count, def.maxStack, def.durability)
+	local left = Inventory.add(inv, id, count, def.maxStack, durability or def.durability)
 	sync(player)
 	return left
 end
@@ -379,7 +384,7 @@ end
 -- Same path as the InventoryMove remote (QA and server callers); runs the full validation.
 InventoryService.handleMove = onMove
 
--- Explicit Drop (Q / Drop button): type-check -> range -> rate limit -> state (alive, has the stack) -> act.
+-- Explicit Drop (G / Drop button): type-check -> range -> rate limit -> state (alive, has the stack) -> act.
 local function onDrop(player: Player, payload: unknown)
 	if type(payload) ~= "table" then
 		return
@@ -399,12 +404,12 @@ local function onDrop(player: Player, payload: unknown)
 	if at == nil then
 		return
 	end
-	local ok, reason, id, n = InventoryMove.drop(inv, p.slot, p.count)
+	local ok, reason, id, n, durability = InventoryMove.drop(inv, p.slot, p.count)
 	if not ok or id == nil then
 		failMove(player, reason, nil)
 		return
 	end
-	ItemDrop.spawn(id, n, at, InventoryService.add)
+	ItemDrop.spawn(id, n, at, InventoryService.add, durability)
 	sync(player)
 end
 

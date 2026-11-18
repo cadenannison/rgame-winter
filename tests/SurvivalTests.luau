@@ -6,6 +6,7 @@ local DayClock = require("../src/shared/logic/DayClock")
 local FireLogic = require("../src/shared/logic/FireLogic")
 local FireRepel = require("../src/shared/logic/FireRepel")
 local FireTiers = require("../src/shared/logic/FireTiers")
+local SprintLogic = require("../src/shared/logic/SprintLogic")
 local SurvivalLogic = require("../src/shared/logic/SurvivalLogic")
 local Sim = require("./sim")
 
@@ -343,4 +344,47 @@ return function(check: (string, boolean) -> ())
 		R.MaxDotsTotal >= R.MaxDotsPerLayer + R.MinDots
 	)
 	check("fire meter shows within top warm radius", F.Meter.ShowRange >= top.WarmRadius)
+	-- Sprint gating and hunger cost
+	local SP = Config.Sprint
+	check("sprint speed multiplier is +30% default", math.abs(SP.SpeedMultiplier - 1.3) < EPS)
+	check("sprint starts with enough hunger", SprintLogic.canStart(M.MaxHunger, false, false, SP))
+	check(
+		"sprint refused below start hunger",
+		not SprintLogic.canStart(SP.MinHungerToStart - 1, false, false, SP)
+	)
+	check("sprint refused when downed", not SprintLogic.canStart(M.MaxHunger, true, false, SP))
+	check("sprint refused when dead", not SprintLogic.canStart(M.MaxHunger, false, true, SP))
+	check(
+		"sprint keep threshold is lower than start (hysteresis)",
+		SP.MinHungerToKeep < SP.MinHungerToStart
+			and SprintLogic.canKeep(SP.MinHungerToKeep + 1, false, false, SP)
+	)
+	check(
+		"sprint ends at keep threshold",
+		not SprintLogic.canKeep(SP.MinHungerToKeep, false, false, SP)
+	)
+	check("sprint cost zero when standing still", SprintLogic.hungerCost(true, 0, 1, SP) == 0)
+	check("sprint cost zero when not sprinting", SprintLogic.hungerCost(false, 20, 1, SP) == 0)
+	check(
+		"sprint cost per second while moving",
+		math.abs(SprintLogic.hungerCost(true, 20, 2, SP) - SP.ExtraHungerPerSecond * 2) < EPS
+	)
+	check(
+		"sprint speed multiplies base",
+		math.abs(SprintLogic.speed(16, true, SP) - 16 * SP.SpeedMultiplier) < EPS
+			and SprintLogic.speed(16, false, SP) == 16
+	)
+	check(
+		"sprint resolve: not wanted is off",
+		not SprintLogic.resolve(false, true, M.MaxHunger, false, false, SP)
+	)
+	check(
+		"sprint resolve: active drops when starving",
+		not SprintLogic.resolve(true, true, 0, false, false, SP)
+	)
+	check(
+		"sprint resolve: active continues between thresholds",
+		SprintLogic.resolve(true, true, SP.MinHungerToKeep + 1, false, false, SP)
+			and not SprintLogic.resolve(true, false, SP.MinHungerToKeep + 1, false, false, SP)
+	)
 end

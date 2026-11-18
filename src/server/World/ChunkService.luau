@@ -25,6 +25,7 @@ local GatherService = require(Server:WaitForChild("Items"):WaitForChild("GatherS
 local PoiService = require(script.Parent:WaitForChild("PoiService"))
 local WorldArt = require(Server:WaitForChild("Art"):WaitForChild("WorldArt"))
 local TerrainBuilder = require(script.Parent:WaitForChild("TerrainBuilder"))
+local GroundProbe = require(script.Parent:WaitForChild("GroundProbe"))
 local TreeBuilder = require(script.Parent:WaitForChild("TreeBuilder"))
 
 local WORLD = Config.World
@@ -60,6 +61,7 @@ local CAMPFIRE_SIZE = Vector3.new(4, 1, 4)
 local SPAWN_PAD_SIZE =
 	Vector3.new(Config.SpawnPadSize[1], Config.SpawnPadSize[2], Config.SpawnPadSize[3])
 local TERRAIN_POLL_SECONDS = 0.1
+local CAMP_TERRAIN_TIMEOUT = 60 -- seconds to wait for the camp chunk before giving up on re-grounding the fire
 local CAMPFIRE_COLOR = Color3.fromRGB(230, 120, 40)
 
 local ChunkService = {}
@@ -143,6 +145,11 @@ local function groundY(x: number, z: number): number
 		return Config.Terrain.BaseHeight
 	end
 	return World.heightAt(l.seed, x, z, l.camp.position.x, l.camp.position.z)
+end
+
+-- Real built-terrain height (raycast) with the planned height as fallback; use once the chunk is built.
+local function probedY(x: number, z: number): number
+	return GroundProbe.groundY(x, z, groundY(x, z))
 end
 
 -- Tree/rock/ore slots are visible gather nodes registered with GatherService (tier and respawn come
@@ -491,7 +498,7 @@ function ChunkService.getCampSpawnPosition(): Vector3?
 	local x, z = l.camp.position.x + WORLD.CampSpawnOffset, l.camp.position.z
 	return Vector3.new(
 		x,
-		SiteGround.footprintTop(groundY, x, z, SPAWN_PAD_SIZE.X, SPAWN_PAD_SIZE.Z),
+		SiteGround.footprintTop(probedY, x, z, SPAWN_PAD_SIZE.X, SPAWN_PAD_SIZE.Z),
 		z
 	)
 end
@@ -608,7 +615,7 @@ function ChunkService.teleportGrounded(
 	if character == nil or player.Parent ~= Players then
 		return nil
 	end
-	local y = SiteGround.footprintTop(groundY, x, z, bodySize, bodySize) + lift
+	local y = SiteGround.footprintTop(probedY, x, z, bodySize, bodySize) + lift
 	local at = Vector3.new(x, y, z)
 	character:PivotTo(CFrame.new(at))
 	return at
@@ -762,6 +769,14 @@ function ChunkService.start()
 	camp.Parent = Workspace
 	campFolder = camp
 	campFire = fire
+	-- The chunk builds after this point; once its terrain is real, re-ground the fire on the raycast surface.
+	task.spawn(function()
+		if
+			ChunkService.waitForTerrain(l.camp.position.x, l.camp.position.z, CAMP_TERRAIN_TIMEOUT)
+		then
+			GroundProbe.settle(fire)
+		end
+	end)
 
 	heartbeatConn = RunService.Heartbeat:Connect(function(dt)
 		accumulator += dt

@@ -35,6 +35,7 @@ require("./WorldTests")(check)
 require("./TerrainContractTests")(check)
 require("./TerrainTests")(check)
 require("./SurvivalTests")(check)
+require("./ForageTests")(check)
 require("./ItemTests")(check)
 require("./MobTests")(check)
 require("./NightTests")(check)
@@ -69,6 +70,8 @@ require("./SiteGroundTests")(check) -- items round: terrain grounding (agent A)
 require("./ChestCountsTests")(check) -- items round: chest counts, beacon top rarity, beams (agent A)
 require("./InventoryTests")(check) -- items round: move path, stacks, chests, migration (agent B)
 require("./EquipmentTests")(check) -- items round: equipment slots and worn resistance (agent B)
+require("./BlizzardTests")(check) -- blizzard rework: wind, whiteout, duration
+require("./InputGroundTests")(check) -- bug-fix round: input gate, ground fix, drop durability
 
 print(`tests: {passes} passed, {failures} failed`)
 if failures > 0 then

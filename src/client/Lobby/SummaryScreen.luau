@@ -15,6 +15,7 @@ local DeathPanelState = require(Shared:WaitForChild("logic"):WaitForChild("Death
 local LobbyConfig = require(script.Parent.LobbyConfig)
 local UiKit = require(script.Parent.UiKit)
 local LobbyState = require(script.Parent.LobbyState)
+local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local SummaryScreen = {}
 
@@ -299,7 +300,7 @@ function SummaryScreen.start(
 	end)
 	local input = UserInputService.InputBegan:Connect(
 		function(event: InputObject, processed: boolean)
-			if processed or not panel.Visible then
+			if InputGuard.blocked(processed) or not panel.Visible then
 				return
 			end
 			if event.KeyCode == LobbyConfig.Keys.Requeue then

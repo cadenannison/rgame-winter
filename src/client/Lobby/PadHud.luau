@@ -17,6 +17,7 @@ local LobbyLogic = require(Shared:WaitForChild("logic"):WaitForChild("LobbyLogic
 local LobbyConfig = require(script.Parent.LobbyConfig)
 local UiKit = require(script.Parent.UiKit)
 local LobbyState = require(script.Parent.LobbyState)
+local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local PadHud = {}
 
@@ -238,7 +239,7 @@ function PadHud.start(gui: ScreenGui, state: LobbyState.State, qa: { [string]: a
 
 	local input = UserInputService.InputBegan:Connect(
 		function(event: InputObject, processed: boolean)
-			if processed or not panel.Visible then
+			if InputGuard.blocked(processed) or not panel.Visible then
 				return
 			end
 			if event.KeyCode == LobbyConfig.Keys.Leave then

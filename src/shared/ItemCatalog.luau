@@ -7,6 +7,7 @@ local Phase3Items = require("./data/Items")
 local Phase3Recipes = require("./data/Recipes")
 local Phase3Structures = require("./data/Structures")
 local RarityData = require("./data/Rarity")
+local ForageData = require("./data/Forage")
 
 -- Item, recipe and structure shapes live in shared/data/Types.luau (Phase 3 adds optional fields).
 export type ItemDef = Types.ItemDef
@@ -180,6 +181,17 @@ for _, def in Phase3Recipes.List do
 end
 for _, def in Phase3Structures.List do
 	mergeInto(ItemCatalog.Structures, def.id, def, "structure")
+end
+-- Forage round (data/Forage.luau): collectable items, their nodes, recipes and rarity tags.
+for _, def in ForageData.Items do
+	mergeInto(ItemCatalog.Items, def.id, def, "item")
+	RarityData.Tags[def.id] = ForageData.Tags[def.id]
+end
+for kind, def in ForageData.Nodes do
+	mergeInto(ItemCatalog.Nodes, kind, def, "node")
+end
+for _, def in ForageData.Recipes do
+	mergeInto(ItemCatalog.Recipes, def.id, def, "recipe")
 end
 
 -- Loot-only gear for the upper rarity tiers (chest finds; no recipes). Stats derive from Config so tuning

@@ -35,3 +35,8 @@ Status: in progress
 ## Right-hand button stack and chat
 - HUD/RightStack.luau: one ScreenGui "RightStack" with a UIListLayout (HudConfig.RightStack: width 88, height 44, gap 6). CraftPanel, MapView and SettingsUi attach their buttons with `RightStack.attach(button, slot)` (Craft, Map, Settings) and destroy them on cleanup. The touch Ping button sits left of the stack (HudConfig Ping.ButtonPosition) so it never overlaps it or Act.
 - HudController moves the default chat window (TextChatService.ChatWindowConfiguration) below the top-left stats/status stack (HudConfig.Chat).
+
+## Input rules (bug-fix round)
+- Every client input handler starts with `InputGuard.blocked(gameProcessed)` (src/client/Input/InputGuard.luau, pure rule in shared/logic/InputGate): typing in chat/text boxes never fires hotkeys.
+- Keys: Drop = G (Config.Backpack/Held `DropKeyName`, Backpack open), Ping = Q. Deny/Craft sounds are muted via Config.Feedback.MutedSounds (remove the names to re-enable).
+- Dropped tools carry durability (ItemDrop.spawn durability arg; InventoryService.add 4th arg restores it).

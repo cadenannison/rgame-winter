@@ -12,6 +12,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local Events = require(Shared.data.Events)
+local BlizzardWind = require(Shared.logic.BlizzardWind)
 local EventSchedule = require(Shared.logic.EventSchedule)
 local DayNightService = require(script.Parent.Parent.Survival.DayNightService)
 
@@ -90,7 +91,22 @@ local function survivors(): { Player }
 	return list
 end
 
-local function publish()
+local intensityOverride: number? = nil -- debug: fixed intensity while a blizzard is active
+
+-- Current blizzard intensity 0..1 (0 when none). Debug override wins while active.
+local function currentIntensity(t: number): number
+	if not EventSchedule.isBlizzardActive(state) then
+		return 0
+	end
+	local override = intensityOverride
+	if override ~= nil then
+		return override
+	end
+	local dur = math.max(state.bEndAt - state.bStartAt, 1e-6)
+	return EventSchedule.blizzardIntensity((t - state.bStartAt) / dur, state.bCount, params.tune)
+end
+
+local function publish(t: number)
 	local active = EventSchedule.activeDark(state)
 	if Workspace:GetAttribute(Config.Events.ActiveAttribute) ~= active then
 		Workspace:SetAttribute(Config.Events.ActiveAttribute, active)
@@ -98,6 +114,10 @@ local function publish()
 	local blizzard = EventSchedule.isBlizzardActive(state)
 	if Workspace:GetAttribute(Config.Blizzard.ActiveAttribute) ~= blizzard then
 		Workspace:SetAttribute(Config.Blizzard.ActiveAttribute, blizzard)
+	end
+	local intensity = BlizzardWind.quantize(currentIntensity(t), Config.Blizzard.IntensityStep)
+	if Workspace:GetAttribute(Config.Blizzard.IntensityAttribute) ~= intensity then
+		Workspace:SetAttribute(Config.Blizzard.IntensityAttribute, intensity)
 	end
 	local warning = state.bPhase == "warning"
 	if Workspace:GetAttribute(Config.Blizzard.WarningAttribute) ~= warning then
@@ -163,6 +183,7 @@ local function handle(tr: EventSchedule.Transition)
 		fire(blizzardStartCbs :: { (...any) -> () })
 		fire(eventStartCbs :: { (...any) -> () }, BLIZZARD_ID)
 	elseif kind == "BlizzardEnd" then
+		intensityOverride = nil
 		sendCue("EventEnd", 0, BLIZZARD_ID)
 		lastCueKey = ""
 		fire(eventEndCbs :: { (...any) -> () }, BLIZZARD_ID, survivors())
@@ -221,7 +242,7 @@ local function tick()
 	for _, tr in EventSchedule.step(state, t, fullGroup, params) do
 		handle(tr)
 	end
-	publish()
+	publish(t)
 	updateCues(t)
 	updateSpawnSink(t)
 end
@@ -290,6 +311,22 @@ function EventService.forceBlizzard(): boolean
 	return EventSchedule.forceBlizzard(state, now(), params)
 end
 
+-- Debug: start a blizzard now (no warning). Returns false during another event.
+function EventService.startBlizzardNow(): boolean
+	return EventSchedule.startBlizzardNow(state, now(), params)
+end
+
+-- Debug: end the current blizzard (or cancel its warning) on the next step.
+function EventService.stopBlizzardNow()
+	EventSchedule.stopBlizzardNow(state, now())
+	intensityOverride = nil
+end
+
+-- Debug: pin the intensity (nil releases it back to the schedule curve).
+function EventService.setIntensityOverride(value: number?)
+	intensityOverride = if value == nil then nil else math.clamp(value, 0, 1)
+end
+
 function EventService.forceDark(id: string): boolean
 	return EventSchedule.forceDark(state, now(), id, params)
 end
@@ -304,7 +341,7 @@ function EventService.start()
 	end
 	lastElapsed = now()
 	state = EventSchedule.new(seed, params, lastElapsed)
-	publish()
+	publish(lastElapsed)
 	connection = RunService.Heartbeat:Connect(function(dt: number)
 		accum += dt
 		if accum < Events.Tuning.StepSeconds then

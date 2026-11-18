@@ -18,6 +18,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 local Placement = require(Shared:WaitForChild("logic"):WaitForChild("Placement"))
 local SiteGround = require(Shared:WaitForChild("logic"):WaitForChild("SiteGround"))
+local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local B = Config.Build
 local G = B.Ghost
@@ -338,7 +339,7 @@ function PlacementGhost.start(opts: Options): Ghost
 	table.insert(
 		conns,
 		UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
-			if not processed and input.KeyCode == rotateKey then
+			if not InputGuard.blocked(processed) and input.KeyCode == rotateKey then
 				rotate()
 			end
 		end)

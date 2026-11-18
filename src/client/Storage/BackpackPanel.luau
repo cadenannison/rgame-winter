@@ -22,6 +22,7 @@ local HudConfig = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild(
 local EquipmentViewport = require(script.Parent:WaitForChild("EquipmentViewport"))
 local InventoryMirror = require(script.Parent:WaitForChild("InventoryMirror"))
 local UiConfig = require(script.Parent:WaitForChild("InventoryUiConfig"))
+local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local BackpackPanel = {}
 
@@ -640,11 +641,14 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		refresh()
 	end
 
-	-- While open, Q is the Drop key; sinking it keeps the Ping wheel (also Q) from firing.
+	-- While open, the Drop key (G) is sunk so nothing else reacts to it.
 	local function bindDrop()
 		ContextActionService:BindActionAtPriority(
 			DROP_ACTION,
 			function(_: string, state: Enum.UserInputState, _input: InputObject)
+				if InputGuard.blocked(false) then
+					return Enum.ContextActionResult.Pass
+				end
 				if state == Enum.UserInputState.Begin then
 					dropSelected()
 				end
@@ -869,9 +873,9 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 	-- B toggles the panel; never while typing in a text box.
 	table.insert(
 		connections,
-		UserInputService.InputBegan:Connect(function(input: InputObject)
+		UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
 			if
-				UserInputService:GetFocusedTextBox() ~= nil
+				InputGuard.blocked(processed)
 				or input.UserInputType ~= Enum.UserInputType.Keyboard
 			then
 				return

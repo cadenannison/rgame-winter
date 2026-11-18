@@ -14,6 +14,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local MobData = require(Shared:WaitForChild("data"):WaitForChild("Mobs"))
+local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local player = Players.LocalPlayer
 
@@ -136,7 +137,10 @@ function ShootController.start()
 	end
 	started = true
 	UserInputService.InputBegan:Connect(function(input, processed)
-		if not processed and input.UserInputType == Enum.UserInputType.MouseButton1 then
+		if
+			not InputGuard.blocked(processed)
+			and input.UserInputType == Enum.UserInputType.MouseButton1
+		then
 			shoot(true)
 		end
 	end)

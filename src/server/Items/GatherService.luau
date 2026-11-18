@@ -24,6 +24,9 @@ type NodeState = { saved: { Saved }, conn: RBXScriptConnection }
 
 local nodes: { [Instance]: NodeState } = {}
 local respawnAt: { [Instance]: number } = {}
+-- Managed nodes (forage round): ForageService owns their lifecycle; the hook runs instead of the timed respawn
+-- when the node is used up (player, node, item id, items granted).
+local managed: { [Instance]: (Player, Instance, string, number) -> () } = {}
 local started = false
 -- Wiring (Phase 4 gatherSpeed perk): extra whole items for a harvest (player, base count) -> extra >= 0.
 local yieldBonusProvider: ((Player, number) -> number)? = nil
@@ -73,6 +76,17 @@ local function unregister(node: Instance)
 		nodes[node] = nil
 	end
 	respawnAt[node] = nil
+	managed[node] = nil
+end
+
+-- Forage round: marks a registered node as managed (see `managed`). Cleared by unregisterNode.
+function GatherService.setManaged(
+	node: Instance,
+	onDepleted: (Player, Instance, string, number) -> ()
+)
+	if nodes[node] then
+		managed[node] = onDepleted
+	end
 end
 
 -- API for ChunkService: kind is "Tree" or "Rock". Safe to call once per node; re-registering is a no-op.
@@ -194,27 +208,33 @@ local function onGather(player: Player, node: unknown)
 		or Config.Gather.HitsToDeplete
 	hits -= 1
 	local nodeYield = ItemCatalog.Nodes[kind]
-	if
-		hits <= 0 and not InventoryService.canAdd(player, nodeYield.yieldId, nodeYield.yieldCount)
-	then
+	local pickCount = target:GetAttribute(Config.Forage.CountAttribute)
+	local yieldCount = if type(pickCount) == "number" and pickCount >= 1
+		then math.floor(pickCount)
+		else nodeYield.yieldCount
+	if hits <= 0 and not InventoryService.canAdd(player, nodeYield.yieldId, yieldCount) then
 		notify(player, InventoryMove.FullText) -- the last hit waits until there is room (nothing is lost)
 		return
 	end
-	InventoryService.wearSelected(player, Config.Gather.ToolDurabilityPerUse)
+	if nodeYield.toolType ~= "hand" then
+		InventoryService.wearSelected(player, Config.Gather.ToolDurabilityPerUse)
+	end
 	if hits > 0 then
 		target:SetAttribute(ItemCatalog.NodeHitsAttribute, hits)
 		return
 	end
 	local def = ItemCatalog.Nodes[kind]
-	local left = InventoryService.add(
-		player,
-		def.yieldId,
-		def.yieldCount + bonusYield(player, def.yieldCount)
-	)
+	local grant = yieldCount + bonusYield(player, yieldCount)
+	local left = InventoryService.add(player, def.yieldId, grant)
 	if left > 0 then
 		notify(player, InventoryMove.FullText)
 	end
-	setDepleted(target, true)
+	local hook = managed[target]
+	if hook then
+		hook(player, target, def.yieldId, grant - left)
+	else
+		setDepleted(target, true)
+	end
 end
 
 -- Same path as GatherRequest (QA and server callers); runs the full validation.
@@ -226,6 +246,13 @@ function GatherService.start()
 	end
 	started = true
 	Remotes.event(Remotes.GatherRequest).OnServerEvent:Connect(onGather)
+	-- Lazy require: ForageService needs ChunkService, which itself requires this module at load.
+	local ok, forage = pcall(require, script.Parent.Parent.Forage.ForageService)
+	if ok then
+		(forage :: any).start()
+	else
+		warn("GatherService: ForageService failed to load")
+	end
 	-- One loop for every node's respawn.
 	RunService.Heartbeat:Connect(function()
 		if next(respawnAt) == nil then

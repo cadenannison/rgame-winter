@@ -16,6 +16,7 @@ local Remotes = require(Shared:WaitForChild("Remotes"))
 local HudConfig = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("HudConfig"))
 local Toast = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("Toast"))
 local Feedback = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("Feedback"))
+local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local P = HudConfig.Progression.Ping
 local DISTANCE_REFRESH = 0.25 -- seconds between marker distance/expiry sweeps
@@ -176,7 +177,7 @@ function PingController.start(report: (string) -> ()): Controller
 	table.insert(
 		connections,
 		UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
-			if processed then
+			if InputGuard.blocked(processed) then
 				return
 			end
 			if input.KeyCode == P.Key then

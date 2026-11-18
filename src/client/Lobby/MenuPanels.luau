@@ -18,6 +18,7 @@ local LobbyConfig = require(script.Parent.LobbyConfig)
 local UiKit = require(script.Parent.UiKit)
 local LobbyState = require(script.Parent.LobbyState)
 local MetaPanel = require(script.Parent.Parent:WaitForChild("Meta"):WaitForChild("MetaPanel"))
+local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local MenuPanels = {}
 
@@ -269,7 +270,7 @@ function MenuPanels.start(gui: ScreenGui, state: LobbyState.State, qa: { [string
 	}
 	local input = UserInputService.InputBegan:Connect(
 		function(event: InputObject, processed: boolean)
-			if processed then
+			if InputGuard.blocked(processed) then
 				return
 			end
 			local name = keys[event.KeyCode]

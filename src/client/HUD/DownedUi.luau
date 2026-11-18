@@ -19,6 +19,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local DownedLogic = require(Shared:WaitForChild("logic"):WaitForChild("DownedLogic"))
 local DeathPanelState = require(Shared:WaitForChild("logic"):WaitForChild("DeathPanelState"))
+local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local D = Config.Downed
 
@@ -261,6 +262,9 @@ function DownedUi.start(): () -> ()
 			state: Enum.UserInputState,
 			_input: InputObject
 		): Enum.ContextActionResult
+			if InputGuard.blocked(false) then
+				return Enum.ContextActionResult.Pass
+			end
 			if state == Enum.UserInputState.Begin then
 				if reviveTarget == nil then
 					return Enum.ContextActionResult.Pass
@@ -347,7 +351,11 @@ function DownedUi.start(): () -> ()
 	end)
 	local keyConn = UserInputService.InputBegan:Connect(
 		function(input: InputObject, processed: boolean)
-			if not processed and input.KeyCode == UI.NextKey and deadPanel.Visible then
+			if
+				not InputGuard.blocked(processed)
+				and input.KeyCode == UI.NextKey
+				and deadPanel.Visible
+			then
 				cycle(1, false)
 			end
 		end

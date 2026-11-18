@@ -18,6 +18,7 @@ local World = require(Logic:WaitForChild("World"))
 local Server = ServerScriptService:WaitForChild("Server")
 local PoiStructures = require(Server:WaitForChild("World"):WaitForChild("PoiStructures"))
 local SiteGroundTerrain = require(Server:WaitForChild("World"):WaitForChild("SiteGroundTerrain"))
+local GroundProbe = require(Server:WaitForChild("World"):WaitForChild("GroundProbe"))
 
 local P = ArtKit.palette(Config.Art.World.Palette)
 local MASSIVE = Config.Massive
@@ -136,7 +137,7 @@ function StructureKitB.build(
 		siteHalfX, siteHalfZ = siteHalfZ, siteHalfX
 	end
 	local function heightFn(x: number, z: number): number
-		return World.heightAt(seed, x, z)
+		return GroundProbe.groundY(x, z, World.heightAt(seed, x, z)) -- real terrain, planned height as fallback
 	end
 	local site = SiteGround.plan(heightFn, origin.X, origin.Z, siteHalfX, siteHalfZ)
 	local groundY = site.baseY

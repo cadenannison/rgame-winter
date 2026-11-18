@@ -79,6 +79,7 @@ export type InventoryMovePayload = {
 	rev: number?, -- chest revision the client saw
 	expect: string?, -- item id the client saw at `from` (stale-revision resolution)
 }
+export type SprintPayload = { active: boolean } -- sprint wanted (hold Shift / touch toggle); server validates and sets speed
 export type DropItemPayload = { slot: number, count: number } -- explicit Drop of an inventory stack (or part)
 export type InventoryMoveResultPayload = { ok: boolean, reason: string, from: InventoryAddr? }
 -- Fog-of-war: explored cells only (1-based row-major index over cellsPerSide^2), never unexplored layout.
@@ -209,6 +210,7 @@ Remotes.LootOpened = "LootOpened" -- server -> opening client (LootOpenedPayload
 Remotes.InventoryMove = "InventoryMove" -- client -> server (InventoryMovePayload); hotbar, grid, equipment, chests
 Remotes.InventoryMoveResult = "InventoryMoveResult" -- server -> client (InventoryMoveResultPayload); refusals only
 Remotes.DropItemRequest = "DropItemRequest" -- client -> server (DropItemPayload); the only way items leave the inventory
+Remotes.SprintRequest = "SprintRequest" -- client -> server (SprintPayload); server gates on hunger/downed/dead, Guard Sprint.RateInterval
 Remotes.DebugCommand = "DebugCommand" -- client -> server, Studio only (command: string, arg: any); not in Remotes.all
 
 -- Every remote the server creates eagerly at startup (so clients never wait on a missing folder).
@@ -265,6 +267,7 @@ Remotes.all = {
 	Remotes.InventoryMove,
 	Remotes.InventoryMoveResult,
 	Remotes.DropItemRequest,
+	Remotes.SprintRequest,
 }
 
 local function getFolder(): Folder

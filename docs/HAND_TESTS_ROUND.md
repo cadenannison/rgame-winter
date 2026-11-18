@@ -90,3 +90,11 @@ Nothing here has been played in Studio. Check on PC and phone emulation. Place i
 - Press E on trees, a door, a chest, a crafting station: no swing/hit/craft sound spam (interaction is silent for now; hook points in docs/ART.md).
 - POIs (cabin, plane, ruin, campsite): floors never sit under terrain.
 - Round 4 audit checks: HUD (bars/day/compass/hotbar, keys 1-9, wheel, tap-to-eat, prompts, Act button, onboarding hints, record toast) lays out and behaves as before on desktop + phone; world props (trees, rocks/ore + depleted rubble/stump, decor, all POIs incl. hot spring steam and hearth light) render as before and `/debug gallery world` shows each; spot-check one Config value tweak per module still takes effect.
+
+## Bug fixes / sprint / forage / blizzard round
+- Typing in chat while pressing B, G, C, M, 1-9, E, Q: nothing triggers.
+- `/debug groundcheck` near the fire on 5 seeds: delta ~0, fire never below ground; spawn pad and structures sit on ground.
+- Q pings, G drops. A dropped axe keeps its durability after pickup. No sounds on E / deny / craft.
+- Sprint: hold LeftShift (touch: toggle button) ~+30% speed, extra hunger cost, HUD indicator only while sprinting, blocked when hungry/downed. `/debug sprint on|off`.
+- Forage and nodes per ring (`/debug forage` spawns one of each): E pick, tool tier gates, respawn at dawn, 3 recipes work, nothing inside structures, part count < 6000.
+- `/debug blizzard start`: no screen tint, whipped streak snow, whiteout to ~60 studs, fire still visible, smooth ~20s ease in/out, lasts ~9 min. Also `stop` and `intensity 0.5`.

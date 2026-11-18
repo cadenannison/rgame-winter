@@ -43,6 +43,7 @@ local HudPrompt = require(script.Parent:WaitForChild("HudPrompt"))
 local HudInput = require(script.Parent:WaitForChild("HudInput"))
 local HudHotbarDrag = require(script.Parent:WaitForChild("HudHotbarDrag"))
 local PlacementGhost = require(script.Parent:WaitForChild("PlacementGhost"))
+local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local RECENT_SECONDS = 2 -- window in which an inventory change is credited to our own request (onboarding)
 
@@ -660,7 +661,7 @@ function HudController.start()
 	end)
 
 	connect(cleanups, UserInputService.InputBegan, function(input: InputObject, processed: boolean)
-		if processed then
+		if InputGuard.blocked(processed) then
 			return
 		end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then

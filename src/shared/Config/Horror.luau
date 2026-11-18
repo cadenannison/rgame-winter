@@ -132,6 +132,54 @@ export type BlizzardConfig = {
 	EventId: string, -- EventService event id for a blizzard (onEventEnd)
 	ActiveAttribute: string, -- Workspace attribute: true during a blizzard (visible weather)
 	WarningAttribute: string, -- Workspace attribute: true during the warning (visible sky cue)
+	DurationDays: number, -- blizzard length in game days (x Time.DayLengthSeconds); not capped by Events.MaxDurationSeconds
+	VignetteAlpha: number, -- max screen vignette alpha (clamped to <= VignetteMaxAlpha in code; 0 = none)
+	VignetteMaxAlpha: number, -- hard ceiling for the vignette
+	IntensityAttribute: string, -- Workspace attribute: current blizzard intensity 0..1 (server, 0 when none)
+	IntensityStep: number, -- intensity attribute rounded to this step (limits replication writes)
+	EaseSeconds: number, -- whiteout / particle ease in and out
+	WarningPresence: number, -- 0..1 share of the effect shown during the warning
+	-- Wind (pure noise over server time; see logic/BlizzardWind).
+	WindSeed: number,
+	WindDirPeriod: number, -- seconds for the wind direction noise to move one unit
+	WindDirSwing: number, -- radians the direction wanders either side of the base heading
+	WindBaseHeading: number, -- radians
+	WindStrengthPeriod: number,
+	WindMinStrength: number, -- studs/s of horizontal particle speed at intensity 0
+	WindMaxStrength: number, -- studs/s at intensity 1
+	GustPeriod: number, -- seconds between gust noise features
+	GustBoost: number, -- extra strength share at full gust (0.5 = +50%)
+	GustThreshold: number, -- noise above this counts as a gust (0..1)
+	-- Snow particles (client only, follow the camera).
+	Texture: string, -- built-in particle texture
+	StreakWidth: number,
+	StreakSquash: number, -- ParticleEmitter.Squash: stretches the streak along its velocity
+	StreakLifetime: { number }, -- min, max seconds
+	StreakTransparency: number,
+	LightEmission: number,
+	SpawnWidth: number, -- studs: emitter volume edge (across the wind)
+	SpawnHeight: number,
+	SpawnUpwind: number, -- studs upwind of the camera the volume sits
+	RatePerIntensity: number, -- particles/second at intensity 1 (before the cap)
+	MaxParticles: number, -- hard live-particle cap (PC)
+	MaxParticlesMobile: number, -- hard live-particle cap (touch devices)
+	WindUpdateInterval: number, -- seconds between wind/emitter writes
+	-- Whiteout (client Atmosphere + fog).
+	PeakVisibility: number, -- studs of visibility at peak (fog end)
+	FogStartPeak: number,
+	FullWhiteoutIntensity: number, -- intensity at which the whiteout reaches its peak
+	WhiteColor: { number }, -- {r, g, b} 0-255 at full daylight
+	MinLightScale: number, -- darkest the white is scaled to at night (0..1)
+	AtmoDensity: number,
+	AtmoOffset: number,
+	AtmoHaze: number,
+	-- Glow that stays faintly visible in the whiteout.
+	GlowTags: { string },
+	GlowMax: number, -- nearest N glow targets
+	GlowRange: number, -- studs
+	GlowColor: { number },
+	GlowTransparency: number, -- fill transparency at peak whiteout (higher = fainter)
+	GlowOutlineTransparency: number,
 }
 
 export type Sections = {
@@ -276,6 +324,50 @@ local Sections: Sections = {
 		EventId = "Blizzard", -- EventService.onEventEnd id for a blizzard (dark events use data/Events ids)
 		ActiveAttribute = "Blizzard",
 		WarningAttribute = "BlizzardWarning",
+		DurationDays = 1.5, -- ~9 min at 6-min days
+		VignetteAlpha = 0,
+		VignetteMaxAlpha = 0.08,
+		IntensityAttribute = "BlizzardIntensity",
+		IntensityStep = 0.02,
+		EaseSeconds = 20,
+		WarningPresence = 0.12,
+		WindSeed = 7.31,
+		WindDirPeriod = 38,
+		WindDirSwing = 0.7,
+		WindBaseHeading = 0.6,
+		WindStrengthPeriod = 14,
+		WindMinStrength = 45,
+		WindMaxStrength = 95,
+		GustPeriod = 9,
+		GustBoost = 0.55,
+		GustThreshold = 0.25,
+		Texture = "rbxasset://textures/particles/sparkles_main.dds",
+		StreakWidth = 0.12,
+		StreakSquash = -2.5,
+		StreakLifetime = { 0.7, 1.2 },
+		StreakTransparency = 0.35,
+		LightEmission = 1,
+		SpawnWidth = 90,
+		SpawnHeight = 50,
+		SpawnUpwind = 40,
+		RatePerIntensity = 260,
+		MaxParticles = 320,
+		MaxParticlesMobile = 120,
+		WindUpdateInterval = 0.1,
+		PeakVisibility = 60,
+		FogStartPeak = 4,
+		FullWhiteoutIntensity = 0.7,
+		WhiteColor = { 236, 242, 250 },
+		MinLightScale = 0.45,
+		AtmoDensity = 0.55,
+		AtmoOffset = 0.3,
+		AtmoHaze = 2.2,
+		GlowTags = { "Campfire", "WarmSpot", "StructureBeacon" },
+		GlowMax = 6,
+		GlowRange = 220,
+		GlowColor = { 255, 170, 90 },
+		GlowTransparency = 0.82,
+		GlowOutlineTransparency = 0.55,
 	},
 }
 

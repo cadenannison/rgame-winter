@@ -34,6 +34,9 @@ DebugCommands.NAMES = {
 	"chest",
 	"seed",
 	"respawn",
+	"groundcheck",
+	"forage",
+	"sprint",
 }
 
 -- Commands that only call registered handlers (no attribute is written by DebugService).
@@ -48,6 +51,9 @@ DebugCommands.ACTION_ONLY = {
 	chest = true, -- spawn a loot chest of a rarity in front of the player
 	seed = true, -- print or set the run seed
 	respawn = true, -- the real revive/respawn transition (SurvivalService.respawn)
+	forage = true, -- spawn one of each forage/node/relic kind around the player
+	sprint = true, -- on|off: force the player's sprint state
+	groundcheck = true, -- heightAt vs real terrain raycast at the player and the nearest fire
 } :: { [string]: boolean }
 
 export type TpTarget = {
@@ -116,7 +122,32 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 			return false, "speed out of range"
 		end
 		return true, arg
-	elseif name == "blizzard" or name == "stalker" or name == "invincible" then
+	elseif name == "blizzard" then
+		-- boolean (legacy attribute toggle) or "start" | "stop" | "intensity <0..1>" (BlizzardService)
+		if type(arg) == "boolean" then
+			return true, arg
+		end
+		local text = if type(arg) == "string"
+			then string.lower(string.match(arg, "^%s*(.-)%s*$") or "")
+			else ""
+		if text == "start" or text == "stop" then
+			return true, { action = text }
+		end
+		local n = tonumber(string.match(text, "^intensity%s+(%S+)$") or "")
+		if n ~= nil and isNumber(n) and (n :: number) >= 0 and (n :: number) <= 1 then
+			return true, { action = "intensity", value = n }
+		end
+		return false, "blizzard needs start, stop or intensity <0..1>"
+	elseif name == "forage" then
+		return true, nil
+	elseif name == "sprint" then
+		if arg == nil or arg == "" or arg == "on" or arg == true then
+			return true, true
+		elseif arg == "off" or arg == false then
+			return true, false
+		end
+		return false, "sprint needs on or off"
+	elseif name == "stalker" or name == "invincible" then
 		if type(arg) ~= "boolean" then
 			return false, "arg must be boolean"
 		end
@@ -149,7 +180,7 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 			return true, arg
 		end
 		return false, "unknown gallery set"
-	elseif name == "structures" or name == "respawn" then
+	elseif name == "structures" or name == "respawn" or name == "groundcheck" then
 		return true, nil
 	elseif name == "tp" then
 		local target = DebugCommands.parseTp(arg, limits.ringCount)

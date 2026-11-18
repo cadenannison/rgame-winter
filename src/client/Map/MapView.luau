@@ -10,6 +10,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local RightStack = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("RightStack"))
+local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local TOGGLE_KEY = Enum.KeyCode.M
 local PANEL_SCALE = 0.7
@@ -129,7 +130,7 @@ function MapView.start(): () -> ()
 	table.insert(
 		conns,
 		UserInputService.InputBegan:Connect(function(input, processed)
-			if not processed and input.KeyCode == TOGGLE_KEY then
+			if not InputGuard.blocked(processed) and input.KeyCode == TOGGLE_KEY then
 				setOpen(not open)
 			end
 		end)
