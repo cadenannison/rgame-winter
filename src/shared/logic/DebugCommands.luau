@@ -23,11 +23,12 @@ DebugCommands.NAMES = {
 	"give",
 	"spawnMob",
 	"runSummary",
+	"mode",
 }
 
 -- Commands that only call registered handlers (no attribute is written by DebugService).
 DebugCommands.ACTION_ONLY =
-	{ give = true, spawnMob = true, runSummary = true } :: { [string]: boolean }
+	{ give = true, spawnMob = true, runSummary = true, mode = true } :: { [string]: boolean }
 
 local function isNumber(v: unknown): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
@@ -79,6 +80,12 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 	elseif name == "runSummary" then
 		-- QA: end a solo run for the caller so the real RunSummary path fires (lobby QA). No arg.
 		return true, nil
+	elseif name == "mode" then
+		-- Studio-only: persists the next Test's server mode ("clear" removes the override).
+		if arg == "run" or arg == "lobby" or arg == "clear" then
+			return true, arg
+		end
+		return false, "mode must be run, lobby or clear"
 	end
 	return false, "unknown command"
 end

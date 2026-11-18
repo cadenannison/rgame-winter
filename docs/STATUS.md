@@ -24,5 +24,13 @@ Wiring: src/server/Phase4/Wiring.luau (meta progress: blizzards/dark events surv
 Hand-test: real Robux purchase + ProcessReceipt on a published place (fill Config.Meta.ProductIds), apply tools/apply_perf.luau then re-run client QA with streaming, phone layout of the Settings button / meta panel, reduce-scares feel, cosmetic tags with real art.
 SAVE NEEDED (brief 21 only set and cleared the Workspace ServerMode preset; no scripts left in the place).
 
+## Studio Test boot fix (PM brief: Data hang + run mode), 2026-11-17
+check.sh tier=full OK. MCP (local player, plain Test): studio-test-boot 6/6 (lobby mode, profile loaded in 545ms from PlayerProfiles_Studio, Ready, connected 30s); /debug mode validation + clear OK.
+Cause (mode): Config.Teleport.StudioDefaultMode was "run"; now "lobby". RUN-mode QA scenarios now need Workspace ServerMode="run" preset (edit mode) or chat "/debug mode run" (Studio-only override saved in DataStore StudioDebug, read at next Test boot; "/debug mode clear" removes it). See tools/qa/README.md.
+Cause (data): not reproducible in two Tests (loads took 0.5-1.5s). Likely a stale session lock from a crashed Studio on the shared live store: ProfileStore waits (steal 40s, assume-dead 630s) but the 30s Cancel cut it short, and an external lock steal kicked the player (OnSessionEnd, ~8s). Not confirmed where the 8s kick came from.
+Fix: DataService logs "[Data] loaded <name> in Nms (<store>)" or "[Data] load failed: <reason>" always (not gated by DEBUG_DATA). Studio uses store PlayerProfiles_Studio (old test profiles stay in live PlayerProfiles) and ASSUME_DEAD 90s; on load failure/timeout/external session end Studio falls back to an in-memory profile (never saved, warn + Player attribute DataFallback) instead of kicking. Published servers still kick after a failed load (nothing written).
+Open: "cannison" Studio profile starts fresh (no old runs/coins); fallback path itself not exercised live (QAForceLoadFailure still kicks by design); chat command assumes Player.Chatted fires under TextChatService (the DebugCommand remote "mode" also works).
+SAVE NEEDED not required (no place edits).
+
 ## Next
 PM: human gate for Phases 1-4 (STOP_AFTER Phase 4).

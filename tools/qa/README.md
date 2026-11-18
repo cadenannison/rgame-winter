@@ -15,7 +15,9 @@ Scenario night-danger: tools/qa/night-danger.luau (runner style, server datamode
 
 Scenario placement-preview: tools/qa/placement-preview.luau (CLIENT datamodel, daytime, lit camp fire, 9 lines): ghost on select / inert / green in range / red out of range / red "Too far from the fire" / rotate / gone on deselect / fire meter tracks FuelFraction / ring dots under Config.Fire.Ring.DayVisibilityMaxTransparency. Uses client bridge ghostAim/ghostState/ghostRotate.
 
-Lobby mode in Studio: set the Workspace attribute ServerMode = "lobby" in edit mode before start_play, and clear it (nil) afterwards; without it Studio plays run mode (all scenarios above). The lodge comes from tools/build_lobby.luau (run once via MCP; run servers destroy it at boot).
+Studio server mode: a plain Studio Test is now the LOBBY (Config.Teleport.StudioDefaultMode). Every RUN-mode scenario (all scenarios above except the lobby/meta ones) needs Workspace attribute ServerMode = "run" set in edit mode before start_play (clear it afterwards), or `/debug mode run` typed in chat in a Test (saves a Studio-only override read by the next Test; `/debug mode clear` removes it). Studio profiles use the separate store PlayerProfiles_Studio; on a load failure/timeout Studio falls back to an in-memory profile (Player attribute DataFallback, nothing saved).
+
+Scenario studio-test-boot: tools/qa/studio-test-boot.luau (SERVER, plain Studio Test, ~35 s, 6 lines): lobby mode by default, profile loaded (not the in-memory fallback), Ready, still connected after 30 s. The lodge comes from tools/build_lobby.luau (run once via MCP; run servers destroy it at boot).
 
 Scenario lobby-to-run: tools/qa/lobby-to-run.luau (SERVER datamodel, lobby mode, 7 lines): local player on pad 2 + simulated second member (Party.debugJoinId) -> pad timer launch through the Studio fake TeleportAdapter (mode run) -> RunLifecycle.debugBegin with both ids (absent one held) -> kill -> debugEnd -> profile runs/kills/coins updated, held member gets no payout -> fake teleport back to the lobby with both party ids.
 

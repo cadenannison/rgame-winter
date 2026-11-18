@@ -12,7 +12,7 @@ Roblox game. Luau + Rojo + Wally. A PM/orchestrator assigns one task at a time; 
 - Final report <=10 lines: files changed, check result, playtest result, open issues.
 
 ## Studio and MCP
-- Act only on the Studio whose placeId is PLACE_ID. Pass its studio id on every call. If more than one Studio is open, stop and ask.
+- Act only on the Studio whose placeId is 130366229723914. Pass its studio id on every call. If more than one Studio is open, stop and ask.
 - One agent at a time uses MCP. Playtest with a local player (start_play), never server-only.
 - Query by exact path and shallow depth. Read code from disk, never through MCP. Batch edits into one call. No screenshots unless the brief asks (max 5).
 - World/art/lighting come from idempotent scripts in tools/ run in one MCP call; leave no script in the place.

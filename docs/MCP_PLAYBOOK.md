@@ -20,4 +20,4 @@ Agents cannot save the place. After any MCP instance work, end the report with S
 MCP clients can read and modify the open place: run only trusted agents and keep a Version History checkpoint before big edits.
 
 ## Studio target
-Act only on the Studio whose placeId is PLACE_ID (fill in after publishing). Pass its studio id on every call. If more than one Studio is open, stop and ask. Playtest with a local player (start_play), never server-only.
+Act only on the Studio whose placeId is 130366229723914 (fill in after publishing). Pass its studio id on every call. If more than one Studio is open, stop and ask. Playtest with a local player (start_play), never server-only.

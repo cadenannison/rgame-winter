@@ -15,6 +15,9 @@ export type DebugConfig = {
 	DarkEvents: { string },
 	BridgeName: string,
 	ClientBridgeName: string,
+	ModeStoreName: string, -- Studio-only DataStore holding the "/debug mode" override
+	ModeStoreKey: string,
+	ModeReadTimeout: number, -- seconds boot waits for that read before using the default mode
 	GiveCount: number,
 	MobKinds: { string },
 	SpawnMobDistance: number,
@@ -492,7 +495,7 @@ export type TeleportConfig = {
 	MaxSeed: number, -- seeds are integers in [0, MaxSeed]
 	MaxPartySize: number,
 	ServerModeAttribute: string, -- Workspace attribute: ModeRun or ModeLobby, set at server boot
-	StudioDefaultMode: string, -- Studio play mode when Workspace has no preset ServerMode attribute
+	StudioDefaultMode: string, -- Studio play mode when no Workspace ServerMode preset and no /debug mode override
 	ModeWaitSeconds: number, -- client waits this long for the ServerMode attribute before defaulting to run UI
 	RetryCount: number,
 	RetryDelay: number, -- seconds, doubled each retry
@@ -900,6 +903,9 @@ export type Config = {
 	DefaultRateLimitInterval: number,
 	ProfileStoreName: string,
 	ProfileKeyPrefix: string,
+	StudioAssumeDead: number, -- Studio only: seconds of silence after which a session lock counts as a crashed Studio
+	StudioStoreSuffix: string, -- appended to ProfileStoreName in Studio so tests never touch live profiles
+	DataFallbackAttribute: string, -- Player attribute set (Studio only) when an in-memory profile is in use
 	AutoSavePeriod: number,
 	SchemaVersion: number,
 	StartingCoins: number,
@@ -943,6 +949,9 @@ local Config: Config = {
 		PlayerRingAttribute = "DebugTeleportRing",
 		DarkEvents = { "FalseNight", "TheQuiet", "DeepFreeze" },
 		BridgeName = "DebugBridge", -- Studio-only ServerStorage BindableFunction for tools/qa (another VM)
+		ModeStoreName = "StudioDebug",
+		ModeStoreKey = "ServerMode",
+		ModeReadTimeout = 3,
 		ClientBridgeName = "ClientQABridge", -- Studio-only PlayerScripts BindableFunction: real client input handlers
 		GiveCount = 10, -- items granted by the Studio-only "give" command
 		-- valid "spawnMob" args (MobService kind names; Phase 1 + data/Mobs)
@@ -1418,7 +1427,7 @@ local Config: Config = {
 		MaxSeed = 2147483647,
 		MaxPartySize = 6,
 		ServerModeAttribute = "ServerMode",
-		StudioDefaultMode = "run", -- set Workspace.ServerMode = "lobby" in edit mode to play the lobby
+		StudioDefaultMode = "lobby", -- plain Studio Test = lobby; Workspace.ServerMode preset or "/debug mode run" for a run
 		ModeWaitSeconds = 10,
 		RetryCount = 3,
 		RetryDelay = 1,
@@ -1845,6 +1854,9 @@ local Config: Config = {
 	DefaultRateLimitInterval = 0.1,
 	ProfileStoreName = "PlayerProfiles",
 	ProfileKeyPrefix = "Player_",
+	StudioAssumeDead = 90, -- ProfileStore default is 630s; autosave keeps live Studio locks fresh (AutoSavePeriod 60)
+	StudioStoreSuffix = "_Studio",
+	DataFallbackAttribute = "DataFallback",
 	AutoSavePeriod = 60,
 	SchemaVersion = 3, -- v2: Phase 2 stats, achievements, lastDailyClaim; v3: Phase 4 meta (shop, perks, settings, receipts)
 	StartingCoins = 0,

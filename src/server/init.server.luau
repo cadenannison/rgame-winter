@@ -16,6 +16,7 @@ local Guard = require(script.Net.Guard)
 local DataService = require(script.Data.DataService)
 local Spawn = require(script.Spawn.SpawnService)
 local DebugService = require(script.Debug.DebugService)
+local StudioMode = require(script.Debug.StudioMode)
 local ChunkService = require(script.World.ChunkService)
 local DayNightService = require(script.Survival.DayNightService)
 local SurvivalService = require(script.Survival.SurvivalService)
@@ -35,12 +36,18 @@ local DailyRewardService = require(script.Meta.DailyRewardService)
 local TP = Config.Teleport
 
 -- Server mode. Live: reserved servers (PartyService reserves them) are runs, public servers are the lobby.
--- Studio: a ServerMode attribute preset on Workspace in edit mode picks the mode, else StudioDefaultMode.
+-- Studio: a ServerMode attribute preset on Workspace in edit mode picks the mode, else the "/debug mode"
+-- override saved by the last session, else StudioDefaultMode (lobby).
 local function resolveMode(): string
 	if RunService:IsStudio() then
 		local preset = Workspace:GetAttribute(TP.ServerModeAttribute)
 		if preset == TP.ModeLobby or preset == TP.ModeRun then
 			return preset :: string
+		end
+		local override = StudioMode.read()
+		if override ~= nil then
+			warn(`[init] Studio mode override from /debug mode: {override}`)
+			return override
 		end
 		return TP.StudioDefaultMode
 	end
@@ -61,6 +68,7 @@ Players.PlayerRemoving:Connect(Guard.cleanup)
 -- Profiles start loading at once (a run server may wait for its seed below); Spawn gates characters.
 DataService.start()
 DebugService.start() -- no-op outside Studio
+StudioMode.start(DebugService.register, DebugService.run) -- "/debug mode run|lobby|clear" (Studio only)
 
 -- Studio-only QA bridge targets shared by both modes (the bridge exists only in Studio; see DebugService).
 DebugService.expose("Debug", DebugService)

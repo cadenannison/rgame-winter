@@ -27,7 +27,12 @@ type Entry = {
 
 local DataService = {}
 
-local store = ProfileStore.New(Config.ProfileStoreName, ProfileSchema.default())
+local IS_STUDIO = RunService:IsStudio()
+-- Studio gets its own store so a Studio Test never contends with published servers or touches live profiles.
+local storeName = if IS_STUDIO
+	then Config.ProfileStoreName .. Config.StudioStoreSuffix
+	else Config.ProfileStoreName
+local store = ProfileStore.New(storeName, ProfileSchema.default())
 
 local profiles: { [Player]: Entry } = {}
 local loadCallbacks: { (Player, Profile) -> () } = {}
@@ -115,6 +120,52 @@ function DataService.failPlayer(player: Player, message: string)
 	failLoad(player, message)
 end
 
+-- Studio only: a throwaway profile that is never saved (used when the Studio load fails or times out).
+local function fallbackEntry(data: Profile?): Entry
+	local noSignal: Signal = {
+		Connect = function(_self: any, _listener: () -> ()): any
+			return nil
+		end,
+	}
+	return {
+		Data = data or ProfileSchema.default(),
+		OnSessionEnd = noSignal,
+		Reconcile = function() end,
+		EndSession = function() end,
+		Save = function() end,
+	}
+end
+
+-- Stores a loaded (real or in-memory) profile and notifies listeners.
+local function publish(player: Player, entry: Entry, elapsedMs: number, source: string)
+	loading[player] = nil
+	profiles[player] = entry
+	log(`profile stored for {player.Name}`)
+	print(`[Data] loaded {player.Name} in {elapsedMs}ms ({source})`)
+	for _, callback in loadCallbacks do
+		task.spawn(callback, player, entry.Data)
+	end
+end
+
+-- A failed load: always logs "[Data] load failed: <reason>". Studio falls back to an in-memory profile
+-- (visible warning, Player attribute, never saved); published servers kick (nothing was written).
+local function loadFailed(player: Player, reason: string, elapsedMs: number)
+	warn(`[Data] load failed: {reason}`)
+	if player.Parent ~= Players or profiles[player] ~= nil or failed[player] then
+		return
+	end
+	if IS_STUDIO then
+		warn(
+			`[Data] STUDIO FALLBACK for {player.Name}: in-memory profile, nothing will be saved this session`
+		)
+		player:SetAttribute(Config.DataFallbackAttribute, true)
+		publish(player, fallbackEntry(), elapsedMs, "in-memory fallback")
+		return
+	end
+	loading[player] = nil
+	failLoad(player, Config.LoadFailKickMessage)
+end
+
 local function loadPlayer(player: Player)
 	if profiles[player] ~= nil or loading[player] then
 		log(`loadPlayer skipped for {player.Name} (already loaded/loading)`)
@@ -131,6 +182,7 @@ local function loadPlayer(player: Player)
 		)
 	then
 		loading[player] = nil
+		warn("[Data] load failed: forced by QA/debug switch")
 		failLoad(player, Config.LoadFailKickMessage)
 		return
 	end
@@ -142,8 +194,11 @@ local function loadPlayer(player: Player)
 	local watchdog = task.delay(Config.DATA_LOAD_TIMEOUT, function()
 		if loading[player] then
 			timedOut = true
-			warn(`[Data] load timeout for {player.Name} after {Config.DATA_LOAD_TIMEOUT}s`)
-			failLoad(player, Config.LoadFailKickMessage)
+			loadFailed(
+				player,
+				`timed out after {Config.DATA_LOAD_TIMEOUT}s (session lock held by another or crashed session, or DataStore unreachable)`,
+				math.floor((os.clock() - startClock) * 1000)
+			)
 		end
 	end)
 
@@ -174,16 +229,19 @@ local function loadPlayer(player: Player)
 			)}`
 		)
 	end
-	if entry == nil then
-		warn(`[Data] load failed for {player.Name} after {elapsedMs}ms`)
-		loading[player] = nil
-		failLoad(player, Config.LoadFailKickMessage)
+	if timedOut or player.Parent ~= Players then
+		-- The watchdog already resolved the player (fallback or kick), or they left.
+		log(`late/abandoned session for {player.Name}; ending without changes`)
+		if entry ~= nil then
+			entry:EndSession()
+		end
 		return
 	end
-	if timedOut or player.Parent ~= Players then
-		log(`late/abandoned session for {player.Name}; ending without changes`)
-		loading[player] = nil
-		entry:EndSession()
+	if entry == nil then
+		local reason = if not ok
+			then `StartSessionAsync error: {tostring(result)}`
+			else `no session after {elapsedMs}ms (lock held by another server or crashed session, {attempts} attempt(s))`
+		loadFailed(player, reason, elapsedMs)
 		return
 	end
 	-- Unusable or newer-schema data: release without altering it and kick.
@@ -191,10 +249,8 @@ local function loadPlayer(player: Player)
 	local migrated: any = deepCopy(entry.Data)
 	local migrateOk = ProfileSchema.migrate(migrated)
 	if not migrateOk or not ProfileSchema.validate(migrated) then
-		warn(`[Data] profile for {player.Name} failed migration/validation`)
-		loading[player] = nil
 		entry:EndSession()
-		failLoad(player, Config.LoadFailKickMessage)
+		loadFailed(player, "stored profile failed migration/validation", elapsedMs)
 		return
 	end
 	local data: any = entry.Data
@@ -212,21 +268,25 @@ local function loadPlayer(player: Player)
 		if profiles[player] ~= entry or player.Parent ~= Players then
 			return
 		end
-		profiles[player] = nil
 		log(`profile released (session ended externally) for {player.Name}`)
 		if shuttingDown then
+			profiles[player] = nil
 			return
 		end
+		if IS_STUDIO then
+			-- Another server/Studio took the lock: keep playing on the data already in memory, unsaved.
+			warn(
+				`[Data] session for {player.Name} ended externally (another server or Studio took the lock); continuing in-memory, nothing will be saved`
+			)
+			player:SetAttribute(Config.DataFallbackAttribute, true)
+			profiles[player] = fallbackEntry(entry.Data)
+			return
+		end
+		profiles[player] = nil
 		failLoad(player, Config.SessionEndKickMessage, true)
 	end)
 
-	loading[player] = nil
-	profiles[player] = entry
-	log(`profile stored for {player.Name}`)
-	log(`loaded {player.Name} in {elapsedMs}ms`)
-	for _, callback in loadCallbacks do
-		task.spawn(callback, player, entry.Data)
-	end
+	publish(player, entry, elapsedMs, storeName)
 end
 
 local function releasePlayer(player: Player)
@@ -249,6 +309,10 @@ function DataService.start()
 	end
 	started = true
 	ProfileStore.SetConstant("AUTO_SAVE_PERIOD", Config.AutoSavePeriod)
+	if IS_STUDIO then
+		-- A lock left by a crashed Studio session is stolen quickly instead of after the 630s default.
+		ProfileStore.SetConstant("ASSUME_DEAD", Config.StudioAssumeDead)
+	end
 	Players.PlayerAdded:Connect(function(player)
 		log(`PlayerAdded {player.Name}`)
 		task.spawn(loadPlayer, player)

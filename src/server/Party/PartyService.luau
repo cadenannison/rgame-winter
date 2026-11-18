@@ -141,6 +141,20 @@ local function launch(pad: PadLogic.Pad)
 			broadcast()
 			return
 		end
+		if RunService:IsStudio() then
+			-- Studio cannot teleport (TeleportAdapter records the call only): say so instead of failing silently.
+			warn(
+				"[Party] Studio cannot teleport. To test a run: chat /debug mode run, stop, press Test."
+			)
+			for _, p in players do
+				if p.Parent == Players then
+					notify(
+						p,
+						"Studio can't teleport. Chat /debug mode run, then Stop and press Test."
+					)
+				end
+			end
+		end
 		for _, callback in launchCallbacks do
 			task.spawn(callback, pad.index, players, data)
 		end
