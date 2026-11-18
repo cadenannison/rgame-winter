@@ -1,5 +1,5 @@
 # Lobby (world and UI)
-Tier: standard
+Tier: standard (hub art: art pass 1)
 Purpose: Lodge built by tools/build_lobby.luau, lobby stat attributes and leaderboard (server), pad HUD, side menu (stats, top days, shop placeholder, daily) and run summary (client).
 Owner files: tools/build_lobby.luau, src/server/Lobby/LobbyService.luau, src/server/Lobby/LobbyLeaderboard.luau, src/client/Lobby/*.luau, src/shared/logic/LobbyLogic.luau
 Public API: LobbyService.Start/Stop (lobby mode). LobbyController.Start() (client, both modes: pad/menu views show only in the lobby; in a run server only the summary appears). In a lobby server LobbyController owns the Studio client QA bridge: joinPad, leavePad, myPad, padPanelVisible, padTitle, claimDaily, dailyReady, requeue, summary, lastToast.
@@ -8,3 +8,8 @@ Invariants: client is display-only (sends PadJoin/Leave/Mode and DailyClaim inte
 Exploit surface: none beyond Party and Daily remotes (see party.md, run-lifecycle.md).
 Playtest checklist: tools/qa/lobby-player-path.luau (client, lobby mode): Join from the billboard, Leave, Daily claim once per UTC day, summary Queue again.
 Status: done (run-server summary shows a countdown; "Queue again" is only actionable in the lobby — see KNOWN_ISSUES)
+
+## Hub art (pass 1)
+Outdoor snowy plaza instead of the lodge. Owner files: src/server/Art/HubBuilder.luau, HubProps.luau, Gallery.luau (server, builder + /debug gallery); src/client/Lobby/HubBoards.luau (live leaderboard/local/stats boards), HubFx.luau (dusk lighting restored on stop, pad pulse, lantern flicker); Config.Art.Hub (layout/budgets/palette/tags, plain number arrays, converted by shared/ArtKit).
+Logic unchanged: PartyService still detects the tagged pad Parts (Config.Lobby.PadTag + PadIndex attribute); spawn is Config.Lobby.SpawnName; shop/stats/mirror ProximityPrompts (tags LobbyShopPrompt, LobbyStatsPrompt, LobbyMirrorPrompt) call the same handlers as B / T via MenuPanels.onPrompt (QA bridge: triggerPrompt, panelOpen).
+QA: tools/qa/hub-art.luau (client, lobby mode): budgets (parts/lights/emitters/particle rate), anchors, boards drawn, prompts open the real panels, pad billboards have the timer label.

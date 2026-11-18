@@ -3,12 +3,15 @@
 -- attributes (LobbyLogic.ATTR); the only intent sent is DailyClaimRequest. The menu sits mid-left,
 -- clear of the thumbstick (bottom-left) and jump button (bottom-right).
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local LobbyLogic = require(Shared:WaitForChild("logic"):WaitForChild("LobbyLogic"))
 local LobbyConfig = require(script.Parent.LobbyConfig)
@@ -288,6 +291,28 @@ function MenuPanels.start(gui: ScreenGui, state: LobbyState.State, qa: { [string
 		input:Disconnect()
 	end)
 
+	-- Hub world prompts (shop window, stats board, cosmetic mirror) open the same panels as the menu.
+	local function onPrompt(prompt: ProximityPrompt)
+		if not state.isLobby() then
+			return
+		end
+		local tags = Config.Art.Hub.Tags
+		if
+			CollectionService:HasTag(prompt, tags.ShopPrompt)
+			or CollectionService:HasTag(prompt, tags.MirrorPrompt)
+		then
+			closeAll()
+			MetaPanel.toggle()
+		elseif CollectionService:HasTag(prompt, tags.StatsPrompt) then
+			MetaPanel.close()
+			toggle("Stats")
+		end
+	end
+	local promptConn = ProximityPromptService.PromptTriggered:Connect(onPrompt)
+	table.insert(cleanups, function()
+		promptConn:Disconnect()
+	end)
+
 	local boardConn = Workspace:GetAttributeChangedSignal(ATTR.Board):Connect(function()
 		if panels.Top.Visible then
 			fillers.Top()
@@ -314,6 +339,11 @@ function MenuPanels.start(gui: ScreenGui, state: LobbyState.State, qa: { [string
 	if qa then
 		qa.claimDaily = claimDaily
 		qa.dailyReady = dailyReady
+		qa.triggerPrompt = onPrompt
+		qa.panelOpen = function(name: string): boolean
+			local frame = panels[name] :: Frame?
+			return frame ~= nil and frame.Visible
+		end
 	end
 	return function()
 		destroyed = true

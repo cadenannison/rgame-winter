@@ -23,6 +23,13 @@ local Assets: Assets = {
 	PadTickSound = "", -- needed: soft tick for the last 5 seconds of the pad timer (silent until supplied)
 	DailyClaimSound = "rbxasset://sounds/electronicpingshort.wav", -- placeholder: daily reward claimed
 	SummarySound = "", -- needed: run summary sting (silent until supplied)
+	-- Art pass 1 (hub). Model ids are Creator Store sources (see docs/CREDITS.md); the builder reads the
+	-- sanitized copy in ServerStorage.ArtAssets[<key>] and falls back to Part-built props when absent.
+	HubPineSmall = "rbxassetid://105868772005747",
+	HubPineLarge = "rbxassetid://118179723005711",
+	HubWindSound = "", -- needed: soft mountain wind loop (silent until supplied)
+	HubFireCrackleSound = "", -- needed: fire pit crackle loop, 3D (silent until supplied)
+	HubMusicSound = "", -- needed: calm village music loop (silent until supplied)
 	-- Phase 3 (brief 12): all "" until supplied; consumers stay silent / use block-outs. See docs/ART.md.
 	DreadRumbleSound = "", -- low rumble that builds with the DreadLevel cue (brief 15)
 	FrostEdgeTexture = "", -- screen-edge frost overlay for DreadLevel / StalkerTell (brief 15)

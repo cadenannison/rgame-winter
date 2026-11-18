@@ -16,6 +16,8 @@ local LobbyState = require(script.Parent.LobbyState)
 local PadHud = require(script.Parent.PadHud)
 local MenuPanels = require(script.Parent.MenuPanels)
 local SummaryScreen = require(script.Parent.SummaryScreen)
+local HubBoards = require(script.Parent.HubBoards)
+local HubFx = require(script.Parent.HubFx)
 local QABridge = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("QABridge"))
 
 local LobbyController = {}
@@ -40,6 +42,8 @@ function LobbyController.Start(): () -> ()
 	table.insert(cleanups, PadHud.start(gui, state, qa))
 	table.insert(cleanups, MenuPanels.start(gui, state, qa))
 	table.insert(cleanups, SummaryScreen.start(gui, state, qa))
+	table.insert(cleanups, HubBoards.start(state))
+	table.insert(cleanups, HubFx.start(state))
 	qa.lastToast = function(): string
 		return state.lastToast
 	end

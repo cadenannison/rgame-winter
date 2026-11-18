@@ -16,9 +16,13 @@ return {
 	PanelMaxSize = Vector2.new(420, 380),
 	PadPanelMaxSize = Vector2.new(340, 230),
 	MenuWidth = 96,
-	BillboardSize = Vector2.new(150, 76),
-	BillboardOffset = Vector3.new(0, 4, 0),
-	BillboardMaxDistance = 70,
+	PadTimerColor = Color3.fromRGB(255, 205, 110),
+	BillboardSize = Vector2.new(170, 130),
+	BillboardOffset = Vector3.new(0, 7, 0),
+	BillboardMaxDistance = 150,
+	BoardRefreshSeconds = 1, -- hub boards redraw only when their content changed
+	BoardRows = 10,
+	BoardPixelsPerStud = 40,
 	TimerStepSeconds = 0.25, -- UI refresh loop (timer text, daily button)
 	TickSeconds = 5, -- last N seconds play the tick sound
 	ToastSeconds = 3,

@@ -850,6 +850,86 @@ export type DurabilityConfig = {
 	MetalToolMultiplier: number, -- metal tool durability vs basic
 }
 
+-- Art pass budgets and layout (docs/ART_PLAN.md). Layout numbers for the hub plaza live here so
+-- swapping a prop or moving a building is one edit; asset ids live in shared/Assets.
+export type HubArtConfig = {
+	Origin: { number }, -- plaza centre {x,y,z} (high above the run map). Vectors and colours are plain number arrays (Config has no Roblox types); see shared/ArtKit
+	GroundRadius: number,
+	GroundThickness: number,
+	BarrierRadius: number, -- invisible wall ring: players stay inside it
+	BarrierHeight: number,
+	CobbleRadius: number, -- central stone plaza
+	SpawnPos: { number }, -- offset from Origin
+	PadArcCenter: { number }, -- offset from Origin
+	PadArcRadius: number,
+	PadArcHalfDegrees: number,
+	PadBase: number, -- pad 1 width in studs
+	PadStep: number, -- extra width per party size
+	PadThickness: number,
+	ShopPos: { number },
+	LeaderboardPos: { number },
+	LocalBoardPos: { number },
+	StatsPos: { number },
+	MirrorPos: { number },
+	FirePitPositions: { { number } },
+	LampRingRadius: number,
+	LampRingCount: number,
+	ClearRadius: number, -- scatter props stay this far from buildings
+	TreeCountInner: number,
+	TreeCountOuter: number,
+	TreeInnerMin: number,
+	TreeOuterMax: number,
+	RockCount: number,
+	DriftCount: number,
+	MountainCount: number,
+	MountainRadius: number,
+	SnowHeight: number,
+	SnowRate: number,
+	SnowAreaRadius: number,
+	Seed: number,
+	MaxParts: number, -- budget asserted by the builder and tools/qa/hub-art
+	MaxLights: number,
+	MaxEmitters: number,
+	MaxParticleRate: number, -- sum of ParticleEmitter.Rate in the hub
+	PromptDistance: number,
+	PulseSpeed: number, -- pad pulse, radians per second
+	FlickerSpeed: number,
+	Tags: {
+		Lamp: string,
+		Shop: string,
+		ShopPrompt: string,
+		Stats: string,
+		StatsPrompt: string,
+		Mirror: string,
+		MirrorPrompt: string,
+		Leaderboard: string,
+		LocalBoard: string,
+		Pulse: string,
+	},
+	Ambient: {
+		ClockTime: number,
+		Brightness: number,
+		FogEnd: number,
+		FogColor: { number },
+		Ambient: { number },
+		OutdoorAmbient: { number },
+		AtmosphereColor: { number },
+		AtmosphereDecay: { number },
+		AtmosphereDensity: number,
+		AtmosphereHaze: number,
+	},
+	Palette: { [string]: { number } },
+}
+
+export type ArtConfig = {
+	Hub: HubArtConfig,
+	AssetFolderName: string, -- ServerStorage folder holding sanitized Creator Store models (name = Assets key)
+	GalleryRoot: string, -- Workspace folder for /debug gallery
+	GallerySets: { string },
+	GallerySpacing: number,
+	GalleryDistance: number, -- studs in front of the caller
+}
+
 export type Config = {
 	Time: TimeConfig,
 	Meters: MeterConfig,
@@ -869,6 +949,7 @@ export type Config = {
 	Downed: DownedConfig,
 	Net: NetConfig,
 	Lobby: LobbyConfig,
+	Art: ArtConfig,
 	Run: RunConfig,
 	Teleport: TeleportConfig,
 	Meta: MetaConfig,
@@ -1382,6 +1463,107 @@ local Config: Config = {
 		SettingsRateInterval = 0.5, -- SettingsSetRequest
 		MetaStateRateInterval = 2, -- MetaStateRequest
 		HintRateInterval = 0.5, -- HintSeenRequest
+	},
+	Art = {
+		AssetFolderName = "ArtAssets",
+		GalleryRoot = "Gallery",
+		GallerySets = { "hub", "clear" },
+		GallerySpacing = 40,
+		GalleryDistance = 40,
+		Hub = {
+			Origin = { 0, 500, 0 },
+			GroundRadius = 340,
+			GroundThickness = 4,
+			BarrierRadius = 135,
+			BarrierHeight = 60,
+			CobbleRadius = 26,
+			SpawnPos = { 0, 0.5, 96 },
+			PadArcCenter = { 0, 0, 20 },
+			PadArcRadius = 58,
+			PadArcHalfDegrees = 62,
+			PadBase = 11,
+			PadStep = 1.5,
+			PadThickness = 0.6,
+			ShopPos = { -84, 0, 28 },
+			LeaderboardPos = { 86, 0, 6 },
+			LocalBoardPos = { 86, 0, 44 },
+			StatsPos = { -54, 0, 84 },
+			MirrorPos = { 54, 0, 84 },
+			FirePitPositions = {
+				{ 0, 0, 22 },
+				{ -38, 0, 62 },
+				{ 38, 0, 62 },
+				{ 0, 0, -66 },
+			},
+			LampRingRadius = 100,
+			LampRingCount = 12,
+			ClearRadius = 22,
+			TreeCountInner = 36,
+			TreeCountOuter = 56,
+			TreeInnerMin = 112,
+			TreeOuterMax = 230,
+			RockCount = 36,
+			DriftCount = 22,
+			MountainCount = 22,
+			MountainRadius = 430,
+			SnowHeight = 70,
+			SnowRate = 45,
+			SnowAreaRadius = 150,
+			Seed = 1337,
+			MaxParts = 1200,
+			MaxLights = 44,
+			MaxEmitters = 8,
+			MaxParticleRate = 120,
+			PromptDistance = 14,
+			PulseSpeed = 2.4,
+			FlickerSpeed = 7,
+			Tags = {
+				Lamp = "HubLight",
+				Shop = "LobbyShop",
+				ShopPrompt = "LobbyShopPrompt",
+				Stats = "LobbyStatBoard",
+				StatsPrompt = "LobbyStatsPrompt",
+				Mirror = "LobbyMirror",
+				MirrorPrompt = "LobbyMirrorPrompt",
+				Leaderboard = "LobbyLeaderboard",
+				LocalBoard = "LobbyLocalBoard",
+				Pulse = "HubPulse",
+			},
+			Ambient = {
+				ClockTime = 18.1,
+				Brightness = 1.3,
+				FogEnd = 760,
+				FogColor = { 150, 170, 200 },
+				Ambient = { 70, 84, 112 },
+				OutdoorAmbient = { 100, 116, 146 },
+				AtmosphereColor = { 170, 190, 220 },
+				AtmosphereDecay = { 96, 112, 150 },
+				AtmosphereDensity = 0.32,
+				AtmosphereHaze = 1.6,
+			},
+			Palette = {
+				Snow = { 236, 243, 250 },
+				SnowShade = { 205, 220, 238 },
+				Cobble = { 128, 140, 156 },
+				Path = { 176, 190, 206 },
+				Rock = { 86, 94, 108 },
+				MountainRock = { 70, 80, 100 },
+				Wood = { 104, 72, 48 },
+				WoodDark = { 68, 46, 32 },
+				Roof = { 58, 64, 84 },
+				Iron = { 46, 52, 62 },
+				Warm = { 255, 176, 90 },
+				Fire = { 255, 140, 50 },
+				Ice = { 120, 205, 245 },
+				PadEmpty = { 90, 205, 255 },
+				PadActive = { 255, 196, 96 },
+				PadLaunch = { 255, 255, 255 },
+				Board = { 22, 32, 46 },
+				Awning = { 70, 130, 190 },
+				AwningAlt = { 230, 240, 250 },
+				Text = { 232, 242, 250 },
+			},
+		},
 	},
 	Lobby = {
 		MaxPlayers = 15,

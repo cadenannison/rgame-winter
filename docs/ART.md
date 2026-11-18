@@ -37,3 +37,10 @@ Part counts per built area: (record here)
 - Cosmetics are data only on the character: attribute Cosmetic (id) and tag Cosmetic_<slot> (Config.Meta.CosmeticTagPrefix + outfit/trail/camp/pet). Art scripts react to the tag once the Cosmetic<Id> assets exist.
 - Still needed before launch (grouped): engine-placeholder sounds (Swing/Chop/MobHit/Craft/Deny/Bite/PadJoin/PadLeave/DailyClaim); every empty "" sound and particle above; SwingAnimation; mob, Stalker, lurker, structure and POI models (block-outs); the 11 Cosmetic<Id> models; developer product ids in Config.Meta.ProductIds.
 
+
+## Art pass 1: hub (see docs/ART_PLAN.md, docs/ART_STATUS.md)
+- Hub is built by tools/build_lobby.luau -> src/server/Art/HubBuilder + HubProps (idempotent, Part-built plus two Creator Store pines). Layout, palette, tags and budgets: Config.Art.Hub. Sanitised models live in ServerStorage.ArtAssets (name = Assets key); a missing model falls back to Part-built pines.
+- Swap a model: change its id in src/shared/Assets.luau (HubPineSmall / HubPineLarge), insert the new asset into ServerStorage.ArtAssets under the same name, strip scripts (see docs/CREDITS.md), re-run the builder.
+- Needed (silent until supplied): HubWindSound, HubFireCrackleSound, HubMusicSound (loops; hooks already placed in the hub), SnowParticle (hub snow uses the engine sparkle texture until then).
+- Review: `/debug gallery hub` (Studio chat) lays out every hub prop in a labelled row; `/debug gallery clear` removes it.
+- Billboards over pads (size label, timer, Join) are client UI, not Parts.

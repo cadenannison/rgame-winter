@@ -30,6 +30,7 @@ local PartyService = require(script.Party.PartyService)
 local RunSetup = require(script.Party.RunSetup)
 local TeleportAdapter = require(script.Party.TeleportAdapter)
 local RunLifecycleService = require(script.Run.RunLifecycleService)
+local Gallery = require(script.Art.Gallery)
 local LobbyService = require(script.Lobby.LobbyService)
 local DailyRewardService = require(script.Meta.DailyRewardService)
 
@@ -68,7 +69,9 @@ Players.PlayerRemoving:Connect(Guard.cleanup)
 -- Profiles start loading at once (a run server may wait for its seed below); Spawn gates characters.
 DataService.start()
 DebugService.start() -- no-op outside Studio
-StudioMode.start(DebugService.register, DebugService.run) -- "/debug mode run|lobby|clear" (Studio only)
+StudioMode.start(DebugService.register, DebugService.run)
+-- "/debug mode run|lobby|clear" (Studio only)
+DebugService.register("gallery", Gallery.handle) -- "/debug gallery <set>" art review rows
 
 -- Studio-only QA bridge targets shared by both modes (the bridge exists only in Studio; see DebugService).
 DebugService.expose("Debug", DebugService)

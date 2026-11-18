@@ -75,7 +75,7 @@ local function write(arg: string)
 	end)
 end
 
--- `run` is DebugService.run; wires the command handler and the chat form "/debug mode <arg>".
+-- `run` is DebugService.run; wires the command handler and the chat form "/debug mode <arg>" and "/debug gallery <set>".
 function StudioMode.start(
 	register: (string, (Player, unknown) -> ()) -> () -> (),
 	run: (Player, unknown, unknown) -> (boolean, string)
@@ -91,14 +91,14 @@ function StudioMode.start(
 			local command, name, arg = string.match(message, "^/(%a+)%s+(%a+)%s*(%a*)$")
 			if
 				command ~= "debug"
-				or name ~= "mode"
+				or (name ~= "mode" and name ~= "gallery")
 				or not Guard.rateLimit(player, "DebugMode", D.CommandRateInterval)
 			then
 				return
 			end
-			local ok, reason = run(player, "mode", arg)
+			local ok, reason = run(player, name, arg)
 			if not ok then
-				warn(`[Debug] /debug mode: {reason}`)
+				warn(`[Debug] /debug {name}: {reason}`)
 			end
 		end)
 	end

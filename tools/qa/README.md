@@ -34,3 +34,7 @@ Scenario meta-shop: tools/qa/meta-shop.luau (SERVER, lobby mode, 7 lines): coin 
 Scenario settings-player-path: tools/qa/settings-player-path.luau (RUN mode, same session: SERVER setup -> CLIENT -> SERVER verify, 6 lines): reduce-scares toggle via the real Settings handler (server writes the profile and mirrors ReduceScares), Forge hint completes on a real ghost + E/Act forge placement and persists to profile.hintsSeen, touch placement label (no "[R] Rotate", Rotate button) vs PC. Client bridge hooks: settingsToggle, settingsState, hintSeen, hintReset, ghostTouch.
 Scenario perf: tools/qa/perf.luau (SERVER, run mode): reads the Studio-only Perf* samples from AtmosphereBoot against Config.Perf caps; does not need tools/apply_perf.luau.
 
+
+Art pass 1.
+Scenario hub-art: tools/qa/hub-art.luau (CLIENT, lobby mode, 9 lines): hub budgets from Config.Art.Hub, spawn + 6 tagged pads with indexes + no scripts, three live boards, local board lists the player, shop/stats/mirror prompts exist, stats and shop prompts open the real panels through the lobby bridge (triggerPrompt/panelOpen), pad billboards carry the timer label. Rebuild the hub first with tools/build_lobby.luau.
+Studio note: modules required from execute_luau stay cached for the whole Studio session; after editing src/shared or src/server/Art, clone ReplicatedStorage.Shared (rename the original) and the Art folder before requiring, or restart Studio.

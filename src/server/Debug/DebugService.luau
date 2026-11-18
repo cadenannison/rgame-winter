@@ -41,6 +41,7 @@ local limits: DebugCommands.Limits = {
 		return ids
 	end)(),
 	mobKinds = D.MobKinds,
+	gallerySets = Config.Art.GallerySets,
 }
 
 function DebugService.isActive(): boolean

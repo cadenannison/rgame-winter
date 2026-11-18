@@ -20,7 +20,13 @@ local LobbyState = require(script.Parent.LobbyState)
 
 local PadHud = {}
 
-type Billboard = { gui: BillboardGui, title: TextLabel, status: TextLabel, button: TextButton }
+type Billboard = {
+	gui: BillboardGui,
+	title: TextLabel,
+	timer: TextLabel,
+	status: TextLabel,
+	button: TextButton,
+}
 
 local function findPad(pads: { LobbyLogic.Pad }, index: number): LobbyLogic.Pad?
 	for _, pad in pads do
@@ -133,13 +139,16 @@ function PadHud.start(gui: ScreenGui, state: LobbyState.State, qa: { [string]: a
 			local pad = if type(index) == "number" then findPad(state.pads, index) else nil
 			board.gui.Enabled = inLobby and (mine == nil or mine.index ~= index)
 			if type(index) == "number" then
-				board.title.Text = `Pad {index} (1-{index})`
+				board.title.Text = if index == 1 then "SOLO" else `{index} PLAYERS`
+				board.timer.Text = ""
 				if pad then
 					local left = LobbyLogic.secondsLeft(pad.endsAt, now)
-					local text = LobbyLogic.padStatus(pad, Config.Lobby.PadModeFriends)
-					board.status.Text = if left ~= nil and not pad.launching
-						then `{text} - {left}s`
-						else text
+					board.status.Text = LobbyLogic.padStatus(pad, Config.Lobby.PadModeFriends)
+					if pad.launching then
+						board.timer.Text = "GO!"
+					elseif left ~= nil then
+						board.timer.Text = `{left}s`
+					end
 					local ok, reason = LobbyLogic.canJoin(pad, player.UserId)
 					UiKit.setEnabled(board.button, ok)
 					if not ok and reason then
@@ -176,15 +185,22 @@ function PadHud.start(gui: ScreenGui, state: LobbyState.State, qa: { [string]: a
 		board.MaxDistance = LobbyConfig.BillboardMaxDistance
 		board.AlwaysOnTop = true
 		board.ResetOnSpawn = false
-		local text = UiKit.label(board, "Title", "", UDim2.new(1, 0, 0, 20))
+		local text = UiKit.label(board, "Title", "", UDim2.new(1, 0, 0, 28))
 		text.TextXAlignment = Enum.TextXAlignment.Center
-		local status = UiKit.label(board, "Status", "", UDim2.new(1, 0, 0, 20))
-		status.Position = UDim2.fromOffset(0, 22)
+		text.Font = Enum.Font.GothamBlack
+		text.TextColor3 = LobbyConfig.TextColor
+		local timer = UiKit.label(board, "Timer", "", UDim2.new(1, 0, 0, 30))
+		timer.Position = UDim2.fromOffset(0, 28)
+		timer.TextXAlignment = Enum.TextXAlignment.Center
+		timer.Font = Enum.Font.GothamBlack
+		timer.TextColor3 = LobbyConfig.PadTimerColor
+		local status = UiKit.label(board, "Status", "", UDim2.new(1, 0, 0, 18))
+		status.Position = UDim2.fromOffset(0, 60)
 		status.TextXAlignment = Enum.TextXAlignment.Center
 		status.TextColor3 = LobbyConfig.MutedColor
 		local button =
 			UiKit.button(board, "Join", "Join", UDim2.new(1, 0, 0, LobbyConfig.MinButton))
-		button.Position = UDim2.fromOffset(0, 44)
+		button.Position = UDim2.fromOffset(0, 82)
 		button.MouseButton1Click:Connect(function()
 			local index = part:GetAttribute(Config.Lobby.PadIndexAttribute)
 			if type(index) == "number" then
@@ -192,7 +208,8 @@ function PadHud.start(gui: ScreenGui, state: LobbyState.State, qa: { [string]: a
 			end
 		end)
 		board.Parent = gui
-		billboards[part] = { gui = board, title = text, status = status, button = button }
+		billboards[part] =
+			{ gui = board, title = text, timer = timer, status = status, button = button }
 		refresh()
 	end
 

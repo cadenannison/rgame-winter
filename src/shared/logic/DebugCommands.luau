@@ -8,6 +8,7 @@ export type Limits = {
 	darkEvents: { string },
 	itemIds: { string }?, -- valid "give" args (ItemCatalog ids)
 	mobKinds: { string }?, -- valid "spawnMob" args
+	gallerySets: { string }?, -- valid "gallery" args (art review sets, plus "clear")
 }
 
 local DebugCommands = {}
@@ -24,11 +25,17 @@ DebugCommands.NAMES = {
 	"spawnMob",
 	"runSummary",
 	"mode",
+	"gallery",
 }
 
 -- Commands that only call registered handlers (no attribute is written by DebugService).
-DebugCommands.ACTION_ONLY =
-	{ give = true, spawnMob = true, runSummary = true, mode = true } :: { [string]: boolean }
+DebugCommands.ACTION_ONLY = {
+	give = true,
+	spawnMob = true,
+	runSummary = true,
+	mode = true,
+	gallery = true,
+} :: { [string]: boolean }
 
 local function isNumber(v: unknown): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
@@ -80,6 +87,12 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 	elseif name == "runSummary" then
 		-- QA: end a solo run for the caller so the real RunSummary path fires (lobby QA). No arg.
 		return true, nil
+	elseif name == "gallery" then
+		-- Studio-only art review: spawns a labelled row of an art pass's assets ("clear" removes it).
+		if type(arg) == "string" and limits.gallerySets and table.find(limits.gallerySets, arg) then
+			return true, arg
+		end
+		return false, "unknown gallery set"
 	elseif name == "mode" then
 		-- Studio-only: persists the next Test's server mode ("clear" removes the override).
 		if arg == "run" or arg == "lobby" or arg == "clear" then
