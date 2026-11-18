@@ -2,6 +2,7 @@
 
 local Players = game:GetService("Players")
 local Config = require(game:GetService("ReplicatedStorage").Shared.Config)
+local TeleportData = require(game:GetService("ReplicatedStorage").Shared.logic.TeleportData)
 
 local Guard = {}
 
@@ -43,6 +44,24 @@ end
 
 function Guard.inRange(value: unknown, minValue: number, maxValue: number): boolean
 	return Guard.isNumber(value) and (value :: number) >= minValue and (value :: number) <= maxValue
+end
+
+-- Validates teleport data arriving on a server (Player:GetJoinData().TeleportData). Returns a clean
+-- copy only if it matches the schema exactly, its mode is `expectedMode`, and `player` is in partyIds.
+-- Callers refuse the player (return to lobby) on nil. Never trust the raw table.
+function Guard.teleportData(
+	player: Player,
+	data: unknown,
+	expectedMode: string
+): TeleportData.TeleportData?
+	local parsed = TeleportData.parse(data)
+	if not parsed or parsed.mode ~= expectedMode then
+		return nil
+	end
+	if not TeleportData.hasMember(parsed, player.UserId) then
+		return nil
+	end
+	return parsed
 end
 
 return Guard

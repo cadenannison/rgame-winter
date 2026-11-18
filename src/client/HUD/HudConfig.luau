@@ -4,6 +4,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Structures = require(
+	ReplicatedStorage:WaitForChild("Shared"):WaitForChild("data"):WaitForChild("Structures")
+)
 
 export type Hint = { id: string, kind: string, threshold: number?, text: string }
 
@@ -76,6 +79,7 @@ local HudConfig = {
 		MissingItem = "You do not have that item.",
 		NoGround = "No ground there.",
 		BadPosition = "Cannot place there.",
+		RoleCap = "You have placed the most of those allowed.",
 	} :: { [string]: string },
 	-- Notify kinds that mean "refused" (deny sound).
 	DenyKinds = { gather = true, craft = true, build = true, fire = true } :: { [string]: boolean },
@@ -99,6 +103,115 @@ local HudConfig = {
 	} :: { [string]: string },
 	OnboardingDoneText = "You know the basics. Survive the nights!",
 	OnboardingDoneSeconds = 5,
+	-- Phase 3 structures and progression (brief 17). Gameplay numbers stay in Config / data; these are UI.
+	Progression = {
+		-- HUD actions that keep priority over a structure interaction (they are what E / Act does).
+		HudFirstActions = { gather = true, attack = true, place = true, fuel = true } :: {
+			[string]: boolean,
+		},
+		InteractRange = Structures.Tuning.InteractRange, -- studs, client pick (server re-checks)
+		Labels = {
+			OpenChest = "Open chest",
+			OpenDoor = "Open door",
+			CloseDoor = "Close door",
+			Cook = "Cook",
+			Repair = "Repair",
+			Use = "Use",
+		},
+		Ping = {
+			Key = Enum.KeyCode.Q,
+			ButtonSize = 56, -- px (>= 44), right edge, clear of Act (y .62-.78) and the jump button
+			ButtonPosition = UDim2.fromScale(0.97, 0.4),
+			WheelRadiusPx = 84,
+			WheelButtonSize = 56,
+			MarkerSize = UDim2.fromOffset(110, 44),
+			MarkerMaxCount = 24, -- client cap on live markers (server caps per player already)
+			AimMaxDistance = 600, -- studs: client aim ray length (server clamps to Config.Ping.MaxRange)
+			Labels = { Go = "Go", Danger = "Danger", Loot = "Loot", Help = "Help" } :: {
+				[string]: string,
+			},
+			Colors = {
+				Go = Color3.fromRGB(110, 200, 120),
+				Danger = Color3.fromRGB(220, 80, 70),
+				Loot = Color3.fromRGB(235, 200, 90),
+				Help = Color3.fromRGB(110, 170, 235),
+			} :: { [string]: Color3 },
+		},
+		Storage = {
+			CellPx = 52, -- px (>= 44) slot buttons
+			GapPx = 4,
+			PanelMaxWidth = 340,
+			PanelWidthScale = 0.9,
+			PanelHeightScale = 0.8,
+			CloseButtonSize = 44,
+		},
+		-- Under the stats panel (top-left): cold resistance, buff chips, underdressed warning.
+		Status = {
+			Position = UDim2.fromScale(0.015, 0.155),
+			Width = 220,
+			RowHeight = 22,
+			UpdateSeconds = 0.5,
+			WarnColor = Color3.fromRGB(230, 110, 90),
+		},
+		-- First-run hints for the new mechanics; each completes on its real action (never a timer).
+		HintPosition = UDim2.fromScale(0.015, 0.56),
+		HintWidth = 260,
+		HintDoneFlashSeconds = 1.5,
+		HintDamagedPercent = 50, -- a tool at or under this durability triggers the repair hint
+		PlaceHintIds = {
+			"Forge",
+			"CookingStation",
+			"Wall",
+			"Watchtower",
+			"SleepingBag",
+			"MapTable",
+		},
+		PlaceHint = "Select the {name} on your hotbar and click (E / Act) to place it.",
+		Hints = {
+			{
+				id = "chest",
+				have = "StorageChest",
+				done = "chestOpened",
+				text = "Place the chest, then stand next to it and press E (Act) to open it. Click an item to move it.",
+			},
+			{
+				id = "cook",
+				have = "RawMeat",
+				done = "cooked",
+				text = "Stand by a lit fire or cooking station and press E (Act) with Raw Meat selected to cook it.",
+			},
+			{
+				id = "cookFish",
+				have = "RawFish",
+				done = "cooked",
+				text = "Cook Raw Fish at a fire first: raw fish makes you queasy.",
+			},
+			{
+				id = "repair",
+				damaged = true,
+				done = "repaired",
+				text = "Stand by a workbench with the damaged tool selected and press E (Act) to repair it.",
+			},
+			{
+				id = "door",
+				have = "Door",
+				done = "doorToggled",
+				text = "Place the door in a wall gap. Press E (Act) next to it to open or close it.",
+			},
+			{
+				id = "trap",
+				have = "SpikeTrap",
+				done = "placed:SpikeTrap",
+				text = "Spike traps hurt mobs, never players. Place one where mobs walk.",
+			},
+			{
+				id = "ping",
+				party = true,
+				done = "pinged",
+				text = "Press Q (or tap Ping) to mark Go, Danger, Loot or Help for your team.",
+			},
+		} :: { { [string]: any } },
+	},
 }
 
 return HudConfig

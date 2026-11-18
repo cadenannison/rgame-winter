@@ -9,6 +9,9 @@ local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local ItemCatalog = require(Shared.ItemCatalog)
 local Consume = require(Shared.logic.Consume)
+local Cooking = require(Shared.logic.Cooking)
+local BuffService = require(script.Parent.BuffService)
+local CookingService = require(script.Parent.CookingService)
 local InventoryService = require(script.Parent.InventoryService)
 local SurvivalService = require(script.Parent.Parent.Survival.SurvivalService)
 
@@ -33,6 +36,19 @@ local function onUse(player: Player, def: ItemCatalog.ItemDef, _slot: number): b
 		return false
 	end
 	SurvivalService.feed(player, result :: number)
+	-- Buff from the food (capped); food cooked at a station lasts longer. Raw fish carries a debuff.
+	local buff = Cooking.buffFor(def.id)
+	if
+		buff
+		and BuffService.grant(
+			player,
+			buff.id,
+			Cooking.buffDuration(buff, CookingService.consumeStationBonus(player, def.id))
+		)
+	then
+		notify(player, `Ate {def.name}: {buff.name}`)
+		return true
+	end
 	notify(player, `Ate {def.name}`)
 	return true
 end

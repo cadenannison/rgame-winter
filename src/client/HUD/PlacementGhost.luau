@@ -39,6 +39,7 @@ export type Ghost = {
 	target: () -> Target?,
 	rotate: () -> (),
 	setAim: (Vector3?) -> (), -- Studio QA: aim at a world point instead of the cursor
+	setTouch: (boolean?) -> (), -- Studio QA: force the touch (true) or PC (false) layout; nil = detect
 	state: () -> { [string]: any },
 	destroy: () -> (),
 }
@@ -101,7 +102,11 @@ function PlacementGhost.start(opts: Options): Ghost
 	rotateButton.Parent = screen
 	screen.Parent = player:WaitForChild("PlayerGui")
 
+	local touchOverride: boolean? = nil
 	local function usesTouch(): boolean
+		if touchOverride ~= nil then
+			return touchOverride
+		end
 		return UserInputService:GetLastInputType() == Enum.UserInputType.Touch
 			or (UserInputService.TouchEnabled and not UserInputService.MouseEnabled)
 	end
@@ -299,8 +304,13 @@ function PlacementGhost.start(opts: Options): Ghost
 		p.Transparency = G.Transparency
 		p.Color = if result.ok then validColor else invalidColor
 		local reasonText = if result.ok then "" else (G.ReasonText[result.reason] or result.reason)
-		text.Text = if result.ok then `[{G.RotateKeyName}] Rotate` else reasonText
-		rotateButton.Visible = usesTouch()
+		local touch = usesTouch()
+		-- Touch has no R key: no "[R] Rotate" text, the on-screen Rotate button carries the label.
+		text.Text = if not result.ok
+			then reasonText
+			elseif touch then ""
+			else `[{G.RotateKeyName}] Rotate`
+		rotateButton.Visible = touch
 		rotateButton.BackgroundColor3 = if result.ok then validColor else invalidColor
 		current = {
 			structureId = structureId,
@@ -347,6 +357,9 @@ function PlacementGhost.start(opts: Options): Ghost
 		return current
 	end
 	ghost.rotate = rotate
+	ghost.setTouch = function(value: boolean?)
+		touchOverride = value
+	end
 	ghost.setAim = function(point: Vector3?)
 		aim = point
 		refresh()
@@ -371,6 +384,8 @@ function PlacementGhost.start(opts: Options): Ghost
 				) ~= nil
 				else false,
 			rotation = rotation,
+			label = if label then label.Text else "",
+			rotateButton = rotateButton.Visible,
 		}
 	end
 	ghost.destroy = function()

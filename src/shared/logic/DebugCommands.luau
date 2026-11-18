@@ -22,10 +22,12 @@ DebugCommands.NAMES = {
 	"teleportRing",
 	"give",
 	"spawnMob",
+	"runSummary",
 }
 
 -- Commands that only call registered handlers (no attribute is written by DebugService).
-DebugCommands.ACTION_ONLY = { give = true, spawnMob = true } :: { [string]: boolean }
+DebugCommands.ACTION_ONLY =
+	{ give = true, spawnMob = true, runSummary = true } :: { [string]: boolean }
 
 local function isNumber(v: unknown): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
@@ -74,6 +76,9 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 			return false, `unknown {name} arg`
 		end
 		return true, arg
+	elseif name == "runSummary" then
+		-- QA: end a solo run for the caller so the real RunSummary path fires (lobby QA). No arg.
+		return true, nil
 	end
 	return false, "unknown command"
 end

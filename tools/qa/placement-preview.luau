@@ -17,7 +17,11 @@ local F = Config.Fire
 local function scenario(chk)
 	local P = Players.LocalPlayer
 	for _ = 1, 40 do
-		if P:GetAttribute(Config.ReadyAttribute) and P.Character and P.Character:FindFirstChild("HumanoidRootPart") then
+		if
+			P:GetAttribute(Config.ReadyAttribute)
+			and P.Character
+			and P.Character:FindFirstChild("HumanoidRootPart")
+		then
 			break
 		end
 		task.wait(0.5)
@@ -61,29 +65,58 @@ local function scenario(chk)
 	C("selectItem", "Workbench")
 	task.wait(0.4)
 	local g = C("ghostState")
-	chk("ghost_on_select", before.exists == false and g.exists and g.visible, "before " .. tostring(before.exists) .. " after " .. tostring(g.exists))
-	chk("ghost_inert", g.exists and g.collide == false and g.query == false and g.scripts == false, "collide " .. tostring(g.collide) .. " query " .. tostring(g.query) .. " scripts " .. tostring(g.scripts))
+	chk(
+		"ghost_on_select",
+		before.exists == false and g.exists and g.visible,
+		"before " .. tostring(before.exists) .. " after " .. tostring(g.exists)
+	)
+	chk(
+		"ghost_inert",
+		g.exists and g.collide == false and g.query == false and g.scripts == false,
+		"collide "
+			.. tostring(g.collide)
+			.. " query "
+			.. tostring(g.query)
+			.. " scripts "
+			.. tostring(g.scripts)
+	)
 
 	-- 3. green in range
 	g = C("ghostState")
-	chk("green_in_range", g.ok and g.green and not g.red, "ok " .. tostring(g.ok) .. " reason " .. tostring(g.reason))
+	chk(
+		"green_in_range",
+		g.ok and g.green and not g.red,
+		"ok " .. tostring(g.ok) .. " reason " .. tostring(g.reason)
+	)
 
 	-- 4. red out of range with a readable reason (beyond reach)
 	C("ghostAim", hrp.Position + Vector3.new(Config.Build.PlaceRange + 40, 0, 0))
 	g = C("ghostState")
-	chk("red_out_of_range", (not g.ok) and g.red and g.text ~= "" and g.text ~= g.reason, "ok " .. tostring(g.ok) .. " text '" .. tostring(g.text) .. "'")
+	chk(
+		"red_out_of_range",
+		(not g.ok) and g.red and g.text ~= "" and g.text ~= g.reason,
+		"ok " .. tostring(g.ok) .. " text '" .. tostring(g.text) .. "'"
+	)
 
 	-- 5. within reach but outside the lit fire's build radius -> "Too far from the fire"
 	tp(Vector3.new(fp.X + row1.BuildRadius + 30, fp.Y + 3, fp.Z))
 	C("ghostAim", hrp.Position + Vector3.new(0, 0, -8))
 	g = C("ghostState")
-	chk("red_reason_text", g.red and g.text == ghostCfg.ReasonText.OutOfBuildRange, "text '" .. tostring(g.text) .. "' reason " .. tostring(g.reason))
+	chk(
+		"red_reason_text",
+		g.red and g.text == ghostCfg.ReasonText.OutOfBuildRange,
+		"text '" .. tostring(g.text) .. "' reason " .. tostring(g.reason)
+	)
 
 	-- 6. rotate (R / button handler) steps by RotationStep
 	local r0 = g.rotation
 	C("ghostRotate")
 	local r1 = C("ghostState").rotation
-	chk("rotate_steps", (r1 - r0) % 360 == Config.Build.RotationStep % 360, "rot " .. tostring(r0) .. " -> " .. tostring(r1))
+	chk(
+		"rotate_steps",
+		(r1 - r0) % 360 == Config.Build.RotationStep % 360,
+		"rot " .. tostring(r0) .. " -> " .. tostring(r1)
+	)
 
 	-- 7. deselect destroys the ghost
 	C("ghostAim", nil)
@@ -109,7 +142,24 @@ local function scenario(chk)
 	end
 	local fill = bar and bar:FindFirstChild("Fill", true)
 	local fillX = fill and fill.Size.X.Scale or -1
-	chk("fire_meter_tracks_fuel", f1 > f0 and math.abs(f1 - fuel / maxFuel) <= 0.03 and bar ~= nil and bar.Enabled and math.abs(fillX - f1) <= 0.03, "f0 " .. f0 .. " f1 " .. f1 .. " fuel/max " .. fuel / maxFuel .. " bar " .. tostring(bar ~= nil) .. " fill " .. fillX)
+	chk(
+		"fire_meter_tracks_fuel",
+		f1 > f0
+			and math.abs(f1 - fuel / maxFuel) <= 0.03
+			and bar ~= nil
+			and bar.Enabled
+			and math.abs(fillX - f1) <= 0.03,
+		"f0 "
+			.. f0
+			.. " f1 "
+			.. f1
+			.. " fuel/max "
+			.. fuel / maxFuel
+			.. " bar "
+			.. tostring(bar ~= nil)
+			.. " fill "
+			.. fillX
+	)
 
 	-- 9. ring dots stay under the day-visibility threshold at midday
 	tp(Vector3.new(fp.X + row1.WarmRadius, fp.Y + 3, fp.Z))
@@ -122,7 +172,16 @@ local function scenario(chk)
 			best = math.min(best, dot.Transparency)
 		end
 	end
-	chk("ring_visible_by_day", (not night) and best <= F.Ring.DayVisibilityMaxTransparency, "night " .. tostring(night) .. " min dot transparency " .. best .. " max " .. F.Ring.DayVisibilityMaxTransparency)
+	chk(
+		"ring_visible_by_day",
+		(not night) and best <= F.Ring.DayVisibilityMaxTransparency,
+		"night "
+			.. tostring(night)
+			.. " min dot transparency "
+			.. best
+			.. " max "
+			.. F.Ring.DayVisibilityMaxTransparency
+	)
 end
 
 local lines, fails, passes = {}, {}, {}

@@ -21,6 +21,8 @@ export type Check = {
 	itemCount: number, -- how many of the structure's item the player holds
 	litFires: { FireTiers.BuildFire }, -- lit campfires with their tier build radius
 	buildExempt: boolean, -- structure is exempt from the build radius (Config.Build.RangeExempt)
+	roleCount: number?, -- placed structures of this structure's role (nil = no per-role cap)
+	roleMax: number?, -- per-role cap (storage chests: Config.Storage.MaxChestsPerRun)
 }
 
 export type Result = { ok: boolean, reason: string }
@@ -53,7 +55,7 @@ end
 
 -- The single rule set for "can this structure go here". Used by the client ghost (tint + reason) and the
 -- server place handler (authoritative). Returns {ok, reason}. reason: "UnknownStructure" | "BadPosition" | "OutOfRange" | "TooClose"
--- | "OutOfBuildRange" | "StructureCap" | "FireCap" | "MissingItem" | "Ok".
+-- | "OutOfBuildRange" | "StructureCap" | "RoleCap" | "FireCap" | "MissingItem" | "Ok".
 function Placement.validate(c: Check): Result
 	local def = ItemCatalog.Structures[c.structureId]
 	if def == nil then
@@ -75,6 +77,9 @@ function Placement.validate(c: Check): Result
 	end
 	if c.ownedCount >= c.maxOwned then
 		return { ok = false, reason = "StructureCap" }
+	end
+	if c.roleMax ~= nil and (c.roleCount or 0) >= c.roleMax then
+		return { ok = false, reason = "RoleCap" }
 	end
 	if def.role == "campfire" and c.fireCount >= c.maxFires then
 		return { ok = false, reason = "FireCap" }

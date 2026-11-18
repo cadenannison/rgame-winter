@@ -14,9 +14,19 @@ export type Params = {
 	CampGuaranteeRadius: number,
 	StreamInRadius: number,
 	StreamOutRadius: number,
-	TreesPerChunk: number,
-	RocksPerChunk: number,
-	SpawnZonesPerChunk: number,
+	TreesPerChunk: number, -- legacy (Phase 1); slot counts now come from data/Chunks variants
+	RocksPerChunk: number, -- legacy
+	SpawnZonesPerChunk: number, -- legacy
+}
+
+-- Point of interest. kind: cabin | plane | cave | campsite | ruin (loot crate, lootTier > 0), hotspring, thinice
+-- (patches). id is stable per seed: "<chunkIndex>:<slot>".
+export type Poi = {
+	id: string,
+	kind: string,
+	position: Vec2,
+	lootTier: number,
+	patches: { Vec2 },
 }
 
 export type Chunk = {
@@ -24,13 +34,17 @@ export type Chunk = {
 	cx: number,
 	cy: number,
 	ring: number,
-	variant: number,
+	biome: string, -- Biomes id for the ring
+	variant: number, -- index into Chunks.forBiome(biome)
+	variantId: string,
 	rotation: number, -- quarter turns, 0..3
 	center: Vec2,
 	trees: { Vec2 },
 	rocks: { Vec2 },
+	ore: { Vec2 },
 	food: { Vec2 },
 	spawnZones: { Vec2 },
+	pois: { Poi },
 }
 
 export type Camp = {
@@ -49,10 +63,12 @@ export type Layout = {
 }
 
 local Config = require("../Config")
+local Biomes = require("../data/Biomes")
+local Chunks = require("../data/Chunks")
+local Types = require("../data/Types")
 
 local WorldLayout = {}
 
-WorldLayout.VARIANT_COUNT = 3
 WorldLayout.SlotKinds = Config.World.SlotTags -- slot tag names live in Config
 
 local LCG_MOD = 4294967296
@@ -67,6 +83,9 @@ local CAMP_NEAR_MIN = 12 -- guaranteed resources start this far from camp
 local MIX_A = 73856093
 local MIX_B = 19349663
 local MIX_C = 83492791
+local MAX_LOOT_TIER = 4
+local PATCH_COUNT = 3
+local PATCH_SPREAD = 16 -- studs: thin-ice patches cluster this close to their slot
 
 -- Small LCG; fine for layout, identical on every machine (doubles stay < 2^53).
 local function newRng(seed: number)
@@ -152,6 +171,22 @@ local function scatter(
 	return out
 end
 
+-- Weighted pick: roll in [0, 1) -> index into variants.
+local function pickVariant(roll: number, variants: { Types.ChunkVariant }): number
+	local total = 0
+	for _, v in variants do
+		total += v.weight
+	end
+	local pick = roll * total
+	for i, v in variants do
+		pick -= v.weight
+		if pick < 0 then
+			return i
+		end
+	end
+	return #variants
+end
+
 local function ringPoints(
 	rng: { range: (number, number) -> number },
 	around: Vec2,
@@ -215,19 +250,54 @@ function WorldLayout.generate(seed: number, p: Params): Layout
 					table.insert(taken, v)
 				end
 			end
+			local ring = WorldLayout.ringOf(grid, cx, cy)
+			local biome = Biomes.forRing(ring)
+			local variants = Chunks.forBiome(biome.id)
+			assert(#variants > 0, "no chunk variants for biome " .. biome.id)
+			local variant = pickVariant(rng.float(), variants)
+			local def = variants[variant]
 			local chunk: Chunk = {
 				index = index,
 				cx = cx,
 				cy = cy,
-				ring = WorldLayout.ringOf(grid, cx, cy),
-				variant = rng.int(1, WorldLayout.VARIANT_COUNT),
+				ring = ring,
+				biome = biome.id,
+				variant = variant,
+				variantId = def.id,
 				rotation = rng.int(0, 3),
 				center = center,
-				trees = scatter(rng, center, size, p.TreesPerChunk, avoid, taken),
-				rocks = scatter(rng, center, size, p.RocksPerChunk, avoid, taken),
-				food = {},
-				spawnZones = scatter(rng, center, size, p.SpawnZonesPerChunk, avoid, taken),
+				trees = scatter(rng, center, size, def.trees, avoid, taken),
+				rocks = scatter(rng, center, size, def.rocks, avoid, taken),
+				ore = scatter(rng, center, size, def.ore, avoid, taken),
+				food = scatter(rng, center, size, def.food, avoid, taken),
+				spawnZones = scatter(rng, center, size, def.spawnZones, avoid, taken),
+				pois = {},
 			}
+			local slots = scatter(rng, center, size, def.poiSlots, avoid, taken)
+			for slot, pos in slots do
+				local kind = def.poiKinds[rng.int(1, #def.poiKinds)]
+				local hasLoot = kind ~= "hotspring" and kind ~= "thinice"
+				local dist = math.sqrt((pos.x - campPos.x) ^ 2 + (pos.z - campPos.z) ^ 2)
+				local tier = if hasLoot
+					then math.clamp(1 + math.floor(dist / size), 1, MAX_LOOT_TIER)
+					else 0
+				local patches: { Vec2 } = {}
+				if kind == "thinice" then
+					for _ = 1, PATCH_COUNT do
+						table.insert(patches, {
+							x = pos.x + rng.range(-PATCH_SPREAD, PATCH_SPREAD),
+							z = pos.z + rng.range(-PATCH_SPREAD, PATCH_SPREAD),
+						})
+					end
+				end
+				table.insert(chunk.pois, {
+					id = `{index}:{slot}`,
+					kind = kind,
+					position = pos,
+					lootTier = tier,
+					patches = patches,
+				})
+			end
 			if isCamp then
 				for _, v in campWood do
 					table.insert(chunk.trees, v)
@@ -261,12 +331,22 @@ function WorldLayout.serialize(layout: Layout): string
 		end
 		return table.concat(s, ";")
 	end
+	local function poiText(list: { Poi }, fmt: ({ Vec2 }) -> string): string
+		local s: { string } = {}
+		for _, poi in list do
+			table.insert(
+				s,
+				`{poi.id}/{poi.kind}/{poi.lootTier}/{fmt({ poi.position })}/{fmt(poi.patches)}`
+			)
+		end
+		return table.concat(s, ";")
+	end
 	for _, c in layout.chunks do
 		table.insert(
 			parts,
-			`{c.index}:{c.variant}:{c.rotation}:{pts(c.trees)}:{pts(c.rocks)}:{pts(c.food)}:{pts(
-				c.spawnZones
-			)}`
+			`{c.index}:{c.variantId}:{c.rotation}:{pts(c.trees)}:{pts(c.rocks)}:{pts(c.ore)}:{pts(
+				c.food
+			)}:{pts(c.spawnZones)}:{poiText(c.pois, pts)}`
 		)
 	end
 	return table.concat(parts, "\n")

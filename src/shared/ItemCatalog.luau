@@ -2,49 +2,17 @@
 -- Data-driven item, recipe and gather-node tables. Pure data: no Roblox APIs.
 
 local Config = require("./Config")
+local Types = require("./data/Types")
+local Phase3Items = require("./data/Items")
+local Phase3Recipes = require("./data/Recipes")
+local Phase3Structures = require("./data/Structures")
 
-export type ItemDef = {
-	id: string,
-	name: string,
-	kind: string, -- "resource" | "tool" | "weapon" | "placeable" | "food"
-	maxStack: number,
-	toolType: string?, -- "axe" | "pickaxe" (gather tools)
-	toolTier: number?,
-	durability: number?, -- starting durability for tools and weapons
-	damage: number?, -- weapons
-	structureId: string?, -- placeables
-	hunger: number?, -- food: hunger restored per item
-}
+-- Item, recipe and structure shapes live in shared/data/Types.luau (Phase 3 adds optional fields).
+export type ItemDef = Types.ItemDef
+export type Recipe = Types.Recipe
+export type StructureDef = Types.StructureDef
 
-export type Recipe = {
-	id: string,
-	tier: number, -- panel ordering (0 = by hand)
-	station: string?, -- Config.Craft.Stations key required nearby (nil = by hand)
-	inputs: { { id: string, count: number } },
-	output: { id: string, count: number },
-}
-
--- Placeable structure (placed via PlaceRequest; costs one item of itemId). Size in studs.
-export type StructureDef = {
-	id: string,
-	itemId: string,
-	role: string, -- "workbench" | "campfire"
-	sizeX: number,
-	sizeY: number,
-	sizeZ: number,
-	tier: number?, -- workbench tier
-	station: string?, -- Config.Craft.Stations key this structure provides
-}
-
-export type NodeDef = {
-	kind: string,
-	toolType: string,
-	minTier: number,
-	yieldId: string,
-	yieldCount: number,
-	verb: string, -- prompt / toast verb ("Chop", "Mine")
-	toolId: string, -- item that harvests it (prompt "Chop: needs Axe")
-}
+export type NodeDef = Types.NodeDef
 
 local ItemCatalog = {}
 
@@ -191,5 +159,24 @@ ItemCatalog.Nodes = {
 		toolId = "Pickaxe",
 	},
 } :: { [string]: NodeDef }
+
+-- Phase 3 merge: briefs 13-17 extend their own shared/data/*.luau files, never this file.
+-- Duplicate ids are programmer errors (tests/DataTests.luau checks them before this would fire).
+local function mergeInto<T>(target: { [string]: T }, id: string, def: T, what: string)
+	assert(target[id] == nil, `ItemCatalog: duplicate {what} id {id}`)
+	target[id] = def
+end
+for _, def in Phase3Items.List do
+	mergeInto(ItemCatalog.Items, def.id, def, "item")
+end
+for kind, def in Phase3Items.Nodes do
+	mergeInto(ItemCatalog.Nodes, kind, def, "node")
+end
+for _, def in Phase3Recipes.List do
+	mergeInto(ItemCatalog.Recipes, def.id, def, "recipe")
+end
+for _, def in Phase3Structures.List do
+	mergeInto(ItemCatalog.Structures, def.id, def, "structure")
+end
 
 return ItemCatalog

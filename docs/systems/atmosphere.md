@@ -1,0 +1,10 @@
+# System: Atmosphere, polish and performance (brief 20)
+
+- Cues: `Remotes.Cue` -> `AtmosphereClient` -> `AtmosphereFx.play(key, pos?)` -> `data/AudioCues` row -> `Assets` ids (`""` = silent). Horror kinds that HorrorCues already voices get particles only (`CueResolve.HorrorOwnsSound`). Caps: `Perf.MaxActiveSounds`, `MaxParticleEmitters`, `MaxParticleRate`.
+- Ambient: `AtmosphereAmbient`, one Heartbeat loop (4 Hz): wind/snow, Blizzard and dark-event loops from the visible Workspace attributes, one fire crackle for the nearest fire. The Quiet ducks wind to silence.
+- Reduce scares: Player attribute `ReduceScares` (server mirror of `profile.settings`) or the MetaState snapshot. Scary rows x `Settings.ReducedScareVisualMultiplier`, no flicker/flash, softer frost/desat/rumble (HorrorCues), softer False Night/Quiet look (EventCues), lurkers half see-through. Never alters server danger. Toggle: `SettingsUi` (48 px targets, PC + touch), sends `SettingsSetRequest`.
+- Hints: `CueResolve.HintDefs` (Blizzard, DarkEvent, Stalker, Clothing, Storage, Map, Ping). Shown once per session from a trigger, completed only by the real action, persisted via `HintSeenRequest`; nothing shows before the MetaState snapshot.
+- Swings: `SwingRelay.notify` (server, called once in GatherService/MobService after validation) -> `SwingBroadcast` to players within `Perf.SwingBroadcastRange` -> `Feedback.swingOther`.
+- Interact: gather vs chest/door is chosen by aim, else the closer (`CueResolve.structureBeatsGather`). Touch placement label hides "[R] Rotate"; the Rotate button carries it.
+- Perf: ChunkService loads <= `ChunkLoadBudgetPerFrame` chunks and `ChunkPartBudgetPerFrame` parts per stream tick, nearest first, none past `MaxLiveParts`; unloads first (hysteresis: `StreamOutRadius` > `StreamInRadius`). Mobs capped by `Scaling.MaxLiveMobs` (= `Perf.MaxLiveMobs`). `tools/apply_perf.luau` sets Workspace streaming. Measure: `tools/qa/perf.luau` (reads Studio-only `Perf*` Workspace attributes from `AtmosphereBoot`, asserts via `PerfBudget.check`).
+- Tests: `tests/AtmosphereTests.luau`.

@@ -1,0 +1,62 @@
+--!strict
+-- Client-only copy and layout for the meta panel and toasts. Gameplay numbers stay in shared/Config.
+
+return {
+	GuiName = "MetaUi",
+	DisplayOrder = 8,
+	PanelMaxSize = Vector2.new(560, 430),
+	PanelScale = Vector2.new(0.86, 0.8),
+	RowHeight = 60,
+	RowButtonWidth = 112,
+	ConfirmSeconds = 3, -- second tap within this window confirms a purchase
+	ToastSeconds = 3.5,
+	AchievementToastSeconds = 4.5,
+	MaxToastQueue = 6,
+	Tabs = {
+		{ id = "Shop", label = "Shop" },
+		{ id = "Perks", label = "Perks" },
+		{ id = "Cosmetics", label = "Style" },
+		{ id = "Titles", label = "Titles" },
+		{ id = "Achievements", label = "Goals" },
+	},
+	StatLabels = {
+		maxDays = "days survived in one run",
+		runs = "runs finished",
+		kills = "kills",
+		bossKills = "boss kills",
+		crafted = "items crafted",
+		blizzardsSurvived = "blizzards survived",
+		darkEventsSurvived = "dark events survived",
+		revivesGiven = "revives",
+		structuresPlaced = "structures placed",
+		mealsCooked = "meals cooked",
+		partyRuns = "party runs",
+		friendRuns = "friend runs",
+		deepestRing = "deepest ring",
+		dailyClaims = "daily rewards claimed",
+	} :: { [string]: string },
+	PerkStatLabels = {
+		warmthDrain = "cold drain",
+		hungerDrain = "hunger drain",
+		fuelBurn = "fuel burn",
+		gatherSpeed = "gather speed",
+		moveSpeed = "move speed",
+	} :: { [string]: string },
+	SlotLabels = {
+		outfit = "Outfit",
+		trail = "Trail",
+		camp = "Camp",
+		pet = "Pet",
+	} :: { [string]: string },
+	Refusals = {
+		owned = "You already own that.",
+		coins = "Not enough coins yet.",
+		locked = "Not unlocked yet.",
+		unavailable = "That is not available right now.",
+		cancelled = "Purchase cancelled.",
+		failed = "Something went wrong. Try again.",
+	} :: { [string]: string },
+	PurchaseOk = "Purchased!",
+	RobuxSoon = "Coming soon",
+	OpenHint = "Shop [B]",
+}

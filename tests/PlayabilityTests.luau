@@ -6,6 +6,7 @@ local Config = require("../src/shared/Config")
 local Onboarding = require("../src/shared/logic/Onboarding")
 local HudMath = require("../src/shared/logic/HudMath")
 local Crafting = require("../src/shared/logic/Crafting")
+local ItemCatalog = require("../src/shared/ItemCatalog")
 local MobAI = require("../src/shared/logic/MobAI")
 
 return function(check: (string, boolean) -> ())
@@ -41,7 +42,17 @@ return function(check: (string, boolean) -> ())
 		"craft list has tier 0 and 1",
 		table.find(list, "Campfire") ~= nil and table.find(list, "Spear") ~= nil
 	)
-	check("craft list tier-sorted", list[#list] == "Spear")
+	check(
+		"craft list tier-sorted",
+		(function(): boolean
+			for i = 2, #list do
+				if ItemCatalog.Recipes[list[i]].tier < ItemCatalog.Recipes[list[i - 1]].tier then
+					return false
+				end
+			end
+			return #list > 0
+		end)()
+	)
 
 	-- Flee bursts: sprint, rest, sprint.
 	local b: MobAI.Burst = { burstEnd = 0, restEnd = 0 }

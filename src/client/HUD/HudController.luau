@@ -23,6 +23,8 @@ local HudMath = require(Logic:WaitForChild("HudMath"))
 local ActionPick = require(Logic:WaitForChild("ActionPick"))
 local FireTiers = require(Logic:WaitForChild("FireTiers"))
 local Crafting = require(Logic:WaitForChild("Crafting"))
+local Repair = require(Logic:WaitForChild("Repair"))
+local MetaSnapshot = require(Logic:WaitForChild("MetaSnapshot"))
 local RadiusRing = require(script.Parent.Parent:WaitForChild("Fire"):WaitForChild("RadiusRing"))
 local FireMeter = require(script.Parent.Parent:WaitForChild("Fire"):WaitForChild("FireMeter"))
 local ItemsGather = require(Logic:WaitForChild("ItemsGather"))
@@ -54,6 +56,38 @@ local WATCH_SECONDS = 2 -- how long a hit target's attributes are watched for th
 local HudController = {}
 
 local started = false
+
+-- Phase 3 structure interactions (brief 17): set by ProgressionClient. peek gives the prompt for the
+-- current context (nil = nothing to do); run performs it and returns true if it handled the action.
+export type InteractCtx = {
+	action: string,
+	slot: number,
+	gatherDistance: number?,
+	gatherAimed: boolean?,
+}
+export type InteractPrompt = { target: Instance, text: string, warn: boolean, label: string }
+export type InteractHook = {
+	peek: (ctx: InteractCtx) -> InteractPrompt?,
+	run: (ctx: InteractCtx) -> boolean,
+}
+local interactHook: InteractHook? = nil
+local currentActionName = "none"
+
+function HudController.setInteractHook(hook: InteractHook?)
+	interactHook = hook
+end
+
+-- Studio-only QA bridge extensions from other client systems (storage, ping): name -> the same
+-- function their inputs call. Looked up at invoke time, so systems may register after start.
+local qaExtra: { [string]: (...any) -> ...any } = {}
+function HudController.addQA(name: string, fn: (...any) -> ...any)
+	qaExtra[name] = fn
+end
+
+-- The HUD's current context action ("gather", "eat", "none", ...), for systems that share the input.
+function HudController.currentAction(): string
+	return currentActionName
+end
 
 type Slot = { button: TextButton, name: TextLabel, count: TextLabel, stroke: UIStroke }
 type Watch = { conns: { RBXScriptConnection }, expires: number }
@@ -356,7 +390,7 @@ function HudController.start()
 
 	-- State mirrored from the server (display and intent choice only).
 	local meters = { health = 0, warmth = 0, hunger = 0, day = 1, isNight = false }
-	local stacks: { [number]: { id: string, count: number } } = {}
+	local stacks: { [number]: { id: string, count: number, durability: number? } } = {}
 	local counts: { [string]: number } = {}
 	local hasItems = false
 	local selectedSlot = 1 -- server-confirmed
@@ -371,6 +405,8 @@ function HudController.start()
 	local lastDist = -1
 	local targetKind = "none"
 	local targetInstance: Instance? = nil
+	local targetDistance: number? = nil -- studs to targetInstance (nil = none)
+	local targetAimed = false -- true when the cursor/aim picked it (not just the closest)
 	local fireInstance: Instance? = nil
 	local fireDist = math.huge
 	local benchInstance: Instance? = nil -- nearest crafting station in range
@@ -388,6 +424,17 @@ function HudController.start()
 			return pendingSlot
 		end
 		return selectedSlot
+	end
+
+	-- Interact context for the structure hook: the HUD action plus the gather target's distance/aim, so a
+	-- chest closer than a tree (and not under the aim) is picked instead of the tree.
+	local function interactCtx(action: string): InteractCtx
+		return {
+			action = action,
+			slot = shownSlot(),
+			gatherDistance = if targetKind == "gather" then targetDistance else nil,
+			gatherAimed = targetKind == "gather" and targetAimed,
+		}
 	end
 
 	local function selectedDef(): ItemCatalog.ItemDef?
@@ -537,6 +584,7 @@ function HudController.start()
 		end
 	end
 
+	local recordHintDay = 0
 	local function applyMeters()
 		local values = {
 			health = Config.Meters.MaxHealth,
@@ -550,12 +598,26 @@ function HudController.start()
 			bar.label.Text = `{bar.name} {math.floor(v + 0.5)}`
 		end
 		dayLabel.Text = if meters.isNight then `Day {meters.day} (night)` else `Day {meters.day}`
+		-- Record chase: "N days to your record" from the saved best (Player BestDays), once per day.
+		if meters.day ~= recordHintDay then
+			recordHintDay = meters.day
+			local best = player:GetAttribute(Config.Meta.BestDaysAttribute)
+			local hint = MetaSnapshot.recordHint(
+				meters.day,
+				if type(best) == "number" then best else 0,
+				Config.Meta.RecordHintDays
+			)
+			if hint then
+				Toast.show(hint)
+			end
+		end
 	end
 
 	-- Target pick: on PC the candidate nearest the mouse ray (within AimSlack) wins, else the nearest
 	-- within ActionRange. Tagged instances only; never scans Workspace.
 	local function pickTarget()
 		targetKind, targetInstance, fireInstance = "none", nil, nil
+		targetDistance, targetAimed = nil, false
 		fireDist, benchInstance, benchDist = math.huge, nil, math.huge
 		local character = player.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -601,8 +663,12 @@ function HudController.start()
 		scan(Config.Mobs.Tag, "attack")
 		if aimInst then
 			targetKind, targetInstance = aimKind, aimInst
+			targetAimed = true
+			local aimPos = positionOf(aimInst)
+			targetDistance = if aimPos then (aimPos - root.Position).Magnitude else nil
 		else
 			targetKind, targetInstance = nearKind, nearInst
+			targetDistance = if nearInst then bestNear else nil
 		end
 		local fireBest = Config.Fire.AddFuelRange
 		for _, inst in CollectionService:GetTagged(Config.Fire.Tag) do
@@ -788,6 +854,11 @@ function HudController.start()
 	local function doAction(): string
 		pickTarget()
 		local action = currentAction()
+		currentActionName = action
+		local hook = interactHook
+		if hook and hook.run(interactCtx(action)) then
+			return "interact"
+		end
 		if action == "fuel" then
 			fuel(nil)
 		elseif action == "gather" then
@@ -870,7 +941,13 @@ function HudController.start()
 					and type(stack.id) == "string"
 				then
 					local n = if type(stack.count) == "number" then stack.count else 1
-					stacks[i] = { id = stack.id, count = n }
+					stacks[i] = {
+						id = stack.id,
+						count = n,
+						durability = if type(stack.durability) == "number"
+							then stack.durability
+							else nil,
+					}
 					counts[stack.id] = (counts[stack.id] or 0) + n
 					hasItems = true
 				end
@@ -879,7 +956,16 @@ function HudController.start()
 				local stack = stacks[i]
 				local def = if stack then ItemCatalog.Items[stack.id] else nil
 				slot.name.Text = if def then def.name elseif stack then stack.id else ""
-				slot.count.Text = if stack and stack.count > 1 then `x{stack.count}` else ""
+				local itemDef = if stack then ItemCatalog.Items[stack.id] else nil
+				slot.count.Text = if stack and stack.count > 1
+					then `x{stack.count}`
+					elseif
+						stack
+						and itemDef
+						and stack.durability
+						and Repair.isRepairable(itemDef)
+					then `{Repair.percent(itemDef, stack.durability)}%`
+					else ""
 			end
 			-- Onboarding credit from real inventory changes.
 			local now = os.clock()
@@ -975,6 +1061,12 @@ function HudController.start()
 
 	local function promptFor(): (Instance?, string, number?, boolean)
 		local action = currentAction()
+		currentActionName = action
+		local hook = interactHook
+		local interact = if hook then hook.peek(interactCtx(action)) else nil
+		if interact then
+			return interact.target, interact.text, nil, interact.warn
+		end
 		if action == "fuel" and fireInstance then
 			return fireInstance, `Add wood {inputHint}`, nil, false
 		end
@@ -1065,7 +1157,11 @@ function HudController.start()
 			local t, text, progress, warn = promptFor()
 			prompt.set(t, text, progress, warn)
 			if actionButton then
-				actionButton.Text = ActionPick.Labels[currentAction()] or ActionPick.Labels.none
+				local hook = interactHook
+				local interact = if hook then hook.peek(interactCtx(currentAction())) else nil
+				actionButton.Text = if interact
+					then interact.label
+					else (ActionPick.Labels[currentAction()] or ActionPick.Labels.none)
 			end
 		end
 
@@ -1119,7 +1215,7 @@ function HudController.start()
 	-- Studio-only QA bridge: the same handlers the inputs call.
 	addCleanup(
 		cleanups,
-		QABridge.start({
+		QABridge.start(setmetatable({
 			selectSlot = function(slot: number)
 				requestSelect(slot)
 			end,
@@ -1170,6 +1266,9 @@ function HudController.start()
 			ghostRotate = function()
 				ghost.rotate()
 			end,
+			ghostTouch = function(value: boolean?)
+				ghost.setTouch(value)
+			end,
 			eat = function()
 				eat()
 			end,
@@ -1204,7 +1303,7 @@ function HudController.start()
 					hunger = meters.hunger,
 				}
 			end,
-		})
+		}, { __index = qaExtra }) :: any)
 	)
 
 	local function teardown()

@@ -19,6 +19,7 @@ export type DebugConfig = {
 	MobKinds: { string },
 	SpawnMobDistance: number,
 	SpawnMobDrop: number,
+	TeleportLogMax: number,
 }
 
 export type TimeConfig = {
@@ -50,6 +51,8 @@ export type MeterConfig = {
 	ReplicateInterval: number,
 	WarmthAttribute: string,
 	HungerAttribute: string,
+	MaxWarmthDrainMultiplier: number, -- cap on the combined warmth drain (night x biome x event x buff)
+	MaxHungerDrainMultiplier: number, -- cap on the combined hunger drain
 }
 
 export type FireCost = { { id: string, count: number } }
@@ -141,6 +144,20 @@ export type ScalingConfig = {
 	MaxMobHealthMultiplier: number,
 	MaxMobDamageMultiplier: number,
 	MaxMobBudgetMultiplier: number,
+	-- Phase 3: depth (biome ring 0..3) and party scaling; every factor has a hard cap.
+	MaxLiveMobs: number, -- absolute cap on live mobs in the run, after every multiplier
+	MobBudgetPerRing: number,
+	MaxRingBudgetMultiplier: number,
+	MobHealthPerRing: number,
+	MaxRingHealthMultiplier: number,
+	MobDamagePerRing: number,
+	MaxRingDamageMultiplier: number,
+	MaxPartyBudgetMultiplier: number, -- cap on MobBudgetPerExtraPlayer scaling
+	MobHealthPerExtraPlayer: number,
+	MaxPartyHealthMultiplier: number,
+	HotSpringSpawnBias: number, -- budget multiplier while a player is near a hot spring (springs attract mobs)
+	HotSpringBiasRange: number, -- studs from a hot spring within which the bias applies
+	MaxSpawnMultiplier: number, -- cap on event x hot-spring budget multipliers (MaxLiveMobs still applies)
 }
 
 export type WorldConfig = {
@@ -187,6 +204,7 @@ export type ToolTierConfig = {
 	Hand: number,
 	Basic: number,
 	Stone: number,
+	Metal: number, -- Phase 3: forge tools
 }
 
 export type GatherConfig = {
@@ -231,6 +249,21 @@ export type BuildConfig = {
 	OwnerAttribute: string,
 	RangeExempt: { [string]: boolean }, -- structure ids placeable anywhere (no lit-fire build radius)
 	Ghost: GhostConfig,
+	-- Phase 3 structure names (set by brief 17; read by 15/16)
+	HealthAttribute: string, -- structure attribute: current health (breakable structures)
+	BlockerTag: string, -- tag on walls and closed doors (mob pathing treats them as solid)
+	TrapTag: string, -- tag on spike traps (damages mobs only)
+	StorageTag: string, -- tag on storage chests
+	DoorOpenAttribute: string, -- door attribute: true while open
+}
+
+-- Warm spots: cabins + hot springs (brief 13), sleeping bags (brief 17), campfires (existing tag).
+-- Warmth drain stops inside; the Stalker never enters.
+export type WarmSpotConfig = {
+	Tag: string,
+	RadiusAttribute: string, -- number attribute: warm radius in studs
+	CabinRadius: number,
+	HotSpringRadius: number,
 }
 
 -- Client-only placement preview (transparent copy of the structure on the ground). Visual only.
@@ -289,6 +322,9 @@ export type MobConfig = {
 	SpawnRayHeight: number,
 	SpawnRayLength: number,
 	SpawnLift: number,
+	BuriedAttribute: string, -- mob model: snow lurker lies hidden until a player is close
+	HeldRangedAttribute: string, -- Player: the selected item is a ranged weapon (client shows Shoot)
+	BossAttribute: string, -- mob model on bosses (client may show a name plate)
 	Hare: MobStats,
 	Caribou: MobStats,
 	Wolf: MobStats,
@@ -311,7 +347,6 @@ export type DownedConfig = {
 	ReviveRange: number,
 	ReviveHealthFraction: number,
 	DownedWalkSpeed: number,
-	DisconnectHoldSeconds: number,
 	StateAttribute: string,
 }
 
@@ -389,6 +424,427 @@ export type NetConfig = {
 	AttackRateInterval: number,
 	UseRateInterval: number,
 	SelectRateInterval: number,
+	PadRateInterval: number,
+	PadModeRateInterval: number,
+	DailyClaimRateInterval: number,
+	-- Phase 3
+	PingRateInterval: number,
+	StorageRateInterval: number,
+	MapRateInterval: number,
+	RepairRateInterval: number,
+	CookRateInterval: number,
+	ShootRateInterval: number,
+	-- Phase 4
+	ShopRateInterval: number,
+	RobuxPromptRateInterval: number,
+	EquipRateInterval: number,
+	SettingsRateInterval: number,
+	MetaStateRateInterval: number,
+	HintRateInterval: number,
+}
+
+-- Phase 2 lobby: pads, party timer, lobby attributes. Owned by brief 7 (contracts); used by briefs 8 and 10.
+export type LobbyConfig = {
+	MaxPlayers: number, -- lobby server size
+	PadCount: number, -- pads 1..PadCount; pad i holds up to i players
+	PadTimerSeconds: number, -- countdown from first step; resets to this when someone joins
+	PadModeFriends: string, -- host-only pad mode: Roblox friends of the host only
+	PadModeOpen: string, -- open-fill: anyone in the lobby
+	DefaultPadMode: string,
+	PadTag: string, -- CollectionService tag on pad parts
+	PadIndexAttribute: string, -- pad part attribute: 1..PadCount
+	PlayerPadAttribute: string, -- Player attribute: pad index the player is on (0 = none)
+	FriendCheckTimeout: number, -- seconds to wait on IsFriendsWith before refusing the join
+	PollInterval: number, -- seconds between pad timer / off-pad checks (one loop for all pads)
+	PadEdgeMargin: number, -- studs beyond the pad edge before a member counts as stepped off
+	PadHeightMargin: number, -- studs above/below the pad that still count as on it
+	LaunchHoldSeconds: number, -- pad stays locked after a successful teleport call, then resets
+	PadJoinLift: number, -- studs above the pad top a remote join places the character root
+	RootName: string, -- Workspace folder built by tools/build_lobby.luau
+	SpawnName: string, -- SpawnLocation inside RootName; lobby players spawn here
+	StatPublishSeconds: number, -- lobby stat attribute publish loop (one loop for every player)
+	LeaderboardStoreName: string, -- OrderedDataStore for max days
+	LeaderboardTopCount: number,
+	LeaderboardRefreshSeconds: number, -- one GetSortedAsync per interval
+	LeaderboardWriteIntervalSeconds: number, -- at most one UpdateAsync per interval
+	LeaderboardMaxPending: number, -- cap on queued leaderboard writes
+	LeaderboardRetryAfterFailSeconds: number,
+	NameCacheMax: number, -- leaderboard display-name cache size
+}
+
+-- Phase 2 run lifecycle. Owned by brief 7; used by brief 9.
+export type RunConfig = {
+	RejoinWindowSeconds: number, -- single source: disconnected party member's run state is held this long (revive limit = Downed.BleedoutSeconds)
+	SummarySeconds: number, -- seconds the run summary shows before the party is sent back to the lobby
+	ReturnRetryCount: number, -- teleport-to-lobby retries before kicking with a message
+	PollInterval: number, -- seconds between run roster polls (own cadence, not Meters.TickInterval)
+	SeedWaitSeconds: number, -- run server boot waits this long for the first player's teleport data (seed)
+	ReturnFailedMessage: string, -- kick text when returning to the lobby failed
+	RefusedMessage: string, -- kick text for a player not in this run's party
+	DefaultCause: string, -- summary "what got you" when nothing was recorded
+}
+
+-- Teleport data contract between lobby and run servers. Validated by shared/logic/TeleportData via Guard.
+export type TeleportConfig = {
+	DataVersion: number, -- bump on any TeleportData shape change
+	ModeRun: string,
+	ModeLobby: string,
+	MaxSeed: number, -- seeds are integers in [0, MaxSeed]
+	MaxPartySize: number,
+	ServerModeAttribute: string, -- Workspace attribute: ModeRun or ModeLobby, set at server boot
+	StudioDefaultMode: string, -- Studio play mode when Workspace has no preset ServerMode attribute
+	ModeWaitSeconds: number, -- client waits this long for the ServerMode attribute before defaulting to run UI
+	RetryCount: number,
+	RetryDelay: number, -- seconds, doubled each retry
+}
+
+-- Coin payouts and meta caps. ALL VALUES ARE PLACEHOLDERS pending balance. Owned by brief 7; used by brief 9.
+export type MetaConfig = {
+	CoinsPerRun: number, -- paid on every run end, even a bad one
+	CoinsPerDaySurvived: number,
+	CoinsPerKill: number,
+	CoinsPerBossKill: number,
+	CoinsPerFriendInParty: number, -- small social bonus per friend in the party
+	MaxCoinsPerRun: number, -- hard cap on one run's payout
+	DailyRewardCoins: number,
+	MaxStatValue: number, -- clamp for every saved stat counter
+	MaxAchievements: number, -- max entries in profile.achievements
+	MaxAchievementIdLength: number,
+	CoinsPerDarkEventSurvived: number, -- Phase 3: paid per dark event a player is alive at the end of
+	-- Phase 4 (brief 21 contracts; consumers 19 meta, 20 atmosphere). Every saved table has a cap here.
+	MinAchievementDefs: number, -- data/Achievements.luau holds MinAchievementDefs..MaxAchievementDefs entries
+	MaxAchievementDefs: number, -- (<= MaxAchievements, the saved cap)
+	MaxAchievementCoinReward: number, -- cap on one achievement's coin reward
+	MaxProgressEntries: number, -- max entries in profile.achievementProgress
+	MaxOwnedCosmetics: number, -- max entries in profile.ownedCosmetics
+	MaxUnlockedGear: number, -- max entries in profile.unlockedGear
+	MaxTitles: number, -- max entries in profile.titles
+	MaxHintsSeen: number, -- max entries in profile.hintsSeen
+	MaxItemIdLength: number, -- cosmetic / perk / gear / title / hint / progress key length cap
+	MaxEquippedPerks: number, -- one perk equipped (and applied) per run
+	PerkStats: { string }, -- the only modifiers a perk may change (fractions)
+	MaxPerkMagnitude: number, -- cap on any perk's |amount| so none trivializes survival
+	MinCoinPrice: number, -- coin shop price bounds
+	MaxCoinPrice: number,
+	MaxRobuxPrice: number, -- sanity cap on displayed Robux prices (the charged price is the product's)
+	MaxCoinPackCoins: number, -- cap on coins one coin pack grants
+	MaxStarterGearCount: number, -- cap on one starter gear grant at run start
+	StarterGearWaitSeconds: number, -- run start: bounded wait for the inventory before granting gear
+	StarterGearPollSeconds: number,
+	CosmeticTagPrefix: string, -- character tag prefix (+ slot) for the equipped cosmetic
+	CosmeticSlots: { string },
+	ProductIds: { [string]: number }, -- developer product id by Shop productKey; 0 = placeholder (never prompted)
+	MaxProcessedReceipts: number, -- receipt log cap (oldest evicted); grants are idempotent by PurchaseId
+	MaxReceiptIdLength: number,
+	RecordHintDays: number, -- HUD shows "N days to your record" when within this many days of maxDays
+	BestDaysAttribute: string, -- Player attribute (run server): saved maxDays, for the record hint
+	TitleAttribute: string, -- Player attribute: equipped title display name ("" = none), visible to all
+	CosmeticAttribute: string, -- Player attribute: equipped cosmetic id ("" = none), visible to all
+	MaxFriendBonusFriends: number, -- cap on friends counted for CoinsPerFriendInParty
+}
+
+-- Phase 4 performance budgets (brief 20). Target: 30+ FPS on a mid-range phone.
+export type PerfConfig = {
+	TargetFps: number,
+	FpsSampleSeconds: number, -- client FPS sample window for the measurable check (tools/qa)
+	MaxLiveParts: number, -- cap on BaseParts under the run world (chunks + structures + mobs + effects)
+	MaxLiveMobs: number, -- same value as Scaling.MaxLiveMobs (single source MAX_LIVE_MOBS)
+	ChunkLoadBudgetPerFrame: number, -- chunks built or unloaded per Heartbeat
+	ChunkPartBudgetPerFrame: number, -- parts created per Heartbeat while a chunk builds
+	MaxParticleEmitters: number, -- cap on enabled ParticleEmitters on one client
+	MaxParticleRate: number, -- cap on any emitter's Rate
+	MaxActiveSounds: number, -- cap on concurrently playing one-shot cue sounds on one client
+	StreamingEnabled: boolean,
+	StreamingTargetRadius: number,
+	StreamingMinRadius: number,
+	SwingBroadcastRange: number, -- studs: SwingBroadcast goes only to players this close to the swinger
+	SwingMaxPerSecond: number, -- client cap on relayed swings animated per second
+}
+
+-- Phase 4 player settings (saved in profile.settings). Boolean settings only.
+export type SettingsConfig = {
+	Keys: { string }, -- valid SettingsSetRequest keys (profile.settings field names)
+	ReduceScares: string, -- key "reduceScares"
+	ReduceScaresAttribute: string, -- Player attribute mirrored from profile.settings.reduceScares
+	DefaultReduceScares: boolean,
+	ReducedScareVisualMultiplier: number, -- client: horror visual/sound intensity when reduced (0..1)
+}
+
+-- Phase 4 first-run hints (seen ids saved in profile.hintsSeen).
+export type HintsConfig = {
+	Ids: { string },
+	ShowSeconds: number, -- a shown hint hides after this long (it still completes only on its action)
+	CheckInterval: number, -- client seconds between hint trigger checks
+	LookupRange: number, -- studs: a chest counts as nearby
+	WarnWindowSeconds: number, -- a warning cue keeps its hint triggered this long
+}
+
+-- ===== Phase 3 contracts (brief 12). See docs/INTEGRATION.md "Phase 3" for owners/consumers. =====
+-- Rule: every value that scales by day, depth (biome ring) or party size has a Max* hard cap here.
+-- Per-entry tuning lives in src/shared/data/*.luau (owned by briefs 13-17); tests/DataTests.luau
+-- checks those tables stay inside these caps. Hidden metrics (Dread, hunt chance, event timers) are
+-- server-only values: these constants may replicate, the live values never do.
+
+-- Biome rings (data: shared/data/Biomes.luau). Cold severity multiplies warmth drain.
+export type BiomeConfig = {
+	RingAttribute: string, -- Player attribute: biome ring the player stands in (0 = start forest)
+	ColdResistanceAttribute: string, -- Player attribute: worn cold resistance (sum of clothing, capped)
+	MaxColdSeverity: number, -- cap on any biome's warmth drain multiplier
+	MaxRequiredColdResistance: number, -- cap on any biome's requiredColdResistance
+	ResistanceDrainReductionPerPoint: number, -- drain *= 1 - points * this ...
+	MinDrainFraction: number, -- ... floored here (gear never removes cold entirely)
+	UnderdressedDrainPerPoint: number, -- extra drain multiplier per missing resistance point
+	MaxUnderdressedMultiplier: number, -- cap on the underdressed multiplier
+	UpdateInterval: number, -- seconds between biome/resistance recomputes (one loop)
+	OreSlotTag: string, -- CollectionService tag on IronOre slot parts
+	ThinIceWarmthPenalty: number, -- warmth lost when thin ice breaks under a player
+	Tuning: BiomeTuning, -- world-gen tuning (BiomeLogic.Tuning aliases this)
+}
+
+export type BiomeTuning = {
+	MaxLootTier: number,
+	HearthBurnSeconds: number, -- warmth per Wood added to a cabin hearth
+	HearthMaxSeconds: number, -- a hearth never holds more than this
+	ThinIceCrackSeconds: number, -- continuous standing before a patch breaks
+	ThinIceDamage: number, -- one-time damage to a player on a breaking patch
+	ThinIcePatchRadius: number,
+	ThinIcePatchCount: number,
+	LootPromptRange: number,
+}
+
+-- Structure tuning (data/Structures.Tuning aliases this).
+export type StructuresConfig = {
+	DoorTag: string,
+	WatchtowerTag: string,
+	ChestIdAttribute: string,
+	InteractRange: number,
+	ServerInteractRange: number,
+	DoorOpenTransparency: number,
+	StructureTickSeconds: number,
+	TrapHeight: number,
+	WatchtowerStandHeight: number,
+	WatchtowerRevealSeconds: number,
+	WatchtowerTrussWidth: number,
+}
+
+-- Clothing (data: shared/data/Clothing.luau). Worn = best piece per slot carried in the inventory.
+export type ClothingConfig = {
+	Slots: { string }, -- clothing slot names
+	MaxTier: number,
+	MaxColdResistance: number, -- cap on the summed resistance of every worn piece
+}
+
+-- Dark events (data: shared/data/Events.luau). Timers are server-only.
+export type EventsConfig = {
+	FirstDay: number, -- no dark event before this day (design: day 3)
+	MinGapSeconds: number, -- min seconds from one dark event's end to the next start
+	CheckIntervalSeconds: number, -- seconds between start rolls
+	BaseChancePerCheck: number,
+	ChancePerDay: number, -- added per day past FirstDay
+	MaxChancePerCheck: number, -- hard cap on the roll chance
+	MaxPerDay: number, -- hard cap on dark events started per in-game day
+	BlizzardBufferSeconds: number, -- no dark event within this many seconds of a blizzard (before or after)
+	MinWarningSeconds: number,
+	MaxWarningSeconds: number,
+	MaxDurationSeconds: number,
+	MaxWarmthDrainMultiplier: number, -- cap for any event or blizzard modifier
+	MaxFuelBurnMultiplier: number,
+	MaxDreadGainMultiplier: number,
+	MaxHuntChanceBonus: number,
+	MinVisibility: number, -- floor for any event visibility modifier (1 = normal)
+	MaxSpawnMultiplier: number, -- cap for any event mob-budget modifier
+	ActiveAttribute: string, -- Workspace attribute: active event id ("" = none). Visible effect only, no timer.
+}
+
+-- Dread: hidden per-party value (never replicated). Cue levels are the only client view.
+export type DreadConfig = {
+	Max: number,
+	TickInterval: number,
+	GainAlonePerSecond: number,
+	GainFarFromCampPerSecond: number,
+	FarFromCampDistance: number, -- studs from the camp fire
+	GainDarkPerSecond: number, -- night or false night, outside light
+	GainBlizzardPerSecond: number,
+	GainLurkerSighting: number, -- one-off per sighting
+	DecayNearFirePerSecond: number,
+	DecayPerSecond: number, -- passive decay elsewhere
+	GainPerDay: number, -- gain multiplier added per day
+	MaxDayGainMultiplier: number,
+	GainPerRing: number, -- gain multiplier added per biome ring
+	MaxRingGainMultiplier: number,
+	CueThresholds: { number }, -- ascending; cue level = count of thresholds reached (0..#CueThresholds)
+}
+
+-- Isolation weights pick horror targets (Stalker, lurkers, scares).
+export type IsolationConfig = {
+	Range: number, -- studs: teammates within this count as "with" the player
+	WeightAlone: number,
+	WeightPair: number,
+	WeightGroup: number, -- 3+ together
+	SoloBaseline: number, -- one-player party weight (gentler than WeightAlone)
+	FullGroupBlocksBigEvents: boolean, -- whole party within Range blocks hunts, false night, the quiet
+}
+
+-- The Stalker: unkillable pressure system. Hunt chance is hidden.
+export type StalkerConfig = {
+	FirstHuntDay: number, -- no hunts on day 1
+	HuntCheckIntervalSeconds: number,
+	BaseHuntChance: number,
+	HuntChancePerDread: number,
+	HuntChancePerDay: number,
+	MaxHuntChance: number, -- hard cap per check (after event bonuses)
+	HuntCooldownSeconds: number,
+	TelegraphSeconds: number, -- tells play this long before it can strike
+	MaxHuntSeconds: number,
+	TorchHuntShorten: number, -- fraction of remaining hunt removed while the target holds a lit torch
+	Damage: number, -- must stay below Meters.MaxHealth (never kills from full)
+	WarmthLoss: number,
+	KnockbackStuds: number,
+	RetreatSeconds: number,
+	WalkSpeed: number,
+	ChaseSpeed: number,
+	StrikeRange: number,
+	ApproachDistance: number, -- studs it lurks at during the telegraph
+	TorchRepelRadius: number,
+	FlareRepelRadius: number,
+	FireRepelMargin: number, -- studs beyond any WarmRadius it will not enter
+	Tag: string,
+}
+
+-- Lurkers: never attack; vanish when approached or looked at.
+export type LurkerConfig = {
+	SpawnIntervalSeconds: number,
+	BaseDensity: number, -- spawn chance per interval per player
+	DensityPerDay: number,
+	DensityPerRing: number,
+	MaxDensity: number,
+	MaxPerPlayer: number,
+	MaxTotal: number,
+	SpawnMinDistance: number,
+	SpawnMaxDistance: number,
+	VanishDistance: number,
+	LookDotThreshold: number, -- camera look dot above this = looked at head-on
+	LifetimeSeconds: number,
+	Tag: string,
+}
+
+-- Phantom scares budget (Phase 4 adds content; caps are fixed now).
+export type ScaresConfig = {
+	MinCooldownSeconds: number,
+	MaxPerDay: number,
+	GroupChanceMultiplier: number, -- ambient scares on a full group are this much rarer
+	ReducedSettingMultiplier: number, -- player "reduce scares" setting
+}
+
+-- Sensory cues to the client (Remotes.Cue). Coarse levels only; never a raw metric.
+export type CueConfig = {
+	Kinds: { string },
+	MaxLevel: number,
+	MinIntervalSeconds: number, -- per player per kind
+	Horror: HorrorCueConfig, -- client presentation of the horror cues (visual only)
+}
+
+export type HorrorCueConfig = {
+	FrostPerLevel: number, -- frost overlay opacity per DreadLevel step
+	FrostTell: number, -- frost opacity during a Stalker tell
+	DesatPerLevel: number, -- ColorCorrection saturation per level
+	DesatTell: number,
+	RumbleVolumePerLevel: number,
+	FadeSeconds: number,
+	GutterSeconds: number,
+	GutterBrightness: number, -- fraction of normal light brightness while guttering
+	PulseSeconds: number,
+	FrostEdgeColor: { number },
+	EdgeSize: number, -- screen fraction covered by each frost edge
+	SoundMaxDistance: number,
+	SoundCleanupSeconds: number, -- fallback cleanup if a sound never ends
+}
+
+export type BossConfig = {
+	MiniBossFirstDay: number,
+	MiniBossMaxAlive: number,
+	MiniBossRespawnDays: number,
+	BlizzardBossFirstDay: number,
+	BlizzardBossChance: number,
+	BlizzardBossChancePerDay: number,
+	MaxBlizzardBossChance: number,
+	HealthPerExtraPlayer: number,
+	MaxHealthMultiplier: number,
+	DamagePerDay: number,
+	MaxDamageMultiplier: number,
+}
+
+export type BlizzardConfig = {
+	EventId: string, -- EventService event id for a blizzard (onEventEnd)
+	ActiveAttribute: string, -- Workspace attribute: true during a blizzard (visible weather)
+	WarningAttribute: string, -- Workspace attribute: true during the warning (visible sky cue)
+}
+
+-- Projectiles (bow): the only way players can hurt each other.
+export type ProjectileConfig = {
+	Speed: number,
+	MaxRange: number,
+	MaxLifetime: number,
+	MaxActivePerPlayer: number,
+	AimAssistDegrees: number, -- mobile aim assist cone
+	FriendlyFireMultiplier: number, -- damage a stray projectile deals to a teammate
+	MeleeFriendlyFire: boolean, -- always false: melee never hurts players
+}
+
+export type StorageConfig = {
+	ChestSlots: number,
+	OpenRange: number,
+	MaxChestsPerRun: number,
+	OpenAttribute: string, -- Player attribute: chest the player has open (structure id string, "" = none)
+}
+
+-- Fog-of-war map. Explored cells are per-run server state (not saved).
+export type MapConfig = {
+	CellSize: number, -- studs per map cell
+	ExploreRadius: number, -- studs around a player marked explored
+	ExploreTickSeconds: number,
+	MaxCellsPerPayload: number,
+	ItemId: string, -- item needed to open the map
+	ButtonWidthPx: number,
+	ButtonHeightPx: number,
+	ButtonScaleX: number,
+	ButtonScaleY: number,
+	ButtonOffsetYPx: number,
+}
+
+export type PingConfig = {
+	Kinds: { string },
+	MaxRange: number, -- studs from the pinger
+	LifetimeSeconds: number,
+	MaxActivePerPlayer: number,
+}
+
+export type RepairConfig = {
+	Station: string, -- Config.Craft.Stations key
+	CostFraction: number, -- fraction of the item's recipe inputs (rounded up)
+	MinCost: number,
+}
+
+export type CookingConfig = {
+	StationRange: number, -- campfire cooking uses Fire.CookRadius
+	Station: string, -- Config.Craft.Stations key for the cooking station
+	StationBuffMultiplier: number, -- buff duration multiplier when cooked at the station
+	MaxStationBuffMultiplier: number,
+}
+
+export type BuffConfig = {
+	MaxActive: number,
+	MaxDurationSeconds: number,
+	MaxWarmthDrainReduction: number, -- buff warmth drain multiplier >= 1 - this
+	MaxHungerDrainReduction: number,
+	MaxHealthRegenBonus: number,
+	MaxSpeedBonus: number,
+	ActiveAttribute: string, -- Player attribute: comma list of active buff ids (visible)
+}
+
+export type DurabilityConfig = {
+	BrokenToolRemains: boolean, -- false: a tool at 0 is removed (Phase 1 behaviour)
+	MetalToolMultiplier: number, -- metal tool durability vs basic
 }
 
 export type Config = {
@@ -409,9 +865,37 @@ export type Config = {
 	Combat: CombatConfig,
 	Downed: DownedConfig,
 	Net: NetConfig,
+	Lobby: LobbyConfig,
+	Run: RunConfig,
+	Teleport: TeleportConfig,
+	Meta: MetaConfig,
 	Held: HeldConfig,
 	Feedback: FeedbackConfig,
 	Debug: DebugConfig,
+	Biome: BiomeConfig,
+	Clothing: ClothingConfig,
+	Events: EventsConfig,
+	Dread: DreadConfig,
+	Isolation: IsolationConfig,
+	Stalker: StalkerConfig,
+	Lurkers: LurkerConfig,
+	Scares: ScaresConfig,
+	Cue: CueConfig,
+	Bosses: BossConfig,
+	Blizzard: BlizzardConfig,
+	Projectile: ProjectileConfig,
+	Storage: StorageConfig,
+	Map: MapConfig,
+	Ping: PingConfig,
+	Repair: RepairConfig,
+	Cooking: CookingConfig,
+	Buffs: BuffConfig,
+	Durability: DurabilityConfig,
+	WarmSpot: WarmSpotConfig,
+	Structures: StructuresConfig,
+	Perf: PerfConfig,
+	Settings: SettingsConfig,
+	Hints: HintsConfig,
 	RemoteFolderName: string,
 	DefaultRateLimitInterval: number,
 	ProfileStoreName: string,
@@ -440,6 +924,9 @@ export type Config = {
 	SpawnPointName: string,
 }
 
+-- Single source for the live mob cap (Scaling.MaxLiveMobs and Perf.MaxLiveMobs).
+local MAX_LIVE_MOBS = 40
+
 local Config: Config = {
 	-- Studio-only DebugService. Attributes live on Workspace (world state) or the Player.
 	Debug = {
@@ -458,9 +945,24 @@ local Config: Config = {
 		BridgeName = "DebugBridge", -- Studio-only ServerStorage BindableFunction for tools/qa (another VM)
 		ClientBridgeName = "ClientQABridge", -- Studio-only PlayerScripts BindableFunction: real client input handlers
 		GiveCount = 10, -- items granted by the Studio-only "give" command
-		MobKinds = { "ArcticHare", "Caribou", "Wolf" }, -- valid "spawnMob" args (MobService kind names)
+		-- valid "spawnMob" args (MobService kind names; Phase 1 + data/Mobs)
+		MobKinds = {
+			"ArcticHare",
+			"Caribou",
+			"Wolf",
+			"Fish",
+			"PolarBear",
+			"IceWraith",
+			"SnowLurker",
+			"CaveCrawler",
+			"IceWarden",
+			"CaveMatriarch",
+			"RuinColossus",
+			"WhiteoutBeast",
+		},
 		SpawnMobDistance = 10, -- studs in front of the player a "spawnMob" mob appears
 		SpawnMobDrop = 3, -- studs below the player root used as the spawn ground height
+		TeleportLogMax = 20, -- Studio fake TeleportAdapter: recorded calls kept for QA (oldest dropped)
 	},
 	-- Time and day/night. Replicated via Workspace attributes below.
 	Time = {
@@ -492,6 +994,8 @@ local Config: Config = {
 		ReplicateInterval = 0.5, -- min seconds between MetersUpdate sends per player
 		WarmthAttribute = "Warmth", -- Player attribute: rounded warmth (health is on the Humanoid)
 		HungerAttribute = "Hunger", -- Player attribute: rounded hunger
+		MaxWarmthDrainMultiplier = 6, -- cap on night x biome x event x buff warmth drain (Phase 3)
+		MaxHungerDrainMultiplier = 1.5, -- cap on combined hunger drain (food debuffs)
 	},
 	Fire = {
 		WarmRadius = 18, -- studs where warmth regenerates
@@ -589,12 +1093,25 @@ local Config: Config = {
 		MaxMobHealthMultiplier = 4, -- cap on health scaling
 		MaxMobDamageMultiplier = 3, -- cap on damage scaling
 		MaxMobBudgetMultiplier = 3, -- cap on day scaling of the mob budget
+		MaxLiveMobs = MAX_LIVE_MOBS, -- absolute cap on live mobs (all multipliers applied, then clamped)
+		MobBudgetPerRing = 0.1, -- budget added per biome ring out from the start forest
+		MaxRingBudgetMultiplier = 1.4,
+		MobHealthPerRing = 0.15,
+		MaxRingHealthMultiplier = 1.6,
+		MobDamagePerRing = 0.1,
+		MaxRingDamageMultiplier = 1.4,
+		MaxPartyBudgetMultiplier = 2.5, -- cap on the party-size budget factor (6 players)
+		MobHealthPerExtraPlayer = 0.1,
+		MaxPartyHealthMultiplier = 1.5,
+		HotSpringSpawnBias = 1.25, -- hot springs attract mobs: slightly larger budget near one
+		HotSpringBiasRange = 60,
+		MaxSpawnMultiplier = 2, -- event x hot-spring budget cap (then MaxLiveMobs)
 	},
 	World = {
 		GridSize = 8, -- chunks per side (8x8 = 64)
 		ChunkSize = 320, -- studs per chunk side (8 * 320 = 2560 studs square)
 		DefaultSeed = 12345, -- seed when none is supplied (tests, Studio)
-		StartForestRing = 1, -- ring index (0 = center) of the start forest, camp is in it
+		StartForestRing = 0, -- ring index (0 = center) of the start forest, camp is in it (Phase 3: biome ring 0)
 		CampMinRingDistance = 1, -- min chunks of separation from the world edge for camp
 		CampGuaranteedWoodCount = 6, -- trees guaranteed near camp
 		CampGuaranteedFoodCount = 3, -- food sources guaranteed near camp
@@ -631,6 +1148,7 @@ local Config: Config = {
 		Hand = 0, -- no tool
 		Basic = 1, -- wood tools (axe, pickaxe)
 		Stone = 2, -- stone tools
+		Metal = 3, -- iron tools (forge)
 	},
 	Gather = {
 		Range = 12, -- max studs from player to node
@@ -648,8 +1166,11 @@ local Config: Config = {
 		-- Recipes with a station field unlock only within Range studs of a tagged station (server checks at craft).
 		Stations = {
 			workbench = { Tag = "Workbench", Range = 14, Label = "workbench" },
+			forge = { Tag = "Forge", Range = 14, Label = "forge" }, -- Phase 3 tier 2
+			cookingStation = { Tag = "CookingStation", Range = 12, Label = "cooking station" },
+			mapTable = { Tag = "MapTable", Range = 12, Label = "map table" },
 		},
-		MaxTier = 1, -- highest recipe tier listed in the panel (0 = by hand)
+		MaxTier = 2, -- highest recipe tier listed in the panel (0 = by hand, 2 = forge)
 	},
 	Food = {
 		RawMeatHunger = 25, -- hunger restored by eating one Raw Meat (ItemCatalog food rows read this)
@@ -667,6 +1188,11 @@ local Config: Config = {
 		OwnerAttribute = "OwnerUserId", -- structure attribute: placer's UserId
 		-- Exempt from the lit-fire build radius: extra campfires start a new camp, sleeping bags are for travel.
 		RangeExempt = { Campfire = true, SleepingBag = true },
+		HealthAttribute = "StructureHealth",
+		BlockerTag = "StructureBlocker",
+		TrapTag = "SpikeTrap",
+		StorageTag = "StorageChest",
+		DoorOpenAttribute = "DoorOpen",
 		Ghost = {
 			Name = "PlacementGhost",
 			PickRange = 80,
@@ -713,6 +1239,9 @@ local Config: Config = {
 		SpawnRayHeight = 120, -- spawn ground raycast starts this far above the anchor
 		SpawnRayLength = 300, -- spawn ground raycast length
 		SpawnLift = 1, -- studs above ground a mob spawns
+		BuriedAttribute = "Buried",
+		HeldRangedAttribute = "HeldRanged",
+		BossAttribute = "BossKind",
 		Hare = {
 			Health = 8, -- hit points
 			Damage = 0, -- passive
@@ -819,7 +1348,6 @@ local Config: Config = {
 		ReviveRange = 8, -- max studs reviver to downed player
 		ReviveHealthFraction = 0.3, -- fraction of max health restored on revive
 		DownedWalkSpeed = 3, -- crawl speed while downed
-		DisconnectHoldSeconds = 300, -- hold a disconnected player's character (5 min)
 		StateAttribute = "Downed", -- Player attribute: true while downed
 	},
 	-- Minimum seconds between accepted requests per player, by remote (used with Guard).
@@ -830,6 +1358,122 @@ local Config: Config = {
 		AttackRateInterval = 0.25, -- AttackRequest (single source; Combat.MeleeCooldown is the swing gate)
 		UseRateInterval = 0.3, -- UseItemRequest, AddFuelRequest, ReviveRequest
 		SelectRateInterval = 0.1, -- SelectSlotRequest
+		PadRateInterval = 0.5, -- PadJoinRequest, PadLeaveRequest
+		PadModeRateInterval = 1, -- PadModeRequest
+		DailyClaimRateInterval = 2, -- DailyClaimRequest
+		PingRateInterval = 0.5, -- PingRequest
+		StorageRateInterval = 0.2, -- StorageOpenRequest, StorageDepositRequest, StorageWithdrawRequest
+		MapRateInterval = 2, -- MapRequest
+		RepairRateInterval = 0.5, -- RepairRequest
+		CookRateInterval = 0.3, -- CookRequest
+		ShootRateInterval = 0.4, -- ShootRequest
+		ShopRateInterval = 1, -- ShopBuyRequest
+		RobuxPromptRateInterval = 3, -- RobuxPurchaseRequest
+		EquipRateInterval = 0.5, -- EquipCosmeticRequest, EquipPerkRequest, EquipTitleRequest
+		SettingsRateInterval = 0.5, -- SettingsSetRequest
+		MetaStateRateInterval = 2, -- MetaStateRequest
+		HintRateInterval = 0.5, -- HintSeenRequest
+	},
+	Lobby = {
+		MaxPlayers = 15,
+		PadCount = 6,
+		PadTimerSeconds = 20,
+		PadModeFriends = "friends",
+		PadModeOpen = "open",
+		DefaultPadMode = "open",
+		PadTag = "LobbyPad",
+		PadIndexAttribute = "PadIndex",
+		PlayerPadAttribute = "PadIndex",
+		FriendCheckTimeout = 5,
+		PollInterval = 0.25,
+		PadEdgeMargin = 2,
+		PadHeightMargin = 8,
+		LaunchHoldSeconds = 30,
+		PadJoinLift = 3,
+		RootName = "Lobby",
+		SpawnName = "LobbySpawn",
+		StatPublishSeconds = 2,
+		LeaderboardStoreName = "ArcticMaxDays_v1",
+		LeaderboardTopCount = 10,
+		LeaderboardRefreshSeconds = 60,
+		LeaderboardWriteIntervalSeconds = 6,
+		LeaderboardMaxPending = 30,
+		LeaderboardRetryAfterFailSeconds = 30,
+		NameCacheMax = 200,
+	},
+	Run = {
+		RejoinWindowSeconds = 300, -- design: 5-minute disconnect hold
+		SummarySeconds = 15,
+		ReturnRetryCount = 3,
+		PollInterval = 0.5,
+		SeedWaitSeconds = 20,
+		ReturnFailedMessage = "Could not return to the lobby. Please rejoin.",
+		RefusedMessage = "This run is not available to you.",
+		DefaultCause = "Cold",
+	},
+	Teleport = {
+		DataVersion = 1,
+		ModeRun = "run",
+		ModeLobby = "lobby",
+		MaxSeed = 2147483647,
+		MaxPartySize = 6,
+		ServerModeAttribute = "ServerMode",
+		StudioDefaultMode = "run", -- set Workspace.ServerMode = "lobby" in edit mode to play the lobby
+		ModeWaitSeconds = 10,
+		RetryCount = 3,
+		RetryDelay = 1,
+	},
+	-- Placeholder payouts (balance pass later). Coins are earned only by playing.
+	Meta = {
+		CoinsPerRun = 5,
+		CoinsPerDaySurvived = 10,
+		CoinsPerKill = 1,
+		CoinsPerBossKill = 25,
+		CoinsPerFriendInParty = 2,
+		MaxCoinsPerRun = 5000,
+		DailyRewardCoins = 50,
+		MaxStatValue = 1e9,
+		MaxAchievements = 64,
+		MaxAchievementIdLength = 32,
+		CoinsPerDarkEventSurvived = 3,
+		-- Phase 4 caps and placeholders (balance pass later).
+		MinAchievementDefs = 20,
+		MaxAchievementDefs = 30,
+		MaxAchievementCoinReward = 500,
+		MaxProgressEntries = 32,
+		MaxOwnedCosmetics = 128,
+		MaxUnlockedGear = 32,
+		MaxTitles = 64,
+		MaxHintsSeen = 64,
+		MaxItemIdLength = 32,
+		MaxEquippedPerks = 1,
+		PerkStats = { "warmthDrain", "hungerDrain", "fuelBurn", "gatherSpeed", "moveSpeed" },
+		MaxPerkMagnitude = 0.15,
+		MinCoinPrice = 25,
+		MaxCoinPrice = 20000,
+		MaxRobuxPrice = 1000,
+		MaxCoinPackCoins = 10000,
+		MaxStarterGearCount = 5,
+		StarterGearWaitSeconds = 15, -- run start: bounded wait for the inventory before granting gear
+		StarterGearPollSeconds = 0.25,
+		CosmeticTagPrefix = "Cosmetic_", -- + slot: character CollectionService tag for the equipped cosmetic
+		CosmeticSlots = { "outfit", "trail", "camp", "pet" },
+		-- Placeholders: 0 = not configured yet (the server refuses to prompt). Fill from the Creator Dashboard.
+		ProductIds = {
+			CoinPackSmall = 0,
+			CoinPackMedium = 0,
+			CoinPackLarge = 0,
+			AuroraParka = 0,
+			NorthernLightsTrail = 0,
+			HuskyPup = 0,
+		},
+		MaxProcessedReceipts = 100,
+		MaxReceiptIdLength = 64,
+		RecordHintDays = 2,
+		BestDaysAttribute = "BestDays",
+		TitleAttribute = "Title",
+		CosmeticAttribute = "Cosmetic",
+		MaxFriendBonusFriends = 5,
 	},
 	Held = {
 		ToolName = "HeldItem", -- name of the server-built Tool in the character (visual only)
@@ -901,12 +1545,308 @@ local Config: Config = {
 		PromptOffsetY = 3, -- studs above the target the prompt floats
 		ItemNameSeconds = 1.5, -- seconds the selected item name shows above the hotbar
 	},
+	-- ===== Phase 3 (brief 12 contracts; tuning placeholders pending balance) =====
+	Biome = {
+		RingAttribute = "BiomeRing",
+		ColdResistanceAttribute = "ColdResistance",
+		MaxColdSeverity = 3,
+		MaxRequiredColdResistance = 12,
+		ResistanceDrainReductionPerPoint = 0.05,
+		MinDrainFraction = 0.35,
+		UnderdressedDrainPerPoint = 0.25,
+		MaxUnderdressedMultiplier = 3,
+		UpdateInterval = 1,
+		OreSlotTag = "OreSlot",
+		ThinIceWarmthPenalty = 25,
+		Tuning = {
+			MaxLootTier = 4,
+			HearthBurnSeconds = 90,
+			HearthMaxSeconds = 360,
+			ThinIceCrackSeconds = 3,
+			ThinIceDamage = 12,
+			ThinIcePatchRadius = 7,
+			ThinIcePatchCount = 3,
+			LootPromptRange = 10,
+		},
+	},
+	Clothing = {
+		Slots = { "Head", "Body", "Feet" },
+		MaxTier = 3,
+		MaxColdResistance = 12,
+	},
+	Events = {
+		FirstDay = 3, -- design: no dark event before day 3
+		MinGapSeconds = 540, -- 1.5 in-game days
+		CheckIntervalSeconds = 20,
+		BaseChancePerCheck = 0.02,
+		ChancePerDay = 0.002,
+		MaxChancePerCheck = 0.05,
+		MaxPerDay = 1,
+		BlizzardBufferSeconds = 90,
+		MinWarningSeconds = 5,
+		MaxWarningSeconds = 30,
+		MaxDurationSeconds = 240,
+		MaxWarmthDrainMultiplier = 2.5,
+		MaxFuelBurnMultiplier = 2.5,
+		MaxDreadGainMultiplier = 3,
+		MaxHuntChanceBonus = 0.15,
+		MinVisibility = 0.25,
+		MaxSpawnMultiplier = 2,
+		ActiveAttribute = "DarkEvent",
+	},
+	Dread = {
+		Max = 100,
+		TickInterval = 1,
+		GainAlonePerSecond = 0.25,
+		GainFarFromCampPerSecond = 0.15,
+		FarFromCampDistance = 200,
+		GainDarkPerSecond = 0.2,
+		GainBlizzardPerSecond = 0.3,
+		GainLurkerSighting = 6,
+		DecayNearFirePerSecond = 1.5,
+		DecayPerSecond = 0.05,
+		GainPerDay = 0.03,
+		MaxDayGainMultiplier = 1.6,
+		GainPerRing = 0.1,
+		MaxRingGainMultiplier = 1.5,
+		CueThresholds = { 25, 50, 75 }, -- length = Cue.MaxLevel
+	},
+	Isolation = {
+		Range = 60,
+		WeightAlone = 1,
+		WeightPair = 0.45,
+		WeightGroup = 0.1,
+		SoloBaseline = 0.6,
+		FullGroupBlocksBigEvents = true,
+	},
+	Stalker = {
+		FirstHuntDay = 2, -- design: no hunts on day 1
+		HuntCheckIntervalSeconds = 15,
+		BaseHuntChance = 0.01,
+		HuntChancePerDread = 0.0015,
+		HuntChancePerDay = 0.003,
+		MaxHuntChance = 0.2,
+		HuntCooldownSeconds = 300,
+		TelegraphSeconds = 12,
+		MaxHuntSeconds = 60,
+		TorchHuntShorten = 0.5,
+		Damage = 35, -- below Meters.MaxHealth: never kills from full
+		WarmthLoss = 30,
+		KnockbackStuds = 20,
+		RetreatSeconds = 20,
+		WalkSpeed = 10,
+		ChaseSpeed = 15, -- below WALK_SPEED: a player who reads the tells can reach fire
+		StrikeRange = 6,
+		ApproachDistance = 60,
+		TorchRepelRadius = 14,
+		FlareRepelRadius = 30,
+		FireRepelMargin = 4,
+		Tag = "Stalker",
+	},
+	Lurkers = {
+		SpawnIntervalSeconds = 20,
+		BaseDensity = 0.15,
+		DensityPerDay = 0.01,
+		DensityPerRing = 0.05,
+		MaxDensity = 0.4,
+		MaxPerPlayer = 2,
+		MaxTotal = 8,
+		SpawnMinDistance = 70,
+		SpawnMaxDistance = 140,
+		VanishDistance = 45,
+		LookDotThreshold = 0.97,
+		LifetimeSeconds = 40,
+		Tag = "Lurker",
+	},
+	Scares = {
+		MinCooldownSeconds = 90,
+		MaxPerDay = 6,
+		GroupChanceMultiplier = 0.2,
+		ReducedSettingMultiplier = 0.4,
+	},
+	Cue = {
+		-- Remotes.Cue kinds. Warn* = dark event / blizzard warning; Event* = start/end of a visible event.
+		Kinds = {
+			"DreadLevel", -- level 0..MaxLevel: ambient thinning, desaturation, frost edges
+			"StalkerTell", -- hunt telegraph on the target: wildlife silent, frost creep
+			"Footsteps", -- crunch behind the player (position)
+			"FireGutter", -- a nearby fire gutters (position)
+			"StalkerRetreat",
+			"LurkerSighted",
+			"IceCrack", -- thin ice cracking (position)
+			"WarnBlizzard",
+			"WarnFalseNight",
+			"WarnTheQuiet",
+			"WarnDeepFreeze",
+			"EventStart", -- event = id
+			"EventEnd", -- event = id
+			"BossWarning", -- blizzard boss approaching camp
+		},
+		MaxLevel = 3,
+		MinIntervalSeconds = 1,
+		Horror = {
+			FrostPerLevel = 0.22,
+			FrostTell = 0.85,
+			DesatPerLevel = -0.12,
+			DesatTell = -0.45,
+			RumbleVolumePerLevel = 0.15,
+			FadeSeconds = 1.5,
+			GutterSeconds = 2,
+			GutterBrightness = 0.25,
+			PulseSeconds = 0.6,
+			FrostEdgeColor = { 215, 235, 255 },
+			EdgeSize = 0.22,
+			SoundMaxDistance = 120,
+			SoundCleanupSeconds = 10,
+		},
+	},
+	Bosses = {
+		MiniBossFirstDay = 6,
+		MiniBossMaxAlive = 1,
+		MiniBossRespawnDays = 4,
+		BlizzardBossFirstDay = 8,
+		BlizzardBossChance = 0.35,
+		BlizzardBossChancePerDay = 0.02,
+		MaxBlizzardBossChance = 0.6,
+		HealthPerExtraPlayer = 0.3,
+		MaxHealthMultiplier = 2.5,
+		DamagePerDay = 0.02,
+		MaxDamageMultiplier = 1.5,
+	},
+	Blizzard = {
+		EventId = "Blizzard", -- EventService.onEventEnd id for a blizzard (dark events use data/Events ids)
+		ActiveAttribute = "Blizzard",
+		WarningAttribute = "BlizzardWarning",
+	},
+	Projectile = {
+		Speed = 140,
+		MaxRange = 180,
+		MaxLifetime = 2,
+		MaxActivePerPlayer = 4,
+		AimAssistDegrees = 6,
+		FriendlyFireMultiplier = 0.5,
+		MeleeFriendlyFire = false,
+	},
+	Storage = {
+		ChestSlots = 20,
+		OpenRange = 10,
+		MaxChestsPerRun = 4,
+		OpenAttribute = "OpenChest",
+	},
+	Map = {
+		CellSize = 64, -- 2560 / 64 = 40 cells per side
+		ExploreRadius = 96,
+		ExploreTickSeconds = 1,
+		MaxCellsPerPayload = 1600,
+		ItemId = "Map",
+		ButtonWidthPx = 64, -- Map button (client): >= 44 px touch target
+		ButtonHeightPx = 44,
+		ButtonScaleX = 0.985, -- same right edge as the Craft button
+		ButtonScaleY = 0.02,
+		ButtonOffsetYPx = 48, -- below the 40 px Craft button + gap; clear of Ping (y 0.4) on a phone
+	},
+	Ping = {
+		Kinds = { "Go", "Danger", "Loot", "Help" },
+		MaxRange = 400,
+		LifetimeSeconds = 8,
+		MaxActivePerPlayer = 3,
+	},
+	Repair = {
+		Station = "workbench",
+		CostFraction = 0.5,
+		MinCost = 1,
+	},
+	Cooking = {
+		StationRange = 12,
+		Station = "cookingStation",
+		StationBuffMultiplier = 1.5,
+		MaxStationBuffMultiplier = 2,
+	},
+	Buffs = {
+		MaxActive = 2,
+		MaxDurationSeconds = 360,
+		MaxWarmthDrainReduction = 0.4,
+		MaxHungerDrainReduction = 0.4,
+		MaxHealthRegenBonus = 1,
+		MaxSpeedBonus = 0.15,
+		ActiveAttribute = "Buffs",
+	},
+	Durability = {
+		BrokenToolRemains = false,
+		MetalToolMultiplier = 2,
+	},
+	WarmSpot = {
+		Tag = "WarmSpot",
+		RadiusAttribute = "WarmSpotRadius",
+		CabinRadius = 14,
+		HotSpringRadius = 18,
+	},
+	Structures = {
+		DoorTag = "StructureDoor", -- CollectionService tag on placed doors
+		WatchtowerTag = "Watchtower", -- CollectionService tag on placed watchtowers
+		ChestIdAttribute = "ChestId", -- chest attribute: unique id string (also the Player OpenChest value)
+		InteractRange = 10, -- studs: client interact pick (chest, door, cook, repair)
+		ServerInteractRange = 14, -- studs: server re-check (covers latency)
+		DoorOpenTransparency = 0.7,
+		StructureTickSeconds = 0.5, -- one loop: chest range, traps, watchtowers
+		TrapHeight = 4, -- studs above the trap that still count as stepping on it
+		WatchtowerStandHeight = 6, -- studs: a player root within this far above the tower top counts as on it
+		WatchtowerRevealSeconds = 1, -- seconds between map reveals while standing on a tower
+		WatchtowerTrussWidth = 2, -- ladder (TrussPart) beside the tower
+	},
+	-- Phase 4 (brief 20 consumes; brief 21 owns the values).
+	Perf = {
+		TargetFps = 30,
+		FpsSampleSeconds = 5,
+		MaxLiveParts = 6000,
+		MaxLiveMobs = MAX_LIVE_MOBS,
+		ChunkLoadBudgetPerFrame = 1,
+		ChunkPartBudgetPerFrame = 150,
+		MaxParticleEmitters = 24,
+		MaxParticleRate = 40,
+		MaxActiveSounds = 12,
+		StreamingEnabled = true,
+		StreamingTargetRadius = 384,
+		StreamingMinRadius = 96,
+		SwingBroadcastRange = 150,
+		SwingMaxPerSecond = 12, -- client cap on relayed swings animated per second
+	},
+	Settings = {
+		Keys = { "reduceScares" },
+		ReduceScares = "reduceScares",
+		ReduceScaresAttribute = "ReduceScares",
+		DefaultReduceScares = false,
+		ReducedScareVisualMultiplier = 0.4,
+	},
+	Hints = {
+		Ids = {
+			"Biomes",
+			"Clothing",
+			"Map",
+			"Storage",
+			"Cooking",
+			"Repair",
+			"Ping",
+			"Bow",
+			"Blizzard",
+			"DarkEvent",
+			"Stalker",
+			"Shop",
+			"Perks",
+			"Achievements",
+			"Forge",
+		},
+		ShowSeconds = 12,
+		CheckInterval = 1,
+		LookupRange = 30,
+		WarnWindowSeconds = 90,
+	},
 	RemoteFolderName = "Remotes",
 	DefaultRateLimitInterval = 0.1,
 	ProfileStoreName = "PlayerProfiles",
 	ProfileKeyPrefix = "Player_",
 	AutoSavePeriod = 60,
-	SchemaVersion = 1,
+	SchemaVersion = 3, -- v2: Phase 2 stats, achievements, lastDailyClaim; v3: Phase 4 meta (shop, perks, settings, receipts)
 	StartingCoins = 0,
 	MaxCoins = 1e15,
 	LoadFailKickMessage = "Your data could not be loaded. Please rejoin in a moment.",

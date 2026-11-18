@@ -10,5 +10,30 @@ Every imported asset: id, creator, source. No branded or copyrighted content. St
 - SwingSound, ChopSound (wood chop / stone hit), MobHitSound, CraftSound, DenySound: replace the engine placeholders.
 
 - WolfGrowlSound, DuskSound, DawnSound: empty now (silent). Growl (~1s, low), soft dusk cue, soft dawn cue. BiteSound is the engine placeholder rbxasset://sounds/uuhhh.mp3; replace with a real hurt/bite sound.
+- Lobby (brief 10): PadJoinSound, PadLeaveSound, DailyClaimSound are engine placeholders; PadTickSound and SummarySound are empty (silent). Lobby lodge is block placeholders from tools/build_lobby.luau.
+- Phase 3 (brief 12 contracts; all empty "" in src/shared/Assets.luau, consumers stay silent / block-out until supplied):
+  - Horror (brief 15): DreadRumbleSound (low loop), FrostEdgeTexture (screen-edge frost decal), StalkerCrunchSound, StalkerStrikeSound, FireGutterSound, IceCrackSound, LurkerWhisperSound.
+  - Events (brief 14): BlizzardWindSound (loop), EventWarningSound (short sting), DeepFreezeSound (loop).
+  - Mobs/bosses (brief 16): BossRoarSound, BowShotSound, ArrowHitSound. Mob models (polar bear, ice wraith, snow lurker, cave crawler, fish, 3 mini-bosses, blizzard boss, Stalker) are block-outs until supplied.
+  - Structures/progression (brief 17): PingSound, ChestOpenSound, CookSound, RepairSound.
+  - World (brief 13): MapOpenSound; biome ground/props are block-outs (Biomes.color).
+
+- Phase 3 placeholders in the world (block-outs, no ids yet): POI cabins, hearths, hot springs (glass cylinder), thin-ice patches, crash plane, caves, ruins, loot crates (PoiService); IronOre slots; Stalker and lurker models (HorrorWorld.makeModel boxes); structures Forge, CookingStation, StorageChest, Wall, Door, SpikeTrap, Watchtower (+ TrussPart ladder), SleepingBag, MapTable; held items (Config.Held.Visuals blocks incl. Torch/Lantern/Flare/Bow); arrows (ProjectileFired visual).
+- Event look (client EventCues): Atmosphere "EventAtmosphere" + ColorCorrection "EventTint" (no assets); Horror frost edges are tinted frames until FrostEdgeTexture is supplied.
+- The Stalker strike reuses BiteSound and the bite flash (BiteSeq) until StalkerStrikeSound is supplied.
+
+- Phase 4 (brief 21 contracts; all empty "" in src/shared/Assets.luau; data/AudioCues.luau maps every cue to these):
+  - Atmosphere (brief 20) sounds: FrostCreepSound, StalkerRetreatSound, EventEndSound, DarkAmbientSound (loop), WindAmbientSound (loop), FireCrackleSound (loop), DayBannerSound.
+  - Atmosphere (brief 20) particle textures: SnowParticle, SnowPuffParticle, FrostMistParticle, BlizzardParticle, IceShardParticle, EmberParticle, SmokeParticle, HitSparkParticle, ResourcePopParticle, CoinBurstParticle.
+  - Meta (brief 19) sounds: AchievementSound, PurchaseSound, EquipSound, CoinSound, RecordSound.
+  - Shop cosmetics (brief 19; block-outs until supplied): CosmeticFurTrimHood, CosmeticRangerJacket, CosmeticFrostTrail, CosmeticEmberTrail, CosmeticCampBanner, CosmeticLanternString, CosmeticArcticFox, CosmeticSnowOwl, CosmeticAuroraParka, CosmeticNorthernLightsTrail, CosmeticHuskyPup.
+  - Developer product ids (not assets) go in Config.Meta.ProductIds: CoinPackSmall, CoinPackMedium, CoinPackLarge, AuroraParka, NorthernLightsTrail, HuskyPup (0 = not for sale yet).
 
 Part counts per built area: (record here)
+
+## Phase 4 integration (brief 21)
+- Checked: every key in src/shared/Assets.luau is listed above (script check in brief 21). No new asset keys were added.
+- Meta cues now play through AtmosphereFx (one path, no double audio): AchievementUnlocked -> AchievementSound, PurchaseSuccess -> PurchaseSound, PurchaseFailed -> DenySound, DailyClaim -> DailyClaimSound (was played directly by the lobby menu), PersonalBest -> RecordSound (replaces SummarySound on a record run), all with CoinBurstParticle where listed in data/AudioCues.
+- Cosmetics are data only on the character: attribute Cosmetic (id) and tag Cosmetic_<slot> (Config.Meta.CosmeticTagPrefix + outfit/trail/camp/pet). Art scripts react to the tag once the Cosmetic<Id> assets exist.
+- Still needed before launch (grouped): engine-placeholder sounds (Swing/Chop/MobHit/Craft/Deny/Bite/PadJoin/PadLeave/DailyClaim); every empty "" sound and particle above; SwingAnimation; mob, Stalker, lurker, structure and POI models (block-outs); the 11 Cosmetic<Id> models; developer product ids in Config.Meta.ProductIds.
+

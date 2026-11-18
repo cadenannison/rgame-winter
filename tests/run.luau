@@ -32,6 +32,18 @@ require("./PlacementTests")(check)
 require("./ConsumeTests")(check)
 require("./FlowTests")(check)
 require("./PlayabilityTests")(check)
+require("./TeleportTests")(check)
+require("./RunTests")(check)
+require("./PadTests")(check)
+require("./LobbyTests")(check)
+require("./DataTests")(check) -- brief 12 (Phase 3 data)
+require("./BiomeTests")(check) -- brief 13
+require("./EventTests")(check) -- brief 14
+require("./HorrorTests")(check) -- brief 15
+require("./ProgressionTests")(check) -- brief 17 (brief 16 uses MobTests)
+require("./MetaTests")(check) -- brief 21 (Phase 4 contract data)
+require("./MetaLogicTests")(check) -- brief 19
+require("./AtmosphereTests")(check) -- brief 20
 
 if failures > 0 then
 	error(`{failures} test(s) failed`)

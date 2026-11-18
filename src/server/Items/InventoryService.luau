@@ -1,5 +1,7 @@
 --!strict
 -- Server-authoritative inventory (hotbar + backpack). Not persisted (DataService integration is separate).
+-- Disconnect hold: when the hold predicate (wired to RunLifecycleService.ShouldHold) says so, a leaving
+-- player's inventory is kept by UserId for Config.Run.RejoinWindowSeconds and restored on rejoin.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -19,6 +21,8 @@ local selected: { [Player]: number } = {}
 local characterConns: { [Player]: RBXScriptConnection } = {}
 local useHandler: ((Player, ItemCatalog.ItemDef, number) -> boolean)? = nil
 local started = false
+local holdPredicate: ((Player) -> boolean)? = nil
+local held: { [number]: { inv: Inventory.Inv, selected: number, expires: number } } = {}
 
 local TOTAL_SLOTS = Config.Inventory.HotbarSize + Config.Inventory.BackpackSize
 
@@ -44,16 +48,25 @@ local function setup(player: Player)
 	if inventories[player] then
 		return
 	end
-	local inv = Inventory.new(TOTAL_SLOTS)
-	for _, starter in Config.Inventory.StarterItems do
-		local def = ItemCatalog.Items[starter.id]
-		if def then
-			Inventory.add(inv, def.id, starter.count, def.maxStack, def.durability)
+	local hold = held[player.UserId]
+	held[player.UserId] = nil
+	local inv: Inventory.Inv
+	local slot = 1
+	if hold and os.clock() < hold.expires then
+		inv = hold.inv
+		slot = hold.selected
+	else
+		inv = Inventory.new(TOTAL_SLOTS)
+		for _, starter in Config.Inventory.StarterItems do
+			local def = ItemCatalog.Items[starter.id]
+			if def then
+				Inventory.add(inv, def.id, starter.count, def.maxStack, def.durability)
+			end
 		end
 	end
 	inventories[player] = inv
-	selected[player] = 1
-	player:SetAttribute(Config.Inventory.SlotAttribute, 1)
+	selected[player] = slot
+	player:SetAttribute(Config.Inventory.SlotAttribute, slot)
 	-- Re-show the held item on every (re)spawn; deferred so the Humanoid exists.
 	characterConns[player] = player.CharacterAdded:Connect(function()
 		task.defer(function()
@@ -175,6 +188,24 @@ end
 InventoryService.handleUse = onUse
 
 local function cleanup(player: Player)
+	local t = os.clock()
+	for userId, entry in held do
+		if t >= entry.expires then
+			held[userId] = nil
+		end
+	end
+	local inv = inventories[player]
+	local predicate = holdPredicate
+	if inv and predicate then
+		local ok, keep = pcall(predicate, player)
+		if ok and keep == true then
+			held[player.UserId] = {
+				inv = inv,
+				selected = selected[player] or 1,
+				expires = t + Config.Run.RejoinWindowSeconds,
+			}
+		end
+	end
 	inventories[player] = nil
 	selected[player] = nil
 	local conn = characterConns[player]
@@ -183,6 +214,11 @@ local function cleanup(player: Player)
 		characterConns[player] = nil
 	end
 	HeldItem.cleanup(player)
+end
+
+-- Wiring (init.server): whether a leaving player's inventory is held for a rejoin.
+function InventoryService.setHoldPredicate(fn: ((Player) -> boolean)?)
+	holdPredicate = fn
 end
 
 function InventoryService.start()

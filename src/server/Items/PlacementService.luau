@@ -16,6 +16,7 @@ local Guard = require(script.Parent.Parent.Net.Guard)
 local InventoryService = require(script.Parent.InventoryService)
 local CraftingService = require(script.Parent.CraftingService)
 local FireService = require(script.Parent.Parent.Survival.FireService)
+local StructureService = require(script.Parent.StructureService)
 
 local B = Config.Build
 local MAX_ID_LENGTH = 32
@@ -25,6 +26,21 @@ local RATE_KEY = "Place"
 local ROLE_COLORS: { [string]: Color3 } = {
 	workbench = Color3.fromRGB(140, 100, 60),
 	campfire = Color3.fromRGB(230, 120, 40),
+	forge = Color3.fromRGB(90, 90, 100),
+	cooking = Color3.fromRGB(170, 110, 70),
+	storage = Color3.fromRGB(120, 80, 45),
+	wall = Color3.fromRGB(150, 110, 70),
+	door = Color3.fromRGB(110, 75, 45),
+	trap = Color3.fromRGB(170, 170, 175),
+	watchtower = Color3.fromRGB(125, 90, 55),
+	bed = Color3.fromRGB(190, 70, 70),
+	maptable = Color3.fromRGB(205, 185, 130),
+}
+local ROLE_MATERIALS: { [string]: Enum.Material } = {
+	campfire = Enum.Material.Neon,
+	forge = Enum.Material.Slate,
+	trap = Enum.Material.Metal,
+	bed = Enum.Material.Fabric,
 }
 
 local PlacementService = {}
@@ -33,6 +49,12 @@ local placed: { [Instance]: number } = {} -- structure -> owner UserId
 local folder: Folder? = nil
 local connections: { RBXScriptConnection } = {}
 local started = false
+local placedHandler: ((Player, string) -> ())? = nil
+
+-- Wiring (Phase 4): told after every successful placement (structure id). Nil-safe.
+function PlacementService.setPlacedHandler(fn: ((Player, string) -> ())?)
+	placedHandler = fn
+end
 
 local function finiteVector(v: Vector3): boolean
 	return Guard.isNumber(v.X) and Guard.isNumber(v.Y) and Guard.isNumber(v.Z)
@@ -83,6 +105,19 @@ local function ownedCount(player: Player): number
 	return n
 end
 
+-- Placed structures of one role (per-role caps: storage chests).
+local function roleCount(role: string): number
+	local n = 0
+	for inst in placed do
+		local id = inst:GetAttribute(B.StructureAttribute)
+		local d = if type(id) == "string" then ItemCatalog.Structures[id] else nil
+		if d and d.role == role then
+			n += 1
+		end
+	end
+	return n
+end
+
 local function groundY(x: number, z: number, nearY: number): number?
 	local chunks = Workspace:FindFirstChild(Config.World.ChunkFolderName)
 	if chunks == nil then
@@ -121,7 +156,7 @@ local function build(
 	part.CFrame = CFrame.new(x, y + def.sizeY / 2, z) * CFrame.Angles(0, math.rad(rotation), 0)
 	part.Anchored = true
 	part.Color = ROLE_COLORS[def.role] or ROLE_COLORS.workbench
-	part.Material = if def.role == "campfire" then Enum.Material.Neon else Enum.Material.Wood
+	part.Material = ROLE_MATERIALS[def.role] or Enum.Material.Wood
 	part:SetAttribute(B.StructureAttribute, def.id)
 	part:SetAttribute(B.OwnerAttribute, player.UserId)
 	if def.role == "campfire" then
@@ -130,6 +165,7 @@ local function build(
 	if def.station then
 		CraftingService.registerStation(part, def.station, def.tier)
 	end
+	StructureService.onBuilt(part, def, player)
 	placed[part] = player.UserId
 	part.Destroying:Once(function()
 		placed[part] = nil
@@ -198,6 +234,8 @@ local function onPlace(player: Player, structureId: unknown, position: unknown, 
 		itemCount = InventoryService.count(player, def.itemId),
 		litFires = litFires,
 		buildExempt = B.RangeExempt[def.id] == true,
+		roleCount = if def.role == "storage" then roleCount("storage") else nil,
+		roleMax = if def.role == "storage" then Config.Storage.MaxChestsPerRun else nil,
 	})
 	if not result.ok then
 		notify(player, result.reason)
@@ -213,6 +251,10 @@ local function onPlace(player: Player, structureId: unknown, position: unknown, 
 		return
 	end
 	build(player, def, x, y, z, rotation)
+	local handler = placedHandler
+	if handler then
+		task.spawn(handler, player, def.id)
+	end
 end
 
 -- Same path as PlaceRequest (QA and server callers); runs the full validation.

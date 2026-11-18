@@ -1,6 +1,9 @@
 --!strict
 -- Per-player health/warmth/hunger, downed and revive. One Heartbeat loop steps every player.
 -- Health mirrors to Humanoid.Health; outside damage dealt to the Humanoid is absorbed here (Dead state disabled).
+-- Disconnect hold: when the hold predicate (wired to RunLifecycleService.ShouldHold) says so, a leaving
+-- player's meters are kept by UserId for Config.Run.RejoinWindowSeconds and restored on rejoin. The
+-- character itself is not kept (Roblox removes it); a rejoining player respawns at camp.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -27,6 +30,17 @@ type PlayerState = {
 	connections: { RBXScriptConnection },
 	sentKey: string,
 	revive: { target: Player, remaining: number }?,
+	lastHit: string?, -- what last dealt outside damage ("Wolf"); the cause if that damage downs them
+	restore: SurvivalLogic.State?, -- held meters to apply on the first character after a rejoin
+}
+
+-- Phase 3 environment for one player (wired in init.server): warm spots plus biome/event/buff multipliers.
+export type EnvExtra = {
+	warm: boolean?, -- inside a warm spot (cabin hearth, hot spring, sleeping bag)
+	warmthDrain: number?, -- biome x event x buff warmth drain multiplier (1 = none)
+	hungerDrain: number?, -- buff hunger drain multiplier (1 = none)
+	regenBonus: number?, -- buff health regen bonus per second
+	speed: number?, -- buff walk speed multiplier (1 = none; capped by Buffs.MaxSpeedBonus)
 }
 
 local SurvivalService = {}
@@ -36,6 +50,33 @@ local connections: { RBXScriptConnection } = {}
 local unregisters: { () -> () } = {}
 local accumulator = 0
 local started = false
+local holdPredicate: ((Player) -> boolean)? = nil
+local envProvider: ((Player, Vector3) -> EnvExtra?)? = nil
+local causeHandler: ((Player, string) -> ())? = nil
+local reviveHandler: ((Player, Player) -> ())? = nil
+local held: { [number]: { meters: SurvivalLogic.State, expires: number } } = {}
+
+local CAUSE_COLD = "Cold"
+local CAUSE_HUNGER = "Hunger"
+
+local function reportCause(player: Player, cause: string)
+	local handler = causeHandler
+	if handler then
+		local ok = pcall(handler, player, cause)
+		if not ok then
+			warn("SurvivalService: cause handler failed")
+		end
+	end
+end
+
+local function meterCause(m: SurvivalLogic.State): string
+	if m.warmth <= 0 then
+		return CAUSE_COLD
+	elseif m.hunger <= 0 then
+		return CAUSE_HUNGER
+	end
+	return CAUSE_COLD
+end
 
 local function getHumanoid(player: Player): Humanoid?
 	local character = player.Character
@@ -101,11 +142,20 @@ end
 
 local function setupCharacter(player: Player, state: PlayerState, character: Model)
 	resetState(player, state)
+	local restored = state.restore
+	state.restore = nil
+	if restored then
+		state.meters = restored
+		setDownedAttribute(player, restored.downed)
+	end
 	local humanoid = character:WaitForChild("Humanoid", Config.SPAWN_HUMANOID_WAIT) :: Humanoid?
 	if humanoid and player.Character == character then
 		humanoid.MaxHealth = M.MaxHealth
-		humanoid.Health = M.MaxHealth
+		humanoid.Health = state.meters.health
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false) -- we decide when a player dies
+		if state.meters.downed then
+			humanoid.WalkSpeed = D.DownedWalkSpeed
+		end
 	end
 end
 
@@ -134,6 +184,7 @@ local function absorbExternalDamage(player: Player, state: PlayerState, humanoid
 	local lost = m.health - humanoid.Health
 	if lost > HEALTH_EPSILON and not m.downed and not m.dead then
 		if SurvivalLogic.damage(m, lost, M, isInvincible(player)) then
+			reportCause(player, state.lastHit or CAUSE_COLD)
 			goDown(player, state)
 		end
 	end
@@ -155,7 +206,30 @@ local function tickPlayer(player: Player, state: PlayerState, dt: number, isNigh
 		local inFire = root ~= nil and FireService.isWarm(root.Position)
 		local env: SurvivalLogic.Env =
 			{ inFire = inFire, isNight = isNight, invincible = isInvincible(player) }
+		local provider = envProvider
+		if provider and root then
+			local ok, extra = pcall(provider, player, root.Position)
+			if ok and type(extra) == "table" then
+				env.inFire = inFire or extra.warm == true
+				env.warmthDrainMultiplier = extra.warmthDrain
+				env.hungerDrainMultiplier = extra.hungerDrain
+				env.regenBonus = extra.regenBonus
+				local speed = extra.speed
+				if type(speed) == "number" and speed == speed then
+					local walk = Config.WALK_SPEED
+						* math.clamp(
+							speed,
+							1 - Config.Buffs.MaxSpeedBonus,
+							1 + Config.Buffs.MaxSpeedBonus
+						)
+					if math.abs(humanoid.WalkSpeed - walk) > HEALTH_EPSILON then
+						humanoid.WalkSpeed = walk
+					end
+				end
+			end
+		end
 		if SurvivalLogic.step(m, env, M, dt) then
+			reportCause(player, meterCause(m))
 			goDown(player, state)
 		end
 	end
@@ -194,6 +268,10 @@ local function tickRevive(player: Player, state: PlayerState, dt: number)
 			if humanoid then
 				humanoid.WalkSpeed = Config.WALK_SPEED
 				humanoid.Health = targetState.meters.health
+			end
+			local handler = reviveHandler
+			if handler then
+				task.spawn(handler, player, target)
 			end
 		end
 	end
@@ -250,6 +328,11 @@ local function onPlayerAdded(player: Player)
 	end
 	local state: PlayerState =
 		{ meters = SurvivalLogic.new(M), connections = {}, sentKey = "", revive = nil }
+	local hold = held[player.UserId]
+	held[player.UserId] = nil
+	if hold and os.clock() < hold.expires then
+		state.restore = hold.meters
+	end
 	states[player] = state
 	table.insert(
 		state.connections,
@@ -271,6 +354,48 @@ local function onPlayerRemoving(player: Player)
 		connection:Disconnect()
 	end
 	states[player] = nil
+	local t = os.clock()
+	for userId, entry in held do
+		if t >= entry.expires then
+			held[userId] = nil
+		end
+	end
+	local predicate = holdPredicate
+	if predicate and not state.meters.dead then
+		local ok, keep = pcall(predicate, player)
+		if ok and keep == true then
+			local meters = table.clone(state.meters)
+			held[player.UserId] = { meters = meters, expires = t + Config.Run.RejoinWindowSeconds }
+		end
+	end
+end
+
+-- Wiring (init.server): whether a leaving player's meters are held for a rejoin.
+function SurvivalService.setHoldPredicate(fn: ((Player) -> boolean)?)
+	holdPredicate = fn
+end
+
+-- Wiring (init.server): Phase 3 environment (warm spots, biome cold, events, food buffs). Nil-safe.
+function SurvivalService.setEnvProvider(fn: ((Player, Vector3) -> EnvExtra?)?)
+	envProvider = fn
+end
+
+-- Wiring (Phase 4): told when a revive completes (reviver, target). Nil-safe; runs in its own thread.
+function SurvivalService.setReviveHandler(fn: ((Player, Player) -> ())?)
+	reviveHandler = fn
+end
+
+-- Wiring (init.server): told what downed a player ("Wolf", "Cold", "Hunger").
+function SurvivalService.setCauseHandler(fn: ((Player, string) -> ())?)
+	causeHandler = fn
+end
+
+-- Records what last dealt outside damage to a player (MobService bite wiring); used as the cause if it downs them.
+function SurvivalService.markHit(player: Player, source: string)
+	local state = states[player]
+	if state then
+		state.lastHit = source
+	end
 end
 
 -- Public API for other systems (food, mobs, items). All server-side.
@@ -284,9 +409,10 @@ function SurvivalService.isDowned(player: Player): boolean
 	return state ~= nil and state.meters.downed
 end
 
-function SurvivalService.damage(player: Player, amount: number)
+function SurvivalService.damage(player: Player, amount: number, cause: string?)
 	local state = states[player]
 	if state and SurvivalLogic.damage(state.meters, amount, M, isInvincible(player)) then
+		reportCause(player, cause or state.lastHit or CAUSE_COLD)
 		goDown(player, state)
 	end
 end
@@ -364,6 +490,7 @@ function SurvivalService.stop()
 	for player in states do
 		onPlayerRemoving(player)
 	end
+	table.clear(held)
 	started = false
 end
 

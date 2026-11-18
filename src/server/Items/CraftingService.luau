@@ -17,6 +17,12 @@ local GatherService = require(script.Parent.GatherService)
 local CraftingService = {}
 
 local started = false
+local craftedHandler: ((Player, string) -> ())? = nil
+
+-- Wiring (Phase 4): told after every successful craft (meta "crafted" stat). Nil-safe.
+function CraftingService.setCraftedHandler(fn: ((Player, string) -> ())?)
+	craftedHandler = fn
+end
 
 -- Marks an instance as a crafting station (Config.Craft.Stations key; placement code calls this).
 function CraftingService.registerStation(instance: Instance, station: string, tier: number?)
@@ -83,6 +89,10 @@ local function onCraft(player: Player, recipeId: unknown)
 	local ok, reason = Crafting.craft(inv, recipeId, CraftingService.nearStations(player))
 	if ok then
 		InventoryService.sync(player)
+		local handler = craftedHandler
+		if handler then
+			task.spawn(handler, player, recipeId)
+		end
 	else
 		local text = reason
 		local stationId = Crafting.requiredStation(recipeId)

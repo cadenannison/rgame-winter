@@ -10,6 +10,8 @@ local Crafting = require("../src/shared/logic/Crafting")
 local ItemsGather = require("../src/shared/logic/ItemsGather")
 local Placement = require("../src/shared/logic/Placement")
 local FireLogic = require("../src/shared/logic/FireLogic")
+local RunPayout = require("../src/shared/logic/RunPayout")
+local BiomeLogic = require("../src/shared/logic/BiomeLogic")
 local SurvivalLogic = require("../src/shared/logic/SurvivalLogic")
 local DayClock = require("../src/shared/logic/DayClock")
 local MobAI = require("../src/shared/logic/MobAI")
@@ -224,4 +226,50 @@ return function(check: (string, boolean) -> ())
 		})
 	end)
 	check("flow deterministic", det)
+
+	-- Phase 3 integration (brief 18): dark-event coins, biome x clothing drain, capped total drain.
+	local base = { daysSurvived = 3, kills = 0, bossKills = 0, partners = 0 }
+	local withEvent = table.clone(base) :: RunPayout.RunResult
+	withEvent.darkEventsSurvived = 2
+	check(
+		"payout: dark events survived pay Meta.CoinsPerDarkEventSurvived",
+		RunPayout.coins(withEvent) - RunPayout.coins(base)
+			== 2 * Config.Meta.CoinsPerDarkEventSurvived
+	)
+	local MC = Config.Meters
+	local function drainAfter(ring: number, resistance: number, night: boolean): number
+		local s = SurvivalLogic.new(MC)
+		local env: SurvivalLogic.Env = {
+			inFire = false,
+			isNight = night,
+			invincible = false,
+			warmthDrainMultiplier = BiomeLogic.drainMultiplier(ring, resistance),
+		}
+		SurvivalLogic.step(s, env, MC, 10)
+		return MC.MaxWarmth - s.warmth
+	end
+	check(
+		"biome: underdressed outer ring drains faster than the forest",
+		drainAfter(3, 0, false) > drainAfter(0, 0, false)
+	)
+	check(
+		"biome: tier clothing slows outer-ring drain",
+		drainAfter(3, 9, false) < drainAfter(3, 0, false)
+	)
+	check(
+		"survival: total warmth drain capped",
+		drainAfter(3, 0, true) <= MC.WarmthDrainPerSecond * MC.MaxWarmthDrainMultiplier * 10 + 1e-6
+	)
+	local fed = SurvivalLogic.new(MC)
+	fed.health = 50
+	SurvivalLogic.step(
+		fed,
+		{ inFire = true, isNight = false, invincible = false, regenBonus = 1 },
+		MC,
+		1
+	)
+	check(
+		"survival: buff regen bonus applies",
+		math.abs(fed.health - (50 + MC.HealthRegenPerSecond + 1)) < 1e-6
+	)
 end

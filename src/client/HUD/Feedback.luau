@@ -24,9 +24,9 @@ local FLASH_COLOR = rgb(FB.FlashColor)
 
 local Feedback = {}
 
-local swinging = false
-local loadedTrack: AnimationTrack? = nil
-local trackAnimator: Animator? = nil
+-- Per-character swing state (the local player and other players' broadcast swings share it).
+local busy: { [Model]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+local tracks: { [Animator]: AnimationTrack } = setmetatable({}, { __mode = "k" }) :: any
 
 -- Plays Assets[name] once, at a world position (3D) or as UI sound. Missing id = silent.
 function Feedback.sound(name: string, at: Vector3?)
@@ -79,18 +79,46 @@ local function procSwing(character: Model)
 		TweenInfo.new(half, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
 		{ C0 = base }
 	)
-	swinging = true
+	busy[character] = true
 	up.Completed:Once(function()
 		down:Play()
 	end)
 	down.Completed:Once(function()
 		motor.C0 = base
-		swinging = false
+		busy[character] = nil
 	end)
 	up:Play()
 	task.delay(FB.SwingSeconds * 2, function() -- safety if the character died mid-swing
-		swinging = false
+		busy[character] = nil
 	end)
+end
+
+-- One arm swing of any character (animation asset, else procedural). Visual only.
+local function swingCharacter(character: Model)
+	local animId = Assets.SwingAnimation
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	if animId ~= nil and animId ~= "" and animator then
+		local track: AnimationTrack? = tracks[animator]
+		if track == nil then
+			local anim = Instance.new("Animation")
+			anim.AnimationId = animId
+			local ok, loaded = pcall(function()
+				return animator:LoadAnimation(anim)
+			end)
+			if ok then
+				track = loaded
+				tracks[animator] = loaded
+			end
+		end
+		if track then
+			track:Play()
+			return
+		end
+	end
+	if not busy[character] then
+		procSwing(character)
+	end
 end
 
 -- One swing of the local character's arm plus the swing sound.
@@ -100,27 +128,14 @@ function Feedback.swing()
 		return
 	end
 	Feedback.sound("SwingSound", nil)
-	local animId = Assets.SwingAnimation
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-	if animId ~= nil and animId ~= "" and animator then
-		if loadedTrack == nil or trackAnimator ~= animator then
-			local anim = Instance.new("Animation")
-			anim.AnimationId = animId
-			local ok, track = pcall(function()
-				return animator:LoadAnimation(anim)
-			end)
-			loadedTrack = if ok then track else nil
-			trackAnimator = animator
-		end
-		if loadedTrack then
-			loadedTrack:Play()
-			return
-		end
-	end
-	if not swinging then
-		procSwing(character)
-	end
+	swingCharacter(character)
+end
+
+-- Another player's swing (server relay SwingBroadcast): their arm swings and the whoosh is 3D.
+function Feedback.swingOther(character: Model)
+	local root = character:FindFirstChild("HumanoidRootPart")
+	Feedback.sound("SwingSound", if root and root:IsA("BasePart") then root.Position else nil)
+	swingCharacter(character)
 end
 
 -- Particle burst at a world position (chips / snow puff).

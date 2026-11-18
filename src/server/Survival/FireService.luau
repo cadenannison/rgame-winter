@@ -32,6 +32,7 @@ local FireService = {}
 
 local fires: { [Instance]: boolean } = {}
 local woodSpender: WoodSpender? = nil
+local fuelBurnProvider: (() -> number)? = nil
 local connections: { RBXScriptConnection } = {}
 local accumulator = 0
 local meterAccumulator = 0
@@ -158,6 +159,11 @@ function FireService.setWoodSpender(fn: WoodSpender?)
 	woodSpender = fn
 end
 
+-- Wiring (init.server): event fuel burn multiplier provider (EventService.getModifiers().fuelBurn).
+function FireService.setFuelBurnProvider(fn: (() -> number)?)
+	fuelBurnProvider = fn
+end
+
 function FireService.isLit(fire: Instance): boolean
 	return fires[fire] == true and readFuel(fire) > 0
 end
@@ -196,7 +202,21 @@ function FireService.isWarm(position: Vector3): boolean
 	return false
 end
 
+-- Event fuel burn multiplier (Deep Freeze), clamped to Events.MaxFuelBurnMultiplier.
+local function fuelBurnMultiplier(): number
+	local provider = fuelBurnProvider
+	if not provider then
+		return 1
+	end
+	local ok, value = pcall(provider)
+	if not ok or type(value) ~= "number" or value ~= value then
+		return 1
+	end
+	return math.clamp(value, 0, Config.Events.MaxFuelBurnMultiplier)
+end
+
 local function burnAll(dt: number)
+	local burnDt = dt * fuelBurnMultiplier()
 	meterAccumulator += dt
 	local publish = meterAccumulator >= F.Meter.UpdateInterval
 	if publish then
@@ -206,7 +226,7 @@ local function burnAll(dt: number)
 		local fuel = readFuel(fire)
 		if fuel > 0 then
 			local state = FireLogic.new(fuel)
-			local wentOut = FireLogic.burn(state, dt)
+			local wentOut = FireLogic.burn(state, burnDt)
 			writeFire(fire, state.fuel)
 			if publish or wentOut then
 				publishFraction(fire)

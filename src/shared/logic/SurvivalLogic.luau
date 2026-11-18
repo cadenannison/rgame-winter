@@ -14,6 +14,8 @@ export type MeterCfg = {
 	HealthRegenPerSecond: number,
 	RegenMinHunger: number,
 	RegenMinWarmth: number,
+	MaxWarmthDrainMultiplier: number?, -- cap on the combined warmth drain multiplier (night included)
+	MaxHungerDrainMultiplier: number?, -- cap on the combined hunger drain multiplier
 }
 
 export type DownedCfg = {
@@ -31,12 +33,29 @@ export type State = {
 }
 
 export type Env = {
-	inFire: boolean,
+	inFire: boolean, -- inside a lit fire radius or a warm spot (cabin hearth, hot spring, sleeping bag)
 	isNight: boolean,
 	invincible: boolean,
+	warmthDrainMultiplier: number?, -- biome x event x buff (1 = none); night is applied here, then capped
+	hungerDrainMultiplier: number?, -- buffs (1 = none), capped
+	regenBonus: number?, -- extra health regen per second (buffs, already capped)
 }
 
 local SurvivalLogic = {}
+
+local function finite(v: number?, fallback: number): number
+	if v == nil or v ~= v or v == math.huge or v == -math.huge then
+		return fallback
+	end
+	return v
+end
+
+-- Combined warmth drain multiplier outside a fire: night x env multiplier, clamped to [0, cap].
+function SurvivalLogic.warmthDrainMultiplier(env: Env, m: MeterCfg): number
+	local night = if env.isNight then m.WarmthDrainNightMultiplier else 1
+	local mult = night * finite(env.warmthDrainMultiplier, 1)
+	return math.clamp(mult, 0, m.MaxWarmthDrainMultiplier or math.huge)
+end
 
 function SurvivalLogic.new(m: MeterCfg): State
 	return {
@@ -57,11 +76,13 @@ function SurvivalLogic.step(s: State, env: Env, m: MeterCfg, dt: number): boolea
 	if env.inFire then
 		s.warmth += m.WarmthRegenPerSecond * dt
 	else
-		local mult = if env.isNight then m.WarmthDrainNightMultiplier else 1
+		local mult = SurvivalLogic.warmthDrainMultiplier(env, m)
 		s.warmth -= m.WarmthDrainPerSecond * mult * dt
 	end
 	s.warmth = math.clamp(s.warmth, 0, m.MaxWarmth)
-	s.hunger = math.clamp(s.hunger - m.HungerDrainPerSecond * dt, 0, m.MaxHunger)
+	local hungerMult =
+		math.clamp(finite(env.hungerDrainMultiplier, 1), 0, m.MaxHungerDrainMultiplier or math.huge)
+	s.hunger = math.clamp(s.hunger - m.HungerDrainPerSecond * hungerMult * dt, 0, m.MaxHunger)
 
 	local damage = 0
 	if s.hunger <= 0 then
@@ -75,7 +96,7 @@ function SurvivalLogic.step(s: State, env: Env, m: MeterCfg, dt: number): boolea
 			s.health -= damage * dt
 		end
 	elseif s.hunger >= m.RegenMinHunger and s.warmth >= m.RegenMinWarmth then
-		s.health += m.HealthRegenPerSecond * dt
+		s.health += (m.HealthRegenPerSecond + math.max(finite(env.regenBonus, 0), 0)) * dt
 	end
 	s.health = math.clamp(s.health, 0, m.MaxHealth)
 	return s.health <= 0

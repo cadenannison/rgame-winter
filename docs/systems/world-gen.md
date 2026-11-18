@@ -1,13 +1,27 @@
 # World generation (ChunkService)
 Tier: standard
-Purpose: One seed -> deterministic 8x8 chunk layout (phase 1: start-forest variants only) with tree/rock/food/spawn-zone slots and a camp site; chunks stream in/out around players.
-Owner files: src/server/World/ChunkService.luau, src/shared/logic/WorldLayout.luau, tests/WorldTests.luau, Config.World
+Purpose: One seed -> deterministic 8x8 chunk layout in four biome rings (variants per biome from shared/data/Chunks) with tree/rock/ore/food/spawn-zone slots, POIs and a camp site; chunks stream in/out around players. Phase 3 adds POIs, warm spots, thin ice, fog-of-war map, and node state that survives unload.
+Owner files: src/server/World/{ChunkService,PoiService,BiomeService,MapService}.luau, src/shared/logic/{WorldLayout,BiomeLogic,FogMap}.luau, src/shared/data/{Biomes,Chunks}.luau, src/server/Phase3/WorldGenBoot.luau, src/client/Phase3/WorldGenClient.luau, src/client/Map/MapView.luau, tests/{WorldTests,BiomeTests}.luau. Config.World is brief 12's (read only).
 Public API: WorldLayout.generate(seed, params) -> Layout; .serialize, .streamDiff, .ringOf, .ringPosition, .distanceToChunk (pure). ChunkService.start/stop, .ensureLoadedAround(x, z), .getCampPosition() -> Vector3?, .getSeed(). DebugService command "teleportRing" (1 = start forest, outward, clamped).
 Data touched: Workspace attributes WorldSeed (number), CampPosition (Vector3). Tag Config.World.ChunkTag on chunk Models (attrs ChunkIndex, Ring, Variant, Rotation). Slot parts tagged per Config.World.SlotTags (TreeSlot, RockSlot, FoodSlot, SpawnZoneSlot). Workspace.Chunks and Workspace.Camp folders.
 Invariants: same seed + params -> identical layout (serialize equal); camp chunk is in StartForestRing; camp has CampGuaranteedWood/FoodCount resources within CampGuaranteeRadius, all inside the camp chunk; load within StreamInRadius, unload only beyond StreamOutRadius of every player; camp chunk is never unloaded; the server never builds all 64 chunks at once.
 Exploit surface: no remotes. teleportRing is Studio-only via DebugService (validated + rate limited there).
 Playtest checklist: 1. Studio play: Workspace.Chunks has only chunks near the camp. 2. Walk away: far chunks unload, new ones load. 3. DebugService.run teleportRing 1..4: player lands in the matching ring and chunks load. Script: tools/qa/runner.luau (scenario world). Headless: lune run tests/run.
-Status: in progress (phase 1: no biome variants beyond forest, no POIs)
+Status: in progress (Phase 3 brief 13)
+
+## Phase 3 additions
+- **Variants.** Each chunk takes biome = Biomes.forRing(ring); the variant is a seeded weighted pick from Chunks.forBiome(biome) and a 0..3 rotation. Slot counts (trees, rocks, ore, food, spawn zones, POI slots) come from the variant. Layout chunk fields: biome, variantId, ore, pois.
+- **Rings.** BiomeLogic.ringAt(x, z) = floor(max(|x|,|z|) / ChunkSize) clamped to the outer ring; equals WorldLayout.ringOf for the chunk holding the point. drainMultiplier(ring, resistance) = severity * max(MinDrainFraction, 1 - perPoint*resistance) * min(MaxUnderdressed, 1 + shortfall*perPoint), all capped by Config.Biome.
+- **Camp.** Camp chunk is a ring == Config.World.StartForestRing chunk (now 0, the 2x2 centre; brief 12 moved it from 1). Camp guarantee (wood trees + food within CampGuaranteeRadius, same chunk) is tested over many seeds with the live Config.World.
+- **POIs.** Kinds cabin, plane, cave, campsite, ruin (loot crate), hotspring (warm), thinice (patches). Loot tier = BiomeLogic.lootTier(distance from camp) = clamp(1 + floor(d / ChunkSize), 1, 4); contents deterministic from (seed, poi id), tables in Biomes.Loot; never decreases with distance. Crates are looted once per run.
+- **Warm spots.** Cabin hearth: ProximityPrompt adds 1 Wood = HearthBurnSeconds of warmth (capped at HearthMaxSeconds); while lit it carries Config.WarmSpot.Tag + attribute WarmSpotRadius = CabinRadius. Hot springs always carry the tag with HotSpringRadius and attribute WarmSpotKind = "HotSpring" (mobs bias is brief 16's).
+- **Thin ice.** Frozen-lake patches (tag ThinIce). Standing on one for ThinIceCrackSeconds sets Cracking, then it breaks once: small damage to players on it and onThinIceBreak callbacks fire (cold-shock is brief 18's). Broken stays broken.
+- **Node persistence (KNOWN_ISSUES fix).** ChunkService keeps memory[slotKey] = { depletedAt, hits } outside the chunk model. A reloaded node that was depleted stays hidden and unregistered until Config.Gather.RespawnSeconds since depletion (wall clock continues while unloaded), then reappears; partially hit nodes keep HitsLeft. Memory is cleared on stop().
+- **Ring attribute.** BiomeService sets Player BiomeRing every Biome.UpdateInterval.
+- **Map.** MapService: per-player explored cells (FogMap), MapRequest (needs Config.Map.ItemId, Guard.rateLimit Net.MapRateInterval) -> MapData explored cells only; markExplored(position, radius). Client Map/MapView (M key + button) draws explored cells and the player dot.
+- **Hidden state.** Nothing hidden (dread, events) is read or shown here. Tuning constants live in BiomeLogic.Tuning because Config is brief 12's; brief 18 may move them.
+- **Exposes (Phase 3).** BiomeLogic.ringAt/drainMultiplier/lootTier; BiomeService.getRing(player)/getBiome(player)/onRingChanged(cb); MapService.markExplored(pos, radius); PoiService.onThinIceBreak(cb)/setHearthWoodItem; ChunkService unchanged API.
+- **Tests.** tests/BiomeTests.luau: determinism, ring math, loot monotonic, camp guarantee, variants per biome, node memory, hearth cap, thin ice, fog map.
 
 ## Integration points
 - Exposes: getCampPosition(), getCampSpawnPosition() (Spawn provider), getCampFire() (camp campfire Part in Workspace.Camp, tagged Config.Fire.Tag), ensureLoadedAround, getSeed; Workspace attrs Config.World.SeedAttribute / CampAttribute (HUD compass).

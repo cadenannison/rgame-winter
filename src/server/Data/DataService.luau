@@ -21,6 +21,8 @@ type Entry = {
 	Reconcile: (self: any) -> (),
 	-- Queues the final save and lock release (asynchronous; does not yield) and fires OnSessionEnd.
 	EndSession: (self: any) -> (),
+	-- Queues an immediate save in its own thread (does not yield).
+	Save: (self: any) -> (),
 }
 
 local DataService = {}
@@ -56,6 +58,18 @@ function DataService.get(player: Player): Profile?
 		return nil
 	end
 	return entry.Data
+end
+
+-- Queues an immediate save of a loaded profile (Robux grants). Never yields; false if not loaded/failed.
+function DataService.save(player: Player): boolean
+	local entry = profiles[player]
+	if entry == nil then
+		return false
+	end
+	local ok = pcall(function()
+		entry:Save()
+	end)
+	return ok
 end
 
 -- Calls callback for every already-loaded player and each future load. Returns a disconnect function.

@@ -52,7 +52,11 @@ local function scenario(chk)
 		or Inv.count(P, "RawMeat") > 0
 		or Inv.count(P, "Workbench") > 0
 	then
-		chk("fresh_session", false, "stale state (bench/meat present): stop_play, start_play, run once")
+		chk(
+			"fresh_session",
+			false,
+			"stale state (bench/meat present): stop_play, start_play, run once"
+		)
 		return
 	end
 	local hrp = P.Character.HumanoidRootPart

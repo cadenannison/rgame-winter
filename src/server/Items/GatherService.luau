@@ -12,6 +12,7 @@ local Remotes = require(Shared.Remotes)
 local ItemCatalog = require(Shared.ItemCatalog)
 local ItemsGather = require(Shared.logic.ItemsGather)
 local Guard = require(script.Parent.Parent.Net.Guard)
+local SwingRelay = require(script.Parent.Parent.Atmosphere.SwingRelay)
 local InventoryService = require(script.Parent.InventoryService)
 
 local GatherService = {}
@@ -22,6 +23,24 @@ type NodeState = { saved: { Saved }, conn: RBXScriptConnection }
 local nodes: { [Instance]: NodeState } = {}
 local respawnAt: { [Instance]: number } = {}
 local started = false
+-- Wiring (Phase 4 gatherSpeed perk): extra whole items for a harvest (player, base count) -> extra >= 0.
+local yieldBonusProvider: ((Player, number) -> number)? = nil
+
+function GatherService.setYieldBonusProvider(fn: ((Player, number) -> number)?)
+	yieldBonusProvider = fn
+end
+
+local function bonusYield(player: Player, base: number): number
+	local provider = yieldBonusProvider
+	if not provider then
+		return 0
+	end
+	local ok, extra = pcall(provider, player, base)
+	if not ok or type(extra) ~= "number" or extra ~= extra then
+		return 0
+	end
+	return math.clamp(math.floor(extra), 0, base)
+end
 
 local function parts(node: Instance): { BasePart }
 	local list: { BasePart } = {}
@@ -157,6 +176,7 @@ local function onGather(player: Player, node: unknown)
 		return
 	end
 	-- 5. act
+	SwingRelay.notify(player) -- accepted swing: other clients animate it
 	local hits = (target:GetAttribute(ItemCatalog.NodeHitsAttribute) :: number?)
 		or Config.Gather.HitsToDeplete
 	hits -= 1
@@ -166,7 +186,11 @@ local function onGather(player: Player, node: unknown)
 		return
 	end
 	local def = ItemCatalog.Nodes[kind]
-	local left = InventoryService.add(player, def.yieldId, def.yieldCount)
+	local left = InventoryService.add(
+		player,
+		def.yieldId,
+		def.yieldCount + bonusYield(player, def.yieldCount)
+	)
 	if left > 0 then
 		notify(player, "Inventory full.")
 	end

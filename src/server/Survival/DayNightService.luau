@@ -25,11 +25,12 @@ local info: DayClock.Info = DayClock.at(0, T)
 local connection: RBXScriptConnection? = nil
 local lightAccum = 0
 local unregisters: { () -> () } = {}
+local forcedNight = false -- dark event with night rules (False Night): counts as night for every system
 
 local function publish()
 	info = DayClock.at(elapsed, T)
 	Workspace:SetAttribute(T.DayAttribute, info.day)
-	Workspace:SetAttribute(T.IsNightAttribute, info.isNight)
+	Workspace:SetAttribute(T.IsNightAttribute, info.isNight or forcedNight)
 	Workspace:SetAttribute(
 		T.ClockAttribute,
 		math.floor(info.hour * HOUR_PRECISION + 0.5) / HOUR_PRECISION
@@ -59,7 +60,13 @@ function DayNightService.getDay(): number
 end
 
 function DayNightService.isNight(): boolean
-	return info.isNight
+	return info.isNight or forcedNight
+end
+
+-- Wiring (init.server, EventService nightRules): a False Night makes night rules apply in daylight.
+function DayNightService.setForcedNight(on: boolean)
+	forcedNight = on == true
+	publish()
 end
 
 function DayNightService.getElapsed(): number
@@ -121,6 +128,7 @@ function DayNightService.stop()
 		unregister()
 	end
 	table.clear(unregisters)
+	forcedNight = false
 	started = false
 end
 
