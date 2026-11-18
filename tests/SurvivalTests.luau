@@ -4,6 +4,8 @@
 local Config = require("../src/shared/Config")
 local DayClock = require("../src/shared/logic/DayClock")
 local FireLogic = require("../src/shared/logic/FireLogic")
+local FireRepel = require("../src/shared/logic/FireRepel")
+local FireTiers = require("../src/shared/logic/FireTiers")
 local SurvivalLogic = require("../src/shared/logic/SurvivalLogic")
 local Sim = require("./sim")
 
@@ -184,12 +186,12 @@ return function(check: (string, boolean) -> ())
 	local outside = SurvivalLogic.new(M)
 	for _ = 1, 60 do
 		SurvivalLogic.step(inside, {
-			inFire = FireLogic.inRadius(0, 0, 5, 0, F.WarmRadius),
+			inFire = FireLogic.inRadius(0, 0, F.WarmRadius - 10, 0, F.WarmRadius),
 			isNight = true,
 			invincible = false,
 		}, M, 1)
 		SurvivalLogic.step(outside, {
-			inFire = FireLogic.inRadius(0, 0, 50, 0, F.WarmRadius),
+			inFire = FireLogic.inRadius(0, 0, F.WarmRadius + 10, 0, F.WarmRadius),
 			isNight = true,
 			invincible = false,
 		}, M, 1)
@@ -268,4 +270,77 @@ return function(check: (string, boolean) -> ())
 		stats.violations == 0 and base.hash == a.hash
 	)
 	check("survival sim exercises deaths or downs", base.events > SIM_DAYS)
+
+	-- Fire radius chain: tier radii follow (2 + tier) * R0 with spec tier = index - 1.
+	local R0 = F.BaseRadius
+	check(
+		"fire warm radius tier 1 = 3 R0",
+		F.Tiers[1].WarmRadius == 3 * R0 and F.WarmRadius == 3 * R0
+	)
+	local progression = true
+	for i, row in F.Tiers do
+		if row.WarmRadius ~= (2 + i) * R0 then
+			progression = false
+		end
+		if i > 1 and row.WarmRadius - F.Tiers[i - 1].WarmRadius ~= R0 then
+			progression = false
+		end
+		if row.BuildRadius <= row.WarmRadius or row.LightRange <= row.WarmRadius then
+			progression = false
+		end
+	end
+	check("fire tier radii = (2+tier)*R0, +R0 per upgrade", progression)
+	check(
+		"fire tier rows resolve through FireTiers.get",
+		FireTiers.get(3).WarmRadius == 5 * R0 and FireTiers.get(0).WarmRadius == 3 * R0
+	)
+	local top = F.Tiers[#F.Tiers]
+	check(
+		"fire build range reaches top-tier build radius only",
+		FireTiers.inBuildRange(
+			{ { x = 0, z = 0, buildRadius = top.BuildRadius } },
+			top.BuildRadius,
+			0
+		)
+			and not FireTiers.inBuildRange(
+				{ { x = 0, z = 0, buildRadius = top.BuildRadius } },
+				top.BuildRadius + 1,
+				0
+			)
+	)
+	check(
+		"fire repel radius = warm + margin per tier",
+		FireRepel.repelRadius(top.WarmRadius, F.RepelRadius, Config.Night.RepelMargin)
+				== top.WarmRadius + Config.Night.RepelMargin
+			and F.RepelRadius == F.WarmRadius + Config.Night.RepelMargin
+	)
+	local R = F.Ring
+	local capsOk = true
+	for _, row in F.Tiers do
+		for _, radius in { row.WarmRadius, row.BuildRadius } do
+			local n = FireTiers.ringDotCount(radius, R.Spacing, R.MinDots, R.MaxDotsPerLayer)
+			if n < R.MinDots or n > R.MaxDotsPerLayer then
+				capsOk = false
+			end
+		end
+	end
+	check("fire ring dots within per-layer caps for all tiers", capsOk)
+	check(
+		"fire ring spacing scales dots with radius",
+		FireTiers.ringDotCount(top.BuildRadius, R.Spacing, R.MinDots, R.MaxDotsPerLayer)
+			> FireTiers.ringDotCount(F.Tiers[1].WarmRadius, R.Spacing, R.MinDots, R.MaxDotsPerLayer)
+	)
+	check(
+		"fire ring top build ring keeps spacing (not capped)",
+		2 * math.pi * top.BuildRadius / R.Spacing <= R.MaxDotsPerLayer
+	)
+	check(
+		"fire ring dot cap hit for huge radius",
+		FireTiers.ringDotCount(1e6, R.Spacing, R.MinDots, R.MaxDotsPerLayer) == R.MaxDotsPerLayer
+	)
+	check(
+		"fire ring total cap fits at least one full fire",
+		R.MaxDotsTotal >= R.MaxDotsPerLayer + R.MinDots
+	)
+	check("fire meter shows within top warm radius", F.Meter.ShowRange >= top.WarmRadius)
 end

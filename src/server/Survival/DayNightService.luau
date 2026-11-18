@@ -46,10 +46,25 @@ local function applyLighting()
 	local n = LightingMath.nightAmount(info.phase, T.DayFraction, L.TwilightPhase)
 	local mix = LightingMath.lerp
 	Lighting.ClockTime = mix(L.DayClockTime, L.NightClockTime, n)
-	Lighting.Ambient = color(LightingMath.lerpColor(L.DayAmbient, L.NightAmbient, n))
-	Lighting.OutdoorAmbient =
-		color(LightingMath.lerpColor(L.DayOutdoorAmbient, L.NightOutdoorAmbient, n))
-	Lighting.Brightness = mix(L.DayBrightness, L.NightBrightness, n)
+	-- Shadows: night keeps an ambient and brightness floor (Config.Shadows) so the forest stays readable
+	-- on a phone while the shadowed floor under the canopy is still dim.
+	local SH = Config.Shadows
+	local ambient = LightingMath.lerpColor(L.DayAmbient, L.NightAmbient, n)
+	local outdoor = LightingMath.lerpColor(L.DayOutdoorAmbient, L.NightOutdoorAmbient, n)
+	local floorAmbient = LightingMath.lerpColor(SH.NightMinAmbient, { 0, 0, 0 }, 1 - n)
+	local floorOutdoor = LightingMath.lerpColor(SH.NightMinOutdoorAmbient, { 0, 0, 0 }, 1 - n)
+	Lighting.Ambient = color({
+		math.max(ambient[1], floorAmbient[1]),
+		math.max(ambient[2], floorAmbient[2]),
+		math.max(ambient[3], floorAmbient[3]),
+	})
+	Lighting.OutdoorAmbient = color({
+		math.max(outdoor[1], floorOutdoor[1]),
+		math.max(outdoor[2], floorOutdoor[2]),
+		math.max(outdoor[3], floorOutdoor[3]),
+	})
+	Lighting.Brightness =
+		math.max(mix(L.DayBrightness, L.NightBrightness, n), SH.NightMinBrightness * n)
 	Lighting.FogColor = color(LightingMath.lerpColor(L.DayFogColor, L.NightFogColor, n))
 	Lighting.FogStart = mix(L.DayFogStart, L.NightFogStart, n)
 	Lighting.FogEnd = mix(L.DayFogEnd, L.NightFogEnd, n)
@@ -90,6 +105,8 @@ function DayNightService.start()
 	started = true
 	elapsed = 0
 	speed = 1
+	Lighting.GlobalShadows = Config.Shadows.GlobalShadows
+	Lighting.ShadowSoftness = Config.Shadows.ShadowSoftness
 	publish()
 	applyLighting()
 	connection = RunService.Heartbeat:Connect(function(dt: number)

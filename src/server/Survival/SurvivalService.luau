@@ -13,6 +13,8 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local SurvivalLogic = require(Shared.logic.SurvivalLogic)
+local DownedLogic = require(Shared.logic.DownedLogic)
+local DownedPose = require(script.Parent.DownedPose)
 local Guard = require(script.Parent.Parent.Net.Guard)
 local DayNightService = require(script.Parent.DayNightService)
 local FireService = require(script.Parent.FireService)
@@ -29,7 +31,9 @@ type PlayerState = {
 	meters: SurvivalLogic.State,
 	connections: { RBXScriptConnection },
 	sentKey: string,
-	revive: { target: Player, remaining: number }?,
+	revive: { target: Player, remaining: number, lastRefresh: number }?,
+	jumpPower: number?, -- humanoid jump values saved while downed (restored on revive)
+	jumpHeight: number?,
 	lastHit: string?, -- what last dealt outside damage ("Wolf"); the cause if that damage downs them
 	restore: SurvivalLogic.State?, -- held meters to apply on the first character after a rejoin
 }
@@ -58,6 +62,7 @@ local held: { [number]: { meters: SurvivalLogic.State, expires: number } } = {}
 
 local CAUSE_COLD = "Cold"
 local CAUSE_HUNGER = "Hunger"
+local CAUSE_FALL = "Fall"
 
 local function reportCause(player: Player, cause: string)
 	local handler = causeHandler
@@ -94,14 +99,57 @@ end
 
 local function setDownedAttribute(player: Player, downed: boolean)
 	player:SetAttribute(D.StateAttribute, downed)
+	if not downed then
+		player:SetAttribute(D.BleedAttribute, nil)
+	end
+	player:SetAttribute(D.ReviveProgressAttribute, nil)
 end
 
+-- Lying/crawling pose with no jumping (ragdoll-free: joints stay intact).
+local function applyDownedBody(state: PlayerState, humanoid: Humanoid)
+	humanoid.WalkSpeed = D.DownedWalkSpeed
+	if state.jumpPower == nil then
+		state.jumpPower = humanoid.JumpPower
+		state.jumpHeight = humanoid.JumpHeight
+	end
+	humanoid.JumpPower = D.DownedJumpPower
+	humanoid.JumpHeight = 0
+	humanoid.Health = D.DownedHealth
+	local character = humanoid.Parent
+	if character and character:IsA("Model") then
+		DownedPose.apply(character)
+	end
+end
+
+local function clearDownedBody(state: PlayerState, humanoid: Humanoid)
+	humanoid.WalkSpeed = Config.WALK_SPEED
+	if state.jumpPower ~= nil then
+		humanoid.JumpPower = state.jumpPower
+		humanoid.JumpHeight = state.jumpHeight or humanoid.JumpHeight
+		state.jumpPower = nil
+		state.jumpHeight = nil
+	end
+	local character = humanoid.Parent
+	if character and character:IsA("Model") then
+		DownedPose.clear(character)
+	end
+end
+
+-- Final death (bled out, solo, or fell out of the world): the body lies where it fell, nothing breaks apart,
+-- and the player becomes a spectator (client reads DeadAttribute).
 local function kill(player: Player, state: PlayerState)
 	SurvivalLogic.kill(state.meters)
 	state.revive = nil
 	setDownedAttribute(player, false)
+	player:SetAttribute(D.DeadAttribute, true)
 	local humanoid = getHumanoid(player)
 	if humanoid then
+		humanoid.BreakJointsOnDeath = false
+		humanoid.WalkSpeed = 0
+		local character = humanoid.Parent
+		if character and character:IsA("Model") then
+			DownedPose.apply(character)
+		end
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
 		humanoid.Health = 0
 	end
@@ -121,7 +169,7 @@ local function hasAbleTeammate(except: Player): boolean
 end
 
 local function goDown(player: Player, state: PlayerState)
-	if not hasAbleTeammate(player) then
+	if DownedLogic.onZeroHealth(hasAbleTeammate(player)) == "dead" then
 		kill(player, state)
 		return
 	end
@@ -129,7 +177,7 @@ local function goDown(player: Player, state: PlayerState)
 	setDownedAttribute(player, true)
 	local humanoid = getHumanoid(player)
 	if humanoid then
-		humanoid.WalkSpeed = D.DownedWalkSpeed
+		applyDownedBody(state, humanoid)
 	end
 end
 
@@ -137,7 +185,10 @@ local function resetState(player: Player, state: PlayerState)
 	state.meters = SurvivalLogic.new(M)
 	state.revive = nil
 	state.sentKey = ""
+	state.jumpPower = nil
+	state.jumpHeight = nil
 	setDownedAttribute(player, false)
+	player:SetAttribute(D.DeadAttribute, false)
 end
 
 local function setupCharacter(player: Player, state: PlayerState, character: Model)
@@ -152,9 +203,14 @@ local function setupCharacter(player: Player, state: PlayerState, character: Mod
 	if humanoid and player.Character == character then
 		humanoid.MaxHealth = M.MaxHealth
 		humanoid.Health = state.meters.health
+		humanoid.BreakJointsOnDeath = false -- a body never scatters
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false) -- we decide when a player dies
 		if state.meters.downed then
-			humanoid.WalkSpeed = D.DownedWalkSpeed
+			task.defer(function()
+				if player.Character == character and state.meters.downed then
+					applyDownedBody(state, humanoid)
+				end
+			end)
 		end
 	end
 end
@@ -198,6 +254,7 @@ local function tickPlayer(player: Player, state: PlayerState, dt: number, isNigh
 	end
 	absorbExternalDamage(player, state, humanoid)
 	if m.downed then
+		player:SetAttribute(D.BleedAttribute, DownedLogic.bleedSeconds(m.bleed))
 		if SurvivalLogic.tickDowned(m, dt) then
 			kill(player, state)
 		end
@@ -233,12 +290,18 @@ local function tickPlayer(player: Player, state: PlayerState, dt: number, isNigh
 			goDown(player, state)
 		end
 	end
-	if not m.dead and math.abs(humanoid.Health - m.health) > HEALTH_EPSILON then
-		humanoid.Health = m.health
+	local shownHealth = if m.downed then D.DownedHealth else m.health
+	if not m.dead and math.abs(humanoid.Health - shownHealth) > HEALTH_EPSILON then
+		humanoid.Health = shownHealth
 	end
 end
 
--- Revive channel: validated every tick (reviver alive and able, target still downed, in range).
+local function actorOf(state: PlayerState): DownedLogic.Actor
+	return { downed = state.meters.downed, dead = state.meters.dead }
+end
+
+-- Revive channel: validated every tick (reviver alive and able, target still downed, in range, still
+-- holding: the client refreshes the request while it holds, a lapse cancels).
 local function tickRevive(player: Player, state: PlayerState, dt: number)
 	local channel = state.revive
 	if not channel then
@@ -247,32 +310,44 @@ local function tickRevive(player: Player, state: PlayerState, dt: number)
 	local target = channel.target
 	local targetState = states[target]
 	local reviverRoot, targetRoot = getRoot(player), getRoot(target)
-	if
-		not targetState
-		or not targetState.meters.downed
-		or state.meters.downed
-		or state.meters.dead
-		or not reviverRoot
-		or not targetRoot
-		or (reviverRoot.Position - targetRoot.Position).Magnitude > D.ReviveRange
-	then
+	local dist = if reviverRoot and targetRoot
+		then (reviverRoot.Position - targetRoot.Position).Magnitude
+		else math.huge
+	local verdict, left = "cancel", channel.remaining
+	if targetState then
+		local since = if D.ReviveBarHoldRequired then os.clock() - channel.lastRefresh else 0
+		verdict, left = DownedLogic.channelStep(
+			channel.remaining,
+			dt,
+			dist,
+			D.ReviveCancelRange,
+			since,
+			D.ReviveStaleSeconds,
+			actorOf(state),
+			actorOf(targetState)
+		)
+	end
+	if verdict == "cancel" or not targetState then
 		state.revive = nil
+		target:SetAttribute(D.ReviveProgressAttribute, nil)
 		return
 	end
-	channel.remaining -= dt
-	if channel.remaining <= 0 then
-		state.revive = nil
-		if SurvivalLogic.revive(targetState.meters, M, D) then
-			setDownedAttribute(target, false)
-			local humanoid = getHumanoid(target)
-			if humanoid then
-				humanoid.WalkSpeed = Config.WALK_SPEED
-				humanoid.Health = targetState.meters.health
-			end
-			local handler = reviveHandler
-			if handler then
-				task.spawn(handler, player, target)
-			end
+	channel.remaining = left
+	if verdict == "continue" then
+		target:SetAttribute(D.ReviveProgressAttribute, DownedLogic.progress(left, D.ReviveSeconds))
+		return
+	end
+	state.revive = nil
+	if SurvivalLogic.revive(targetState.meters, M, D) then
+		setDownedAttribute(target, false)
+		local humanoid = getHumanoid(target)
+		if humanoid then
+			clearDownedBody(targetState, humanoid)
+			humanoid.Health = targetState.meters.health
+		end
+		local handler = reviveHandler
+		if handler then
+			task.spawn(handler, player, target)
 		end
 	end
 end
@@ -304,22 +379,25 @@ local function onReviveRequest(player: Player, target: unknown)
 	if not state or not targetState then
 		return
 	end
-	if
-		state.meters.downed
-		or state.meters.dead
-		or not targetState.meters.downed
-		or state.revive
-	then
-		return
-	end
 	local reviverRoot, targetRoot = getRoot(player), getRoot(other)
 	if not reviverRoot or not targetRoot then
 		return
 	end
-	if (reviverRoot.Position - targetRoot.Position).Magnitude > D.ReviveRange then
+	local dist = (reviverRoot.Position - targetRoot.Position).Magnitude
+	local channel = state.revive
+	if channel and channel.target == other then
+		channel.lastRefresh = os.clock() -- still holding
 		return
 	end
-	state.revive = { target = other, remaining = D.ReviveSeconds }
+	if channel then
+		return -- one channel at a time
+	end
+	if
+		not DownedLogic.canStartRevive(actorOf(state), actorOf(targetState), dist, D.ReviveRange)
+	then
+		return
+	end
+	state.revive = { target = other, remaining = D.ReviveSeconds, lastRefresh = os.clock() }
 end
 
 local function onPlayerAdded(player: Player)
@@ -407,6 +485,17 @@ end
 function SurvivalService.isDowned(player: Player): boolean
 	local state = states[player]
 	return state ~= nil and state.meters.downed
+end
+
+-- Hook for the world edge / kill height (World.shouldKill, called by the terrain edge wall or any
+-- fell-out check). Ends the player outright: no downed window, not revivable. Single fall path:
+-- ChunkService.setFallHandler (wired in Phase3 Wiring) calls this once per fall.
+function SurvivalService.killOutright(player: Player, cause: string?)
+	local state = states[player]
+	if state and not state.meters.dead then
+		reportCause(player, cause or CAUSE_FALL)
+		kill(player, state)
+	end
 end
 
 function SurvivalService.damage(player: Player, amount: number, cause: string?)

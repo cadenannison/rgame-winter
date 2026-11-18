@@ -22,6 +22,7 @@ local Server = script.Parent.Parent
 local Guard = require(Server.Net.Guard)
 local SwingRelay = require(Server.Atmosphere.SwingRelay)
 local FireRepel = require(Shared.logic.FireRepel)
+local World = require(Shared.logic.World)
 local InventoryService = require(Server.Items.InventoryService)
 
 type MobKind = {
@@ -281,9 +282,16 @@ local function createMob(kind: MobKind, position: Vector3, opts: CreateOpts?): M
 		return nil
 	end
 	local isBoss = kind.category == "miniboss" or kind.category == "boss"
-	local mult = MobScaling.multipliers(getDay(), ringAt(position), partyCount)
-	local health = (opts and opts.health) or kind.stats.Health * mult.health
-	local damage = (opts and opts.damage) or kind.stats.Damage * mult.damage
+	local scaledHealth, scaledDamage = MobScaling.mobStats(
+		kind.name,
+		kind.stats.Health,
+		kind.stats.Damage,
+		getDay(),
+		ringAt(position),
+		partyCount
+	)
+	local health = (opts and opts.health) or scaledHealth
+	local damage = (opts and opts.damage) or scaledDamage
 
 	local model = Instance.new("Model")
 	model.Name = kind.name
@@ -357,6 +365,31 @@ local function groundAt(x: number, z: number, originY: number): Vector3?
 	return if hit then hit.Position else nil
 end
 
+-- Lit campfires from the Fire tag (position + per-fire WarmRadius attribute, Config fallback).
+local function collectFires(): { FireRepel.Fire }
+	local out: { FireRepel.Fire } = {}
+	for _, fire in CollectionService:GetTagged(Config.Fire.Tag) do
+		local fuel = fire:GetAttribute(Config.Fire.FuelAttribute)
+		if type(fuel) == "number" and fuel > 0 then
+			local p: Vector3? = nil
+			if fire:IsA("Model") then
+				p = fire:GetPivot().Position
+			elseif fire:IsA("BasePart") then
+				p = fire.Position
+			end
+			if p then
+				local r = fire:GetAttribute(NIGHT.WarmRadiusAttribute)
+				table.insert(out, {
+					x = p.X,
+					z = p.Z,
+					radius = if type(r) == "number" then r else Config.Fire.WarmRadius,
+				})
+			end
+		end
+	end
+	return out
+end
+
 -- Largest hot-spring bias near any player (1 = none).
 local function spawnBias(infos: { PlayerInfo }): number
 	local provider = spawnBiasProvider
@@ -421,7 +454,7 @@ local function trySpawn(infos: { PlayerInfo })
 	local spawnTable = MobScaling.spawnTable(SPAWN_ENTRIES, biomeId, day, danger)
 	local weights: { number } = {}
 	for _, row in spawnTable do
-		table.insert(weights, row.weight)
+		table.insert(weights, row.weight * MobScaling.weightFactor(row.kind, day))
 	end
 	local pick = MobRules.pickWeighted(weights, rng:NextNumber())
 	if not pick then
@@ -433,6 +466,10 @@ local function trySpawn(infos: { PlayerInfo })
 	end
 	local ground = groundAt(x, z, anchor.Y)
 	if ground then
+		-- Never spawn inside a lit fire's repel circle (the safe zone); fire radii are up to 90 + margin.
+		if MobRules.spawnExcluded(kind.category, ground.X, ground.Z, collectFires()) then
+			return
+		end
 		createMob(kind, ground)
 	end
 end
@@ -440,31 +477,6 @@ end
 local function horizontalDir(from: Vector3, to: Vector3): Vector3
 	local d = Vector3.new(to.X - from.X, 0, to.Z - from.Z)
 	return if d.Magnitude > 0.001 then d.Unit else Vector3.new(1, 0, 0)
-end
-
--- Lit campfires from the Fire tag (position + per-fire WarmRadius attribute, Config fallback).
-local function collectFires(): { FireRepel.Fire }
-	local out: { FireRepel.Fire } = {}
-	for _, fire in CollectionService:GetTagged(Config.Fire.Tag) do
-		local fuel = fire:GetAttribute(Config.Fire.FuelAttribute)
-		if type(fuel) == "number" and fuel > 0 then
-			local p: Vector3? = nil
-			if fire:IsA("Model") then
-				p = fire:GetPivot().Position
-			elseif fire:IsA("BasePart") then
-				p = fire.Position
-			end
-			if p then
-				local r = fire:GetAttribute(NIGHT.WarmRadiusAttribute)
-				table.insert(out, {
-					x = p.X,
-					z = p.Z,
-					radius = if type(r) == "number" then r else Config.Fire.WarmRadius,
-				})
-			end
-		end
-	end
-	return out
 end
 
 local function repelOf(f: FireRepel.Fire): number
@@ -536,7 +548,8 @@ local function stepMob(
 		end
 	end
 	local hunter = row.kind.behavior == "Hunt"
-	local fireIndex = if hunter and not row.kind.breaksFire
+	local repelled = MobRules.repelledByFire(row.kind.category, row.kind.breaksFire)
+	local fireIndex = if hunter and repelled
 		then FireRepel.insideAny(pos.X, pos.Z, fires, NIGHT.RepelMargin, Config.Fire.RepelRadius)
 		else nil
 	local fire = if fireIndex then fires[fireIndex] else nil
@@ -612,7 +625,7 @@ local function stepMob(
 		local target = nearestInfo.root.Position
 		local tx, tz = target.X, target.Z
 		-- Never path into a fire's repel circle to reach a sheltered player.
-		if not row.kind.breaksFire then
+		if repelled then
 			for _, f in fires do
 				tx, tz = FireRepel.clampTarget(tx, tz, f, repelOf(f))
 			end
@@ -636,7 +649,17 @@ local function stepMob(
 		elseif result == "Strike" then
 			setWindup(row, false)
 			row.nextAttackAt = now + stats.AttackCooldown
-			if nearestInfo.player:GetAttribute(Config.Debug.PlayerInvincibleAttribute) ~= true then
+			local biteOk = MobRules.biteAllowed(
+				repelled,
+				toPoint(pos),
+				toPoint(nearestInfo.root.Position),
+				fires
+			)
+			if
+				biteOk
+				and nearestInfo.player:GetAttribute(Config.Debug.PlayerInvincibleAttribute)
+					~= true
+			then
 				local onHit = hitHandler
 				if onHit then
 					pcall(onHit, nearestInfo.player, row.kind.name)
@@ -671,10 +694,13 @@ local function aiPass(infos: { PlayerInfo })
 		table.insert(playerPoints, toPoint(info.root.Position))
 	end
 
-	-- Despawn mobs with no player within range.
+	-- Despawn mobs with no player within range, or that fell off the world (kill height / edge).
 	for i, model in models do
+		local row = rows[model]
+		local at = if row then row.root.Position else nil
 		if
-			MobRules.shouldDespawn(
+			(at ~= nil and World.shouldKill(at.X, at.Y, at.Z))
+			or MobRules.shouldDespawn(
 				MobRules.nearestDistance(points[i], playerPoints),
 				Config.Mobs.DespawnDistance
 			)
@@ -879,7 +905,13 @@ function MobService.spawnScaled(
 	if not kind then
 		return nil
 	end
-	local model = createMob(kind, position, { health = health, damage = damage })
+	-- Bosses may break through the fire edge, but never appear inside a fire's warm radius.
+	local px, pz = MobRules.spawnPoint(kind.category, position.X, position.Z, collectFires())
+	local spot = position
+	if px ~= position.X or pz ~= position.Z then
+		spot = groundAt(px, pz, position.Y) or Vector3.new(px, position.Y, pz)
+	end
+	local model = createMob(kind, spot, { health = health, damage = damage })
 	if model and (kind.category == "miniboss" or kind.category == "boss") then
 		model:SetAttribute(MobData.BossAttribute, kindName)
 	end

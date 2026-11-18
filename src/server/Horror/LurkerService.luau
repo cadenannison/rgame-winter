@@ -123,7 +123,7 @@ local function trySpawn(member: HorrorWorld.Member, weight: number, snap: Horror
 	local dir = CFrame.Angles(0, rng:NextNumber(-math.pi / 2, math.pi / 2), 0)
 		:VectorToWorldSpace(back)
 	local spot = root.Position + dir * rng:NextNumber(L.SpawnMinDistance, L.SpawnMaxDistance)
-	if DreadLogic.isInside(spot.X, spot.Z, snap.warmZones, 0) then
+	if DreadLogic.isInside(spot.X, spot.Z, snap.warmZones, Config.FireRules.SpawnMargin) then
 		return
 	end
 	local ground = HorrorWorld.groundAt(spot.X, spot.Z, root.Position.Y)
@@ -180,6 +180,11 @@ end
 local function updateLurker(l: Lurker, now: number, dt: number)
 	local root = HorrorWorld.rootOf(l.owner)
 	if not root or l.owner.Parent ~= Players or now >= l.expiresAt or not l.model.Parent then
+		remove(l)
+		return
+	end
+	-- Lurkers never enter a warm zone: one that drifts (or a fire placed) inside it melts away.
+	if DreadLogic.isInside(l.x, l.z, DreadService.snapshot().warmZones, 0) then
 		remove(l)
 		return
 	end

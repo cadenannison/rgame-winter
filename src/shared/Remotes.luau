@@ -122,6 +122,14 @@ export type MetaStatePayload = {
 	settings: { reduceScares: boolean },
 	hintsSeen: { string },
 }
+-- Loot round. Chests are tagged Config.Loot.ChestTag; contents are rolled and kept on the server only.
+export type LootOpenPayload = { chest: Instance } -- within Config.Loot.ServerOpenRange; one open per chest
+export type LootOpenedPayload = {
+	chest: Instance, -- the chest that was just looted
+	rarity: string, -- chest rarity (Config.Loot.Rarities)
+	items: { ItemStack }, -- what this player received (already in their inventory; overflow stays in the chest)
+	overflow: boolean, -- inventory was full: some stacks remain in the chest (chest stays unlooted)
+}
 
 local Remotes = {}
 
@@ -139,6 +147,7 @@ Remotes.UseItemRequest = "UseItemRequest" -- client -> server (slot: number), ea
 Remotes.AddFuelRequest = "AddFuelRequest" -- client -> server (fire: Instance), spends wood from inventory
 Remotes.UpgradeFireRequest = "UpgradeFireRequest" -- client -> server (fire: Instance), spends the tier upgrade cost
 Remotes.ReviveRequest = "ReviveRequest" -- client -> server (target: Player)
+Remotes.ReturnToLobbyRequest = Config.Downed.ReturnRemoteName -- client -> server (no payload); dead member or ended run only
 -- Phase 2 (payload types above)
 Remotes.PadJoinRequest = "PadJoinRequest" -- client -> server (PadJoinPayload); stepping on a pad is also detected server-side
 Remotes.PadLeaveRequest = "PadLeaveRequest" -- client -> server (no payload); leave the current pad
@@ -176,6 +185,9 @@ Remotes.MetaStateRequest = "MetaStateRequest" -- client -> server (no payload); 
 Remotes.MetaState = "MetaState" -- server -> client (MetaStatePayload)
 Remotes.AchievementUnlocked = "AchievementUnlocked" -- server -> client (AchievementUnlockedPayload); toast
 Remotes.SwingBroadcast = "SwingBroadcast" -- server -> other nearby clients (SwingPayload); once per accepted swing
+-- Loot round (payload types above)
+Remotes.LootOpenRequest = "LootOpenRequest" -- client -> server (LootOpenPayload); handler: type, range, Guard, state (unlooted, near), roll/grant
+Remotes.LootOpened = "LootOpened" -- server -> opening client (LootOpenedPayload); once per open, for feedback/visuals
 Remotes.DebugCommand = "DebugCommand" -- client -> server, Studio only (command: string, arg: any); not in Remotes.all
 
 -- Every remote the server creates eagerly at startup (so clients never wait on a missing folder).
@@ -192,6 +204,7 @@ Remotes.all = {
 	Remotes.AddFuelRequest,
 	Remotes.UpgradeFireRequest,
 	Remotes.ReviveRequest,
+	Remotes.ReturnToLobbyRequest,
 	Remotes.PadJoinRequest,
 	Remotes.PadLeaveRequest,
 	Remotes.PadModeRequest,
@@ -226,6 +239,8 @@ Remotes.all = {
 	Remotes.MetaState,
 	Remotes.AchievementUnlocked,
 	Remotes.SwingBroadcast,
+	Remotes.LootOpenRequest,
+	Remotes.LootOpened,
 }
 
 local function getFolder(): Folder

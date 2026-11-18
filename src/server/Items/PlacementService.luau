@@ -125,7 +125,7 @@ local function groundY(x: number, z: number, nearY: number): number?
 	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = { chunks }
+	params.FilterDescendantsInstances = { chunks, Workspace.Terrain } -- ground is Terrain voxels plus POI floors
 	local hit = Workspace:Raycast(
 		Vector3.new(x, nearY + B.GroundRayHeight, z),
 		Vector3.new(0, -B.GroundRayLength, 0),

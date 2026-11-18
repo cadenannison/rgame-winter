@@ -46,3 +46,6 @@
 2026-11-17 — Hint timings/lookup range (Config.Hints) and the relayed-swing cap (Config.Perf.SwingMaxPerSecond) moved from client-local configs into Config; AtmosphereConfig/MetaUiConfig keep only layout, colours and copy (same rule as HudConfig/LobbyConfig).
 2026-11-17 — Studio meta QA protects the real test profile: Debug/MetaQA backs up every meta field server-side and restores it after the scenario (the bridge copies tables, so QA cannot mutate profiles directly).
 
+2026-11-17 — Massive structures B: rooms are axis-aligned rects with doors/ramps in a pure plan (PlanKitB); one adapter builds the large-part shell, carves Terrain voxels and spawns dressing near players.
+
+2026-11-17 — Massive structures A: research station and mine complex are rooms plus stair halls (flat landing + ramp <= 30 degrees) in a pure plan (StructurePlanKitA); one server adapter carves Terrain, builds the large-part shell and spawns dressing near players; Horror hooks (lurker spots, cue spots, RoomAt) are server data on the Handle.

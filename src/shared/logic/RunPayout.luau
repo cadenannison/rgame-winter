@@ -37,6 +37,7 @@ local TIPS: { [string]: string } = {
 	Cold = "Stay near a fire and wear warmer clothes before you head out.",
 	Hunger = "Cook food at a fire; cooked meals restore far more.",
 	Wolf = "Wolves fear fire. Fight near your camp and keep your spear ready.",
+	Fall = "Stay inside the map and away from the edge.",
 }
 local DEFAULT_TIP = "Keep your fire fed and stay close to your party."
 

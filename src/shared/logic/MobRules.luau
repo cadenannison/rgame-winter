@@ -1,6 +1,9 @@
 --!strict
 -- Pure mob rules: activation, budget, scaling, spawn picks, hit validation (no Roblox APIs).
 
+local Config = require("../Config")
+local FireRepel = require("./FireRepel")
+
 export type Point = { x: number, z: number }
 
 local MobRules = {}
@@ -107,9 +110,82 @@ function MobRules.spawnDistanceOk(
 	return nearest ~= nil and nearest <= maxDist
 end
 
+-- Hits a fixed-damage attacker needs to bring health to 0 (ceiling). nil when damage is not positive.
+function MobRules.hitsToKill(health: number, damage: number): number?
+	if damage <= 0 then
+		return nil
+	end
+	return math.max(1, math.ceil(health / damage))
+end
+
 -- Server-recomputed melee check: finite distance within range plus latency slack.
 function MobRules.canMelee(dist: number, range: number, lagSlack: number): boolean
 	return dist == dist and dist >= 0 and dist <= range + lagSlack
+end
+
+-- Fire zone rules (Config.FireRules). Fires are { x, z, radius = WarmRadius }.
+
+-- Categories in FireRules.SpawnExcludeCategories never spawn inside a lit fire's warm radius + SpawnMargin.
+function MobRules.spawnExcluded(
+	category: string,
+	x: number,
+	z: number,
+	fires: { FireRepel.Fire }
+): boolean
+	local rules = Config.FireRules
+	if table.find(rules.SpawnExcludeCategories, category) == nil then
+		return false
+	end
+	return FireRepel.insideAny(x, z, fires, rules.SpawnMargin, Config.Fire.RepelRadius) ~= nil
+end
+
+-- Spawn point pushed just outside every fire exclusion circle (bosses are moved, not rejected).
+function MobRules.spawnPoint(
+	category: string,
+	x: number,
+	z: number,
+	fires: { FireRepel.Fire }
+): (number, number)
+	local rules = Config.FireRules
+	if table.find(rules.SpawnExcludeCategories, category) == nil then
+		return x, z
+	end
+	local px, pz = x, z
+	for _ = 1, 2 do
+		for _, f in fires do
+			local edge = FireRepel.repelRadius(f.radius, Config.Fire.RepelRadius, rules.SpawnMargin)
+			px, pz = FireRepel.clampTarget(px, pz, f, edge + 0.01)
+		end
+	end
+	return px, pz
+end
+
+-- Repelled = in FireRules.RepelCategories and not a fire-breaker. Bosses (and heavy or ranged kinds with
+-- breaksFire) ignore the edge.
+function MobRules.repelledByFire(category: string, breaksFire: boolean): boolean
+	return not breaksFire
+		and category ~= "boss"
+		and table.find(Config.FireRules.RepelCategories, category) ~= nil
+end
+
+-- Server-side bite gate for repelled mobs: no damage to a target standing inside a fire's warm radius, and
+-- none while the mob itself is inside a repel circle (it retreats instead).
+function MobRules.biteAllowed(
+	repelled: boolean,
+	mob: Point,
+	target: Point,
+	fires: { FireRepel.Fire }
+): boolean
+	if not repelled then
+		return true
+	end
+	if
+		FireRepel.insideAny(mob.x, mob.z, fires, Config.Night.RepelMargin, Config.Fire.RepelRadius)
+		~= nil
+	then
+		return false
+	end
+	return FireRepel.insideAny(target.x, target.z, fires, 0, Config.Fire.WarmRadius) == nil
 end
 
 return MobRules

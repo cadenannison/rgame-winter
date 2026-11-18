@@ -166,8 +166,14 @@ function Sim.nightDangerSystem(): (System, NightStats)
 		chased = false,
 		retreated = false,
 	}
-	local wolf =
-		{ x = 60, z = 0, nextAttackAt = 0, leaveAt = nil :: number?, alive = true, spawned = false }
+	local wolf = {
+		x = SimConfig.Fire.WarmRadius + 14 + 28,
+		z = 0,
+		nextAttackAt = 0,
+		leaveAt = nil :: number?,
+		alive = true,
+		spawned = false,
+	}
 	local windup: MobAI.Windup = { startedAt = nil }
 	local player = { x = SimConfig.Fire.WarmRadius + 14, z = 0 }
 	local system: System = {
@@ -253,13 +259,13 @@ function Sim.nightDangerSystem(): (System, NightStats)
 					stats.windupSeen = true
 				elseif result == "Strike" then
 					wolf.nextAttackAt = clock.time + wolfCfg.AttackCooldown
-					if player.x == fire.x + 3 then
+					if player.x == fire.x + fire.radius - 6 then
 						stats.shelteredBitten = true
 					end
 					stats.bites += 1
 					sim:record("bite", clock.time)
 					-- Survivable: the bitten player runs into the fire's warm radius.
-					player.x = fire.x + 3
+					player.x = fire.x + fire.radius - 6
 				end
 			end
 			local fd = math.sqrt((wolf.x - fire.x) ^ 2 + (wolf.z - fire.z) ^ 2)

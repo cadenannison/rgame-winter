@@ -8,6 +8,8 @@ local HudMath = require("../src/shared/logic/HudMath")
 local Crafting = require("../src/shared/logic/Crafting")
 local ItemCatalog = require("../src/shared/ItemCatalog")
 local MobAI = require("../src/shared/logic/MobAI")
+local MobRules = require("../src/shared/logic/MobRules")
+local MobScaling = require("../src/shared/logic/MobScaling")
 
 return function(check: (string, boolean) -> ())
 	-- Onboarding: first not-done step shows; early actions are not asked again; finishes.
@@ -75,5 +77,15 @@ return function(check: (string, boolean) -> ())
 			Config.Combat.MeleeRange + prey.HitRadius >= Config.Feedback.PromptRange
 		)
 	end
-	check("axe one-shots a day-1 hare", Config.Combat.ToolDamage >= Config.Mobs.Hare.Health)
+	do
+		local dayOne = MobScaling.multipliers(1, 0, 1)
+		local hareHits = MobRules.hitsToKill(
+			Config.Mobs.Hare.Health * dayOne.health,
+			Config.Combat.ToolDamage
+		) or -1
+		check(
+			"axe kills a day-1 hare in 2-3 hits",
+			hareHits >= Config.Combat.HareHitsMin and hareHits <= Config.Combat.HareHitsMax
+		)
+	end
 end

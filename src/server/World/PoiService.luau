@@ -8,16 +8,20 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local BiomeLogic = require(Shared:WaitForChild("logic"):WaitForChild("BiomeLogic"))
 local WorldLayout = require(Shared:WaitForChild("logic"):WaitForChild("WorldLayout"))
+local World = require(Shared:WaitForChild("logic"):WaitForChild("World"))
+local PoiPlan = require(Shared:WaitForChild("logic"):WaitForChild("PoiPlan"))
 local Server = ServerScriptService:WaitForChild("Server")
 local Guard = require(Server:WaitForChild("Net"):WaitForChild("Guard"))
 local InventoryService = require(Server:WaitForChild("Items"):WaitForChild("InventoryService"))
 local WorldArt = require(Server:WaitForChild("Art"):WaitForChild("WorldArt"))
+local PoiStructures = require(Server:WaitForChild("World"):WaitForChild("PoiStructures"))
 
 local TUNING = BiomeLogic.Tuning
 local WARM = Config.WarmSpot
@@ -314,7 +318,11 @@ local function breakPatch(patch: Patch)
 	CollectionService:RemoveTag(patch.part, ICE_TAG)
 end
 
-local function buildIce(parent: Instance, poi: WorldLayout.Poi)
+local function buildIce(
+	parent: Instance,
+	poi: WorldLayout.Poi,
+	heightFn: (number, number) -> number
+)
 	local mem = memoryFor(poi.id)
 	for index, pos in poi.patches do
 		local r = TUNING.ThinIcePatchRadius
@@ -322,7 +330,8 @@ local function buildIce(parent: Instance, poi: WorldLayout.Poi)
 			parent,
 			"ThinIcePatch",
 			Vector3.new(ICE_HEIGHT * 2, r * 2, r * 2),
-			CFrame.new(pos.x, ICE_HEIGHT, pos.z) * CFrame.Angles(0, 0, math.pi / 2),
+			CFrame.new(pos.x, heightFn(pos.x, pos.z) + ICE_HEIGHT, pos.z)
+				* CFrame.Angles(0, 0, math.pi / 2),
 			COLORS.Ice,
 			Enum.Material.Ice,
 			false
@@ -347,34 +356,63 @@ local function buildIce(parent: Instance, poi: WorldLayout.Poi)
 	end
 end
 
+-- Terrain height closure for this world (camp is the flat centre).
+local function heightFn(): (number, number) -> number
+	local camp = Workspace:GetAttribute(Config.World.CampAttribute)
+	local fx, fz = 0, 0
+	if typeof(camp) == "Vector3" then
+		fx, fz = camp.X, camp.Z
+	end
+	local seed = worldSeed
+	return function(x: number, z: number): number
+		return World.heightAt(seed, x, z, fx, fz)
+	end
+end
+
 -- Builds one POI under `parent` (a chunk model). Everything is parented to the model, so unloading
--- the chunk destroys it; persistent state is in `memory`.
+-- the chunk destroys it; persistent state is in `memory`. Structures come from PoiPlan: the variant is a
+-- deterministic pick from (seed, poi id, biome); the floor sits at the highest terrain under the footprint
+-- over a foundation, entry steps bridge any drop, and the door faces the lowest ground.
 function PoiService.build(parent: Instance, poi: WorldLayout.Poi, chunkIndex: number)
+	local height = heightFn()
 	if poi.kind == "thinice" then
-		buildIce(parent, poi)
+		buildIce(parent, poi, height)
 		return
 	end
-	local angle = math.rad((chunkIndex * 37 + slotOf(poi) * 53) % 360)
-	local base = CFrame.new(poi.position.x, 0, poi.position.z) * CFrame.Angles(0, angle, 0)
+	local px, pz = poi.position.x, poi.position.z
 	if poi.kind == "hotspring" then
-		buildSpring(parent, base)
-	elseif poi.kind == "cabin" then
-		WorldArt.poi(parent, "cabin", base)
-		buildHearth(parent, base, Vector3.new(0, 0.75, 8), poi)
-		buildCrate(parent, base, Vector3.new(5, 1, 8), poi, chunkIndex)
-	elseif poi.kind == "plane" then
-		WorldArt.poi(parent, "plane", base)
-		buildCrate(parent, base, Vector3.new(4, 1, 9), poi, chunkIndex)
-	elseif poi.kind == "cave" then
-		WorldArt.poi(parent, "cave", base)
-		buildCrate(parent, base, Vector3.new(0, 1, 9), poi, chunkIndex)
-	elseif poi.kind == "ruin" then
-		WorldArt.poi(parent, "ruin", base)
-		buildCrate(parent, base, Vector3.new(0, 1, 5), poi, chunkIndex)
-	else -- campsite
-		WorldArt.poi(parent, "campsite", base)
-		buildCrate(parent, base, Vector3.new(5, 1, 3), poi, chunkIndex)
+		local y = height(px, pz)
+		buildSpring(parent, CFrame.new(px, y, pz))
+		return
 	end
+	local biome = World.biomeAt(px, pz)
+	local variant = PoiPlan.pickVariant(worldSeed, poi.id, poi.kind, biome)
+	local probe = PoiPlan.build(poi.kind, variant, 0, 0)
+	if probe == nil then
+		return
+	end
+	local floorY, minY =
+		PoiPlan.siteFloor(height, px, pz, probe.radius - Config.Shelter.FootprintMargin)
+	local pref = (chunkIndex * 37 + slotOf(poi) * 53) % 4
+	local yawIndex = PoiPlan.chooseYaw(height, px, pz, probe.doorDistance, pref)
+	local dx, dz = PoiPlan.doorDirection(yawIndex)
+	local doorGround = height(px + dx * probe.doorDistance, pz + dz * probe.doorDistance)
+	local plan =
+		PoiPlan.build(poi.kind, variant, math.max(0, floorY - doorGround), floorY - minY + 1)
+	if plan == nil then
+		return
+	end
+	local base = CFrame.new(px, floorY, pz) * CFrame.Angles(0, yawIndex * math.pi / 2, 0)
+	local model = PoiStructures.build(parent, plan, base)
+	model:SetAttribute("Radius", plan.radius)
+	if plan.legacy == "campsite" then
+		WorldArt.poi(model, "campsite", base)
+	end
+	if plan.hearth then
+		buildHearth(model, base, Vector3.new(plan.hearth.x, 0.75, plan.hearth.z), poi)
+	end
+	local c = plan.crate
+	buildCrate(model, base, Vector3.new(c.x, c.y + 1, c.z), poi, chunkIndex)
 end
 
 local function step()

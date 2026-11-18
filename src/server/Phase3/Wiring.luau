@@ -152,6 +152,11 @@ function Wiring.apply()
 	-- Survival: biome cold x clothing, warm spots, event drain, food buffs.
 	SurvivalService.setEnvProvider(survivalEnv)
 
+	-- Falling below the kill height or past the world edge ends the player outright (single path).
+	ChunkService.setFallHandler(function(player: Player)
+		SurvivalService.killOutright(player, "Fall")
+	end)
+
 	-- Mobs: biome ring by position, hot-spring bias.
 	MobService.setRingProvider(function(position: Vector3): number
 		return BiomeLogic.ringAt(position.X, position.Z)

@@ -24,6 +24,40 @@ local function capped(base: number, perStep: number, steps: number, cap: number)
 	return math.min(cap, base + perStep * math.max(0, steps))
 end
 
+-- Extra wolf-only difficulty past Config.WolfScaling.StartDay; multiply onto multipliers() results.
+function MobScaling.wolfDamageFactor(day: number): number
+	local W = Config.WolfScaling
+	return capped(1, W.DamagePerDay, day - W.StartDay, W.MaxDamageMultiplier)
+end
+
+function MobScaling.wolfSpawnFactor(day: number): number
+	local W = Config.WolfScaling
+	return capped(1, W.SpawnRatePerDay, day - W.StartDay, W.MaxSpawnRateMultiplier)
+end
+
+-- Health and damage for a spawned mob. The Wolf's health never scales (the starting Axe always kills it in
+-- Config.Combat.WolfHitsMin..Max hits); its difficulty rises through damage (wolfDamageFactor) and spawn
+-- rate (wolfSpawnFactor). Other kinds scale health as before.
+function MobScaling.mobStats(
+	kind: string,
+	baseHealth: number,
+	baseDamage: number,
+	day: number,
+	ring: number,
+	partySize: number
+): (number, number)
+	local mult = MobScaling.multipliers(day, ring, partySize)
+	if kind == "Wolf" then
+		return baseHealth, baseDamage * mult.damage * MobScaling.wolfDamageFactor(day)
+	end
+	return baseHealth * mult.health, baseDamage * mult.damage
+end
+
+-- Spawn-table weight multiplier for a kind (wolves get more frequent with days; others unchanged).
+function MobScaling.weightFactor(kind: string, day: number): number
+	return if kind == "Wolf" then MobScaling.wolfSpawnFactor(day) else 1
+end
+
 -- Day, ring (distance from the start forest) and party size, each capped separately.
 function MobScaling.multipliers(day: number, ring: number, partySize: number): Mult
 	local d = day - 1

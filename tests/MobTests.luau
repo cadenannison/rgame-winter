@@ -6,6 +6,7 @@ local MobScaling = require("../src/shared/logic/MobScaling")
 local Projectile = require("../src/shared/logic/Projectile")
 local Config = require("../src/shared/Config")
 local Mobs = require("../src/shared/data/Mobs")
+local ItemCatalog = require("../src/shared/ItemCatalog")
 
 local function input(overrides: { [string]: any }): MobAI.Input
 	local base: { [string]: any } = {
@@ -275,4 +276,86 @@ return function(check: (string, boolean) -> ())
 			Config.Projectile.MaxActivePerPlayer
 		)
 	)
+
+	-- Hit counts (day 1, solo, camp ring: all multipliers are 1). Targets live in Config.Combat.
+	local dayOne = MobScaling.multipliers(1, 0, 1)
+	check("hit counts: day-1 solo multiplier is 1", dayOne.health == 1)
+	local function hitsFor(stats: { Health: number }, damage: number): number
+		return MobRules.hitsToKill(stats.Health * dayOne.health, damage) or -1
+	end
+	local axeDamage = Config.Combat.ToolDamage -- the starting Axe is a gather tool used in melee
+	local hareAxe = hitsFor(Config.Mobs.Hare, axeDamage)
+	local wolfAxe = hitsFor(Config.Mobs.Wolf, axeDamage)
+	check(
+		"hit counts: starting axe kills a hare in target window",
+		hareAxe >= Config.Combat.HareHitsMin and hareAxe <= Config.Combat.HareHitsMax
+	)
+	check(
+		"hit counts: starting axe kills a wolf in target window",
+		wolfAxe >= Config.Combat.WolfHitsMin and wolfAxe <= Config.Combat.WolfHitsMax
+	)
+
+	-- Better weapons kill in fewer hits (spear, then iron spear when it exists).
+	local spear = ItemCatalog.Items.Spear
+	local spearHare = hitsFor(Config.Mobs.Hare, spear.damage or 0)
+	local spearWolf = hitsFor(Config.Mobs.Wolf, spear.damage or 0)
+	check("hit counts: spear fewer hits than axe", spearHare < hareAxe and spearWolf < wolfAxe)
+	local iron = ItemCatalog.Items.IronSpear
+	if iron ~= nil then
+		local ironHare = hitsFor(Config.Mobs.Hare, iron.damage or 0)
+		local ironWolf = hitsFor(Config.Mobs.Wolf, iron.damage or 0)
+		check(
+			"hit counts: iron spear no slower than spear",
+			ironHare <= spearHare and ironWolf <= spearWolf
+		)
+	end
+	check("hit counts: starting axe never one-shots a wolf", wolfAxe > 1)
+
+	-- Wolf scaling: health flat (4-5 axe hits) on every day/ring/party; difficulty moves to damage and spawns
+	local axeHit = Config.Combat.ToolDamage
+	local baseW = Config.Mobs.Wolf
+	local hitsOk, dmgNonDecreasing, dmgCapped, spawnOk = true, true, true, true
+	local prevDamage = 0
+	local maxDamage = baseW.Damage
+		* Config.Scaling.MaxMobDamageMultiplier
+		* Config.Scaling.MaxRingDamageMultiplier
+		* Config.WolfScaling.MaxDamageMultiplier
+	for day = 1, 60 do
+		for ring = 0, 3 do
+			for party = 1, Config.Teleport.MaxPartySize do
+				local hp, _ =
+					MobScaling.mobStats("Wolf", baseW.Health, baseW.Damage, day, ring, party)
+				local hits = math.ceil(hp / axeHit)
+				if hits < Config.Combat.WolfHitsMin or hits > Config.Combat.WolfHitsMax then
+					hitsOk = false
+				end
+			end
+		end
+		local _, dmg = MobScaling.mobStats("Wolf", baseW.Health, baseW.Damage, day, 0, 1)
+		if dmg < prevDamage then
+			dmgNonDecreasing = false
+		end
+		prevDamage = dmg
+		if dmg > maxDamage + 1e-6 then
+			dmgCapped = false
+		end
+		if MobScaling.weightFactor("Wolf", day) > Config.WolfScaling.MaxSpawnRateMultiplier then
+			spawnOk = false
+		end
+	end
+	check("wolf scaling: 4-5 axe hits on days 1..60, all rings and party sizes", hitsOk)
+	local _, dmgD1 = MobScaling.mobStats("Wolf", baseW.Health, baseW.Damage, 1, 0, 1)
+	local _, dmgD30 = MobScaling.mobStats("Wolf", baseW.Health, baseW.Damage, 30, 0, 1)
+	check(
+		"wolf scaling: damage rises with days and stays capped",
+		dmgNonDecreasing and dmgCapped and dmgD30 > dmgD1
+	)
+	check(
+		"wolf scaling: spawn weight rises, capped; other kinds unchanged",
+		spawnOk
+			and MobScaling.weightFactor("Wolf", 30) > MobScaling.weightFactor("Wolf", 1)
+			and MobScaling.weightFactor("ArcticHare", 30) == 1
+	)
+	local hareHp = MobScaling.mobStats("ArcticHare", 20, 0, 10, 0, 1)
+	check("wolf scaling: non-wolf health still scales", hareHp > 20)
 end

@@ -52,6 +52,7 @@ local function onRepair(player: Player, payload: unknown)
 			player,
 			if reason == "FullDurability"
 				then `{def.name} is already in good shape`
+				elseif reason == "Unbreakable" then `{def.name} never wears out`
 				else `Cannot repair {def.name}`
 		)
 		return

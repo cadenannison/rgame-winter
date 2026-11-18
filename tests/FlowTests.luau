@@ -199,7 +199,7 @@ return function(check: (string, boolean) -> ())
 		local d = MobRules.distance({ x = at, z = 0 }, camp)
 		return MobAI.decide({
 			behavior = "Hunt",
-			nearestPlayerDist = math.abs(at - Config.World.CampSpawnOffset),
+			nearestPlayerDist = math.abs(at - Config.Fire.WarmRadius), -- player stands at the warm edge
 			isNight = true,
 			nightOnly = wolf.NightOnly,
 			fleeRange = wolf.FleeRange,
@@ -210,7 +210,10 @@ return function(check: (string, boolean) -> ())
 		})
 	end
 	check("flow wolf repelled at fire edge", wolfAction(edge) == "Retreat")
-	check("flow wolf chases outside edge", wolfAction(Config.Fire.RepelRadius + 5) == "Chase")
+	check(
+		"flow wolf chases outside edge",
+		wolfAction(Config.Fire.RepelRadius + Config.Mobs.Wolf.AttackRange + 5) == "Chase"
+	)
 
 	-- Same seed twice -> same flow checksum.
 	local det = Sim.determinism(7, 3, function(s)

@@ -43,6 +43,8 @@ local connections: { RBXScriptConnection } = {}
 local callbacks: { (Results) -> () } = {}
 local lastResults: Results? = nil
 local friendCounts: { [number]: number } = {} -- userId -> party members who are Roblox friends
+local settled: { [number]: boolean } = {} -- members already paid out (returned to the lobby early)
+local returning: { [Player]: boolean } = {} -- a return teleport is in flight for this player
 
 local function now(): number
 	return os.clock()
@@ -74,6 +76,10 @@ local function returnToLobby(targets: { Player })
 		end
 	end
 	if not success then
+		if RunService:IsStudio() then
+			warn("RunLifecycleService: return to lobby failed (Studio: not kicking)")
+			return
+		end
 		for _, p in targets do
 			if p.Parent == Players then
 				p:Kick(Config.Run.ReturnFailedMessage)
@@ -112,6 +118,51 @@ local function sendSummary(player: Player, summary: RunPayout.Summary, cause: st
 	Remotes.event(Remotes.RunSummary):FireClient(player, payload)
 end
 
+-- Pays one member out (stats, coins, achievements). Returns the results row plus the summary to show.
+local function settle(
+	player: Player,
+	current: RunState.Run,
+	days: number,
+	kills: number,
+	bossKills: number
+): (
+	{ userId: number, coinsEarned: number, personalBest: boolean, saved: boolean },
+	RunPayout.Summary
+)
+	local userId = player.UserId
+	settled[userId] = true
+	local profile = DataService.get(player)
+	local member = RunState.get(current, userId)
+	local summary = RunPayout.summarize({
+		daysSurvived = days,
+		kills = kills,
+		bossKills = bossKills,
+		partners = friendCounts[userId] or 0,
+		darkEventsSurvived = if member then member.darkEvents else 0,
+	}, profile and profile.maxDays or nil)
+	if profile then
+		RunPayout.apply(profile, summary)
+		local ok, unlocked = pcall(
+			MetaService.onRunEnd,
+			player,
+			#current.order >= 2,
+			(friendCounts[userId] or 0) > 0
+		)
+		if ok and type(unlocked) == "table" then
+			summary.newAchievements = unlocked
+		end
+	else
+		summary.coinsEarned = 0 -- nothing saved, nothing shown as earned
+	end
+	return {
+		userId = userId,
+		coinsEarned = summary.coinsEarned,
+		personalBest = summary.personalBest,
+		saved = profile ~= nil,
+	},
+		summary
+end
+
 local function endRun()
 	local current = run
 	if ended or not current then
@@ -126,37 +177,10 @@ local function endRun()
 	local present: { Player } = {}
 	for _, userId in current.order do
 		local player = Players:GetPlayerByUserId(userId)
-		if player then
+		if player and not settled[userId] then
 			table.insert(present, player)
-			local profile = DataService.get(player)
-			local member = RunState.get(current, userId)
-			local summary = RunPayout.summarize({
-				daysSurvived = days,
-				kills = kills,
-				bossKills = bossKills,
-				partners = friendCounts[userId] or 0,
-				darkEventsSurvived = if member then member.darkEvents else 0,
-			}, profile and profile.maxDays or nil)
-			if profile then
-				RunPayout.apply(profile, summary)
-				local ok, unlocked = pcall(
-					MetaService.onRunEnd,
-					player,
-					#current.order >= 2,
-					(friendCounts[userId] or 0) > 0
-				)
-				if ok and type(unlocked) == "table" then
-					summary.newAchievements = unlocked
-				end
-			else
-				summary.coinsEarned = 0 -- nothing saved, nothing shown as earned
-			end
-			table.insert(results.players, {
-				userId = userId,
-				coinsEarned = summary.coinsEarned,
-				personalBest = summary.personalBest,
-				saved = profile ~= nil,
-			})
+			local row, summary = settle(player, current, days, kills, bossKills)
+			table.insert(results.players, row)
 			sendSummary(player, summary, cause)
 		end
 	end
@@ -170,7 +194,7 @@ local function endRun()
 	task.delay(Config.Run.SummarySeconds, function()
 		local targets: { Player } = {}
 		for _, player in present do
-			if player.Parent == Players then
+			if player.Parent == Players and not returning[player] then
 				table.insert(targets, player)
 			end
 		end
@@ -217,6 +241,7 @@ local function startRun(partyIds: { number }, runSeed: number)
 	ended = false
 	lastResults = nil
 	table.clear(friendCounts)
+	table.clear(settled)
 	-- Members not here yet are held from the start: arriving counts as a rejoin, never arriving = dead.
 	local t = now()
 	for _, userId in current.order do
@@ -290,10 +315,40 @@ local function onPlayerAdded(player: Player)
 end
 
 local function onPlayerRemoving(player: Player)
+	returning[player] = nil
 	local current = run
 	if current and not ended then
 		RunState.disconnect(current, player.UserId, now())
 	end
+end
+
+-- Return-to-lobby request. Allowed for a dead member (spectating) or once the run has ended; a downed or
+-- living player cannot leave this way. A member leaving before the run ends is paid out now (days so far)
+-- and skipped at run end. Goes through TeleportAdapter (Studio fake records the call and keeps the player).
+local function onReturnRequest(player: Player)
+	if not Guard.rateLimit(player, "ReturnToLobby", Config.Net.UseRateInterval) then
+		return
+	end
+	local current = run
+	if not current or returning[player] then
+		return
+	end
+	local status = RunState.status(current, player.UserId)
+	if not ended and status ~= "dead" then
+		return
+	end
+	returning[player] = true
+	if not ended and not settled[player.UserId] then
+		local kills, bossKills = RunState.totals(current)
+		local _row, summary = settle(player, current, DayNightService.getDay(), kills, bossKills)
+		sendSummary(player, summary, current.cause or Config.Run.DefaultCause)
+	end
+	task.spawn(function()
+		returnToLobby({ player })
+		task.delay(Config.Run.SummarySeconds, function()
+			returning[player] = nil -- Studio (no teleport) lets them try again later
+		end)
+	end)
 end
 
 -- Count a kill for a party member (called by MobService wiring in brief 11).
@@ -389,6 +444,10 @@ function RunLifecycleService.Start()
 	started = true
 	table.insert(connections, Players.PlayerAdded:Connect(onPlayerAdded))
 	table.insert(connections, Players.PlayerRemoving:Connect(onPlayerRemoving))
+	table.insert(
+		connections,
+		Remotes.event(Remotes.ReturnToLobbyRequest).OnServerEvent:Connect(onReturnRequest)
+	)
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayerAdded, player)
 	end
@@ -416,6 +475,8 @@ function RunLifecycleService.Stop()
 	studioFallback = false
 	lastResults = nil
 	table.clear(friendCounts)
+	table.clear(settled)
+	table.clear(returning)
 end
 
 return RunLifecycleService

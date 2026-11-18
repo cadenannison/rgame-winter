@@ -1,5 +1,7 @@
 --!strict
 
+local RarityData = require("./data/Rarity")
+
 export type DebugConfig = {
 	CommandRateInterval: number,
 	MaxDay: number,
@@ -99,6 +101,7 @@ export type FireRingConfig = {
 }
 
 export type FireConfig = {
+	BaseRadius: number, -- R0: radius added per tier; Tiers[1] (spec tier 0) = 3 * R0, each upgrade adds R0
 	WarmRadius: number,
 	RepelRadius: number,
 	BurnSeconds: number,
@@ -342,6 +345,10 @@ export type CombatConfig = {
 	ToolDamage: number,
 	LagCompensation: number,
 	WeaponDurabilityPerHit: number,
+	HareHitsMin: number, -- target: starting Axe kills a hare in HareHitsMin..HareHitsMax hits (tested)
+	HareHitsMax: number,
+	WolfHitsMin: number, -- target: starting Axe kills a wolf in WolfHitsMin..WolfHitsMax hits (tested)
+	WolfHitsMax: number,
 }
 
 export type DownedConfig = {
@@ -351,6 +358,21 @@ export type DownedConfig = {
 	ReviveHealthFraction: number,
 	DownedWalkSpeed: number,
 	StateAttribute: string,
+	DownedJumpPower: number, -- 0: a downed player cannot jump
+	SpectateOnDeath: boolean, -- a dead (bled out) player spectates living teammates until the run ends
+	SpectateCycleInterval: number, -- min seconds between spectate-target switches (rate limit)
+	ReviveBarHoldRequired: boolean, -- reviver must keep holding the prompt for ReviveSeconds (cancels on release/move away)
+	ReviveCancelRange: number, -- studs: channel cancels if reviver gets farther than this from the downed player
+	DownedHealth: number, -- health a downed player keeps while bleeding out (display only, no further damage)
+	DeadAttribute: string, -- Player attribute: true once bled out / killed (spectator)
+	BleedAttribute: string, -- Player attribute: whole seconds of revive window left while downed
+	ReviveProgressAttribute: string, -- Player attribute on the downed player: revive channel 0..1
+	ReviveRefreshSeconds: number, -- client resends ReviveRequest this often while the reviver holds
+	ReviveStaleSeconds: number, -- server cancels the channel if no refresh arrived for this long (release)
+	PoseDropY: number, -- studs the lying body is lowered relative to the root (ragdoll-free prone pose)
+	PoseTiltDegrees: number, -- pitch of the root joint while downed (90 = lying face down)
+	PoseJointName: string, -- the root Motor6D tilted for the pose
+	ReturnRemoteName: string, -- RemoteEvent (no payload) a dead player or finished run uses to return to the lobby
 }
 
 -- Size {x, y, z} studs and Color {r, g, b} 0-255 as plain numbers (Config is also loaded by Lune tests).
@@ -562,6 +584,8 @@ export type PerfConfig = {
 	StreamingMinRadius: number,
 	SwingBroadcastRange: number, -- studs: SwingBroadcast goes only to players this close to the swinger
 	SwingMaxPerSecond: number, -- client cap on relayed swings animated per second
+	MaxLiveTrees: number, -- cap on streamed tree models alive at once (each <= Forest.MaxPartsPerTree parts)
+	TerrainCountsTowardParts: boolean, -- false: terrain is built as Roblox Terrain voxels (FillBlock), NOT parts
 }
 
 -- Phase 4 player settings (saved in profile.settings). Boolean settings only.
@@ -628,6 +652,195 @@ export type StructuresConfig = {
 	WatchtowerStandHeight: number,
 	WatchtowerRevealSeconds: number,
 	WatchtowerTrussWidth: number,
+}
+
+-- One tree size class (Forest.Classes). Heights/radii are {min, max} studs, rolled by the seeded layout.
+export type TreeClass = {
+	Id: string,
+	Weight: number, -- relative spawn weight
+	Height: { number },
+	TrunkRadius: { number },
+	CanopyRadius: { number },
+	MinSpacing: number, -- studs to the nearest other tree center (any class)
+	Gatherable: boolean, -- can be chopped for wood
+	WoodYield: number, -- wood per chop-out
+}
+
+export type ForestConfig = {
+	Classes: { TreeClass }, -- Small, Medium, Large, Giant (in that order)
+	TreesPerChunk: number, -- base tree slots per 320x320 chunk in the start forest (before multipliers)
+	RingDensity: { number }, -- density multiplier per biome ring (index = ring + 1)
+	CampBonusTrees: number, -- extra trees added to the chunk that holds the camp
+	PoiClearRadius: number, -- studs around a POI centre with no trees
+	SlotClearRadius: number, -- studs around rock/ore/food/spawn-zone slots with no trees
+	TrunkNodeMaxHeight: number, -- studs: height cap of the gather-node trunk part
+	MaxPartsPerTree: number, -- perf note: trunk + canopy parts only; no per-leaf parts
+	SpawnClearRadius: number, -- studs around the player spawn pad with no trees at all
+	FireClearRadius: number, -- studs around any campfire with no trees (clearing)
+	NearCampRadius: number, -- studs from the camp fire where NearCampDensity applies
+	NearCampDensity: number, -- density multiplier inside NearCampRadius (open enough to walk and build)
+	CampEdgeRadius: number, -- studs from camp where the forest thickens back up (to NearCampRadius..this)
+	CampEdgeDensity: number, -- density multiplier in that band (the treeline hugging the camp)
+	GiantMaxPerChunk: number, -- cap on giants per chunk (landmarks, perf)
+	PlacementAttempts: number, -- rejection-sampling tries per tree slot before it is dropped
+	TagAttribute: string, -- tree model attribute: size class id
+}
+
+export type BiomeTerrain = { Amplitude: number, MaxStep: number }
+
+export type TerrainConfig = {
+	BlockSize: number, -- studs per square terrain block (blocks are flat-topped, stepped)
+	HeightQuantum: number, -- block heights are multiples of this
+	MaxStep: number, -- studs: max height difference between edge-adjacent blocks (hard cap, tested)
+	ColumnDepth: number, -- studs of solid terrain built under each block top (> MaxStep so sides never show gaps)
+	BlendWidth: number, -- studs across which biome amplitude blends at a ring boundary
+	LowWavelength: number, -- studs: broad hill wavelength
+	HighWavelength: number, -- studs: detail wavelength
+	LowShare: number, -- fraction of amplitude in the broad octave (rest in detail)
+	Biomes: { [string]: BiomeTerrain }, -- keyed by Biomes id; amplitude = max |height| studs
+	CampFlatRadius: number, -- studs around the flat center (camp/spawn) with height exactly 0
+	CampRampWidth: number, -- studs over which terrain rises smoothly from flat to full amplitude
+	BaseHeight: number, -- ground level of the flat start area (Y of block tops at the camp)
+	FloorY: number, -- bottom Y of terrain columns (decorative thickness below the lowest block)
+	KillHeight: number, -- a character whose root falls below this Y is killed/respawned
+	EdgeMargin: number, -- studs beyond the world edge (GridSize*ChunkSize/2) past which a player has fallen off
+	EdgeWallHeight: number, -- studs of invisible-wall/cliff height at the world border
+	MaxBlocksPerChunkBuild: number, -- builder yields after this many blocks (perf)
+	BuildBlocksPerTick: number, -- blocks filled per Heartbeat while a chunk's terrain builds (hard per-tick budget)
+	BuildMsPerTick: number, -- milliseconds of terrain building per Heartbeat; whichever limit hits first yields
+}
+
+-- ===== Round: loot + massive structures + trees (contracts agent). See docs/INTEGRATION.md. =====
+-- Loot drop weights are NOT here: they live in server/Loot/LootTables (server-only, never replicated).
+export type LootConfig = {
+	ChestTag: string, -- CollectionService tag on every world loot chest
+	Rarities: { string }, -- chest (and item) rarities, worst to best; same list as data/Rarity.List
+	ChestRarityAttribute: string, -- chest attribute: chest rarity (visuals only; contents stay server-side)
+	ChestStructureAttribute: string, -- chest attribute: structure type id it belongs to
+	ChestDepthAttribute: string, -- chest attribute: depth tier inside the structure (0 = entrance)
+	ChestOpenedAttribute: string, -- chest attribute: true once looted (Boolean)
+	MaxDepthTier: number, -- depth tiers are 0..MaxDepthTier (mirrors LootTables.depth.MaxTier, tested)
+	OpenRange: number, -- studs: client prompt range
+	ServerOpenRange: number, -- studs: server re-check range (> OpenRange for latency)
+	OpenRateInterval: number, -- Guard interval for the open remote
+	OpenedFadeSeconds: number, -- visuals: seconds an opened chest stays before it fades
+}
+
+export type MassiveBudget = {
+	Parts: number, -- max live BaseParts of one structure (shell + loot + dressing)
+	DressingParts: number, -- of Parts: interior dressing (spawned only near a player)
+	Lights: number, -- max PointLight/SpotLight instances
+	Particles: number, -- max enabled ParticleEmitters
+}
+
+export type MassiveStructure = {
+	Id: string,
+	Name: string,
+	MinFootprintX: number, -- studs, structure-local X extent (minimum)
+	MinFootprintZ: number,
+	MinRooms: number,
+	MinLevels: number, -- walkable floors incl. underground ones
+	UndergroundDepth: number, -- studs below the entrance floor reached by the deepest level (0 = none)
+	Rings: { number }, -- allowed biome rings (0 start forest .. 3 tundra)
+	CountMin: number, -- per world (64 chunks), never above CountMax
+	CountMax: number,
+	Budget: MassiveBudget,
+}
+
+export type MassiveConfig = {
+	Ids: { string }, -- keys of Structures, in display order
+	Structures: { [string]: MassiveStructure },
+	CorridorWidthMin: number, -- studs: every walkable corridor
+	CeilingHeightMin: number, -- studs floor to ceiling in corridors and rooms
+	DoorWidthMin: number,
+	DoorHeightMin: number,
+	StairWidthMin: number,
+	MaxLiveStructures: number, -- built at once per server window
+	MinSeparation: number, -- studs between massive structure centres (and from the camp)
+	FootprintMargin: number, -- studs added to the footprint half-diagonal for tree/POI/mob exclusion
+	DressingSpawnRadius: number, -- studs: interior dressing spawns when a player is this close to the structure centre
+	DressingDespawnRadius: number, -- studs: dressing despawns past this (> spawn radius, hysteresis)
+	DressingCheckInterval: number, -- seconds between proximity checks (one loop, all structures)
+	DressingPartsPerTick: number, -- parts spawned or removed per Heartbeat
+	MaxLiveParts: number, -- all massive structures at once (= MaxLiveStructures * largest Budget.Parts)
+	-- Integration (placement + wiring)
+	PlacementAttempts: number, -- rejection-sampling tries per structure
+	EdgeMargin: number, -- studs a structure keeps inside the world edge, beyond its radius
+	PoiMargin: number, -- studs between a structure footprint and any POI footprint
+	MaxSiteRelief: number, -- studs: max (highest - lowest) World.heightAt over the footprint samples
+	SiteSampleStep: number, -- studs between relief samples
+	KillMargin: number, -- studs: deepest carve must stay this far above Terrain.KillHeight
+	ChestsPerPartAllowance: number, -- parts per chest beyond the 2 each plan reserves (ChestStyle.Budget.MaxParts 8 - 2)
+	MaxChestsPerStructure: number, -- estimate: chest slots per live structure
+	TempleDreadScale: number, -- fraction of Dread.GainLurkerSighting applied per temple dread zone event
+}
+
+export type TreesConfig = {
+	HeadHeight: number, -- studs: top of a standing player's head above the ground
+	CanopyClearance: number, -- studs: lowest foliage bottom must be at least this far above HeadHeight
+	MinCanopyBottom: number, -- = HeadHeight + CanopyClearance
+	MinFoliageThickness: number, -- studs of foliage above the canopy bottom, at minimum
+	MinTotalHeight: number, -- studs: shortest allowed tree (every size class)
+	SizeClasses: { string }, -- Forest.Classes ids, small to giant
+	GiantHeightMin: number,
+	GiantHeightMax: number,
+}
+
+export type FireRulesConfig = {
+	SpawnExcludeCategories: { string }, -- data/Mobs categories that never spawn inside a lit fire's warm radius + SpawnMargin
+	SpawnExcludeSpecials: { string }, -- "Stalker", "Lurker": never spawn there either
+	SpawnMargin: number, -- studs beyond WarmRadius that the spawn exclusion extends
+	RepelCategories: { string }, -- categories that never enter warm radius + Night.RepelMargin (bosses still ignore it)
+	ClearLiveTrees: boolean, -- a fire placed after a chunk loaded removes trees inside its clear radius
+	TreeClearRadius: number, -- studs: tier 1 clearing (= Forest.FireClearRadius)
+	TreeClearPerTier: number, -- studs added per fire tier above 1
+	TreeClearMaxRadius: number, -- cap
+}
+
+export type WolfScalingConfig = {
+	StartDay: number, -- scaling begins after this day (day 1..StartDay = base wolf)
+	DamagePerDay: number, -- fractional wolf damage added per day past StartDay (on top of Scaling.MobDamagePerDay)
+	MaxDamageMultiplier: number, -- cap on that extra factor
+	SpawnRatePerDay: number, -- fractional wolf spawn-budget added per day past StartDay
+	MaxSpawnRateMultiplier: number, -- cap (Scaling.MaxLiveMobs still clamps the live total)
+}
+
+export type ShelterConfig = {
+	InteriorWidth: number, -- studs: minimum enterable interior width (cabin, shelter)
+	InteriorDepth: number, -- studs: minimum interior depth
+	CeilingHeight: number, -- studs floor to ceiling (character 5 studs tall + head room)
+	DoorWidth: number, -- studs: doorway clear width
+	DoorHeight: number, -- studs: doorway clear height
+	WallThickness: number,
+	WatchtowerHeight: number, -- studs: platform height above ground (minimum)
+	WatchtowerPlatformSize: number, -- studs: square platform side
+	WatchtowerRailHeight: number,
+	StairWidth: number, -- studs: if stairs are used instead of a ladder
+	StairRise: number, -- studs: max rise per step (<= Humanoid step; walkable)
+	StairRun: number, -- studs: tread depth
+	LadderWidth: number, -- studs: climbable truss width (mobile climb needs >= 2)
+	NarrowInteriorWidth: number, -- studs: minimum interior width of a fuselage (plane aisle)
+	NarrowCeilingHeight: number, -- studs: minimum fuselage ceiling
+	MaxPartsPerStructure: number, -- part budget of one structure's plan boxes (rest of MaxPartsPerPoi: crate, hearth, lights)
+	MaxApronSteps: number, -- entry steps that bridge terrain below a sill
+	FoundationMargin: number, -- studs the foundation overhangs the walls
+	FootprintMargin: number, -- studs added to the structure radius for tree/camp exclusion
+	InteriorLightRange: number,
+	InteriorLightBrightness: number,
+}
+
+export type ShadowConfig = {
+	GlobalShadows: boolean,
+	TreesCastShadows: boolean,
+	ShadowSoftness: number, -- Lighting.ShadowSoftness (0-1)
+	ForestFloorDarkness: number, -- 0-1: how much darker the ground under a canopy reads by day
+	ForestFloorDarknessNight: number, -- 0-1: same at night (lower so the floor stays readable)
+	CanopyShadeRadiusFactor: number, -- shade disc radius as a multiple of CanopyRadius
+	NightMinAmbient: { number }, -- {r, g, b} floor for Lighting.Ambient at night (readability)
+	NightMinOutdoorAmbient: { number },
+	NightMinBrightness: number, -- Lighting.Brightness floor at night
+	MaxShadeDiscs: number, -- perf: cap on forest-floor shade parts/decals alive
+	CanopyShadowMinRadius: number, -- studs: foliage parts of trees with at least this canopy radius cast shadows
 }
 
 -- Clothing (data: shared/data/Clothing.luau). Worn = best piece per slot carried in the inventory.
@@ -848,6 +1061,7 @@ export type BuffConfig = {
 export type DurabilityConfig = {
 	BrokenToolRemains: boolean, -- false: a tool at 0 is removed (Phase 1 behaviour)
 	MetalToolMultiplier: number, -- metal tool durability vs basic
+	UnbreakableItems: { [string]: boolean }, -- item ids that never lose durability (the starting Axe)
 }
 
 -- Art pass budgets and layout (docs/ART_PLAN.md). Layout numbers for the hub plaza live here so
@@ -1023,6 +1237,15 @@ export type Config = {
 	Durability: DurabilityConfig,
 	WarmSpot: WarmSpotConfig,
 	Structures: StructuresConfig,
+	Forest: ForestConfig,
+	Terrain: TerrainConfig,
+	Loot: LootConfig,
+	Massive: MassiveConfig,
+	Trees: TreesConfig,
+	FireRules: FireRulesConfig,
+	WolfScaling: WolfScalingConfig,
+	Shelter: ShelterConfig,
+	Shadows: ShadowConfig,
 	Perf: PerfConfig,
 	Settings: SettingsConfig,
 	Hints: HintsConfig,
@@ -1059,6 +1282,16 @@ export type Config = {
 
 -- Single source for the live mob cap (Scaling.MaxLiveMobs and Perf.MaxLiveMobs).
 local MAX_LIVE_MOBS = 40
+
+-- Fire radius unit R0 (the pre-scale warm radius). Tiers: warm = (2 + tier) * R0, i.e. 3R0, 4R0, 5R0.
+local FIRE_R0 = 18
+
+-- Massive structures: at most this many live at once, each within its Budget.Parts (largest 1000).
+local MASSIVE_MAX_LIVE_STRUCTURES = 2
+local MASSIVE_LARGEST_PARTS = 1000
+local MASSIVE_MAX_LIVE_PARTS = MASSIVE_MAX_LIVE_STRUCTURES * MASSIVE_LARGEST_PARTS
+local BASE_LIVE_PARTS = 6000 -- chunks + trees + POIs + mobs (the pre-massive budget)
+local GIANT_TREE_HEIGHT = { 70, 100 } -- Forest.Classes Giant height and Trees.GiantHeightMin/Max
 
 local Config: Config = {
 	-- Studio-only DebugService. Attributes live on Workspace (world state) or the Player.
@@ -1134,8 +1367,9 @@ local Config: Config = {
 		MaxHungerDrainMultiplier = 1.5, -- cap on combined hunger drain (food debuffs)
 	},
 	Fire = {
-		WarmRadius = 18, -- studs where warmth regenerates
-		RepelRadius = 22, -- studs where most hostiles are repelled (edge)
+		BaseRadius = FIRE_R0, -- R0: each upgrade adds R0 to the warm radius
+		WarmRadius = 3 * FIRE_R0, -- studs where warmth regenerates (tier 1 = spec tier 0 = 3 R0 = 54)
+		RepelRadius = 3 * FIRE_R0 + 6, -- fallback repel edge when a fire has no WarmRadius attribute (runtime: warm + Night.RepelMargin)
 		BurnSeconds = 180, -- burn time from one fuel add
 		MaxFuelSeconds = 600, -- cap on stored burn time
 		WoodFuelSeconds = 120, -- burn time added per wood
@@ -1154,40 +1388,40 @@ local Config: Config = {
 		-- Tier 1 equals the base WarmRadius/MaxFuelSeconds/WoodFuelSeconds above (tested). Index = tier.
 		Tiers = {
 			{
-				WarmRadius = 18,
+				WarmRadius = 3 * FIRE_R0, -- 54
 				MaxFuelSeconds = 600,
 				WoodFuelSeconds = 120,
-				BuildRadius = 30,
-				LightRange = 24,
+				BuildRadius = 5 * FIRE_R0, -- 90
+				LightRange = 4 * FIRE_R0, -- 72
 				UpgradeCost = {},
 			},
 			{
-				WarmRadius = 26,
+				WarmRadius = 4 * FIRE_R0, -- 72
 				MaxFuelSeconds = 900,
 				WoodFuelSeconds = 150,
-				BuildRadius = 45,
-				LightRange = 34,
+				BuildRadius = 7 * FIRE_R0, -- 126
+				LightRange = 5 * FIRE_R0, -- 90
 				UpgradeCost = { { id = "Wood", count = 15 }, { id = "Stone", count = 6 } },
 			},
 			{
-				WarmRadius = 34,
+				WarmRadius = 5 * FIRE_R0, -- 90
 				MaxFuelSeconds = 1200,
 				WoodFuelSeconds = 180,
-				BuildRadius = 60,
-				LightRange = 44,
+				BuildRadius = 9 * FIRE_R0, -- 162
+				LightRange = 6 * FIRE_R0, -- 108
 				UpgradeCost = { { id = "Wood", count = 30 }, { id = "Stone", count = 12 } },
 			},
 		},
 		Ring = {
 			FolderName = "FireRings", -- client-local folder under Workspace
-			DotDiameter = 0.9,
+			DotDiameter = 1.8, -- scaled with the 3x radii (dots stay readable at 160 studs)
 			DotThickness = 0.1,
-			Spacing = 3.4,
-			MinDots = 16,
-			MaxDotsPerLayer = 56,
-			MaxDotsTotal = 110,
-			FadeStart = 12,
-			FadeEnd = 38,
+			Spacing = 10, -- 2*pi*162 / 10 = 102 dots for the largest ring
+			MinDots = 24,
+			MaxDotsPerLayer = 110,
+			MaxDotsTotal = 220,
+			FadeStart = 30,
+			FadeEnd = 110,
 			WarmTransparencyDay = 0.35,
 			WarmTransparencyNight = 0.5,
 			BuildTransparencyDay = 0.3,
@@ -1199,7 +1433,7 @@ local Config: Config = {
 			BuildColorNight = { 150, 205, 255 },
 			GroundLift = 0.12,
 			RayHeight = 40,
-			RayLength = 120,
+			RayLength = 200, -- covers terrain relief (Terrain.Biomes amplitudes)
 			RaysPerStep = 24,
 			UpdateInterval = 0.1,
 			AllocateInterval = 0.5,
@@ -1208,7 +1442,7 @@ local Config: Config = {
 		Meter = {
 			GuiName = "FireMeter",
 			UpdateInterval = 1,
-			ShowRange = 60,
+			ShowRange = 100,
 			WidthPx = 80,
 			HeightPx = 10,
 			OffsetY = 4,
@@ -1317,8 +1551,8 @@ local Config: Config = {
 		PlaceRange = 30, -- max studs from player to placement point
 		MinSpacing = 4, -- min studs between two structures (centers)
 		MaxStructuresPerPlayer = 40, -- cap on placed structures
-		GroundRayHeight = 20, -- ground raycast starts this far above the snapped point
-		GroundRayLength = 60, -- ground raycast length (no ground hit = rejected)
+		GroundRayHeight = 40, -- ground raycast starts this far above the player (covers 45-degree slopes within PlaceRange)
+		GroundRayLength = 100, -- ground raycast length (no ground hit = rejected)
 		FolderName = "Structures", -- Workspace folder for placed structures
 		StructureAttribute = "StructureId", -- structure attribute: ItemCatalog.Structures id
 		OwnerAttribute = "OwnerUserId", -- structure attribute: placer's UserId
@@ -1379,7 +1613,7 @@ local Config: Config = {
 		HeldRangedAttribute = "HeldRanged",
 		BossAttribute = "BossKind",
 		Hare = {
-			Health = 8, -- hit points
+			Health = 20, -- hit points (3 starting-axe hits at ToolDamage 8; Combat.HareHitsMin/Max)
 			Damage = 0, -- passive
 			WalkSpeed = 6, -- wander speed
 			FleeSpeed = 12, -- flee speed (below player WALK_SPEED 16, so a hare is catchable)
@@ -1477,6 +1711,10 @@ local Config: Config = {
 		ToolDamage = 8, -- damage of a gather tool (axe/pickaxe) used as a melee weapon
 		LagCompensation = 3, -- extra studs of tolerance for latency
 		WeaponDurabilityPerHit = 1, -- durability lost per hit
+		HareHitsMin = 2, -- hare: ToolDamage 8 vs Mobs.Hare.Health 20 = 3 hits
+		HareHitsMax = 3,
+		WolfHitsMin = 4, -- wolf: ToolDamage 8 vs Mobs.Wolf.Health 35 = 5 hits
+		WolfHitsMax = 5,
 	},
 	Downed = {
 		BleedoutSeconds = 60, -- time downed before death
@@ -1485,6 +1723,21 @@ local Config: Config = {
 		ReviveHealthFraction = 0.3, -- fraction of max health restored on revive
 		DownedWalkSpeed = 3, -- crawl speed while downed
 		StateAttribute = "Downed", -- Player attribute: true while downed
+		DownedJumpPower = 0, -- downed players cannot jump
+		SpectateOnDeath = true, -- a bled-out player spectates living teammates until the run ends
+		SpectateCycleInterval = 0.4, -- min seconds between spectate-target switches
+		ReviveBarHoldRequired = true, -- reviver holds the prompt for ReviveSeconds
+		ReviveCancelRange = 12, -- studs: channel cancels beyond this (> ReviveRange so latency does not cancel)
+		DownedHealth = 1, -- health shown while downed (no further damage taken)
+		DeadAttribute = "RunDead",
+		BleedAttribute = "DownedBleed",
+		ReviveProgressAttribute = "ReviveProgress",
+		ReviveRefreshSeconds = 0.4,
+		ReviveStaleSeconds = 1.1, -- must exceed ReviveRefreshSeconds plus network jitter
+		PoseDropY = 2,
+		PoseTiltDegrees = 90,
+		PoseJointName = "RootJoint",
+		ReturnRemoteName = "ReturnToLobbyRequest",
 	},
 	-- Minimum seconds between accepted requests per player, by remote (used with Guard).
 	Net = {
@@ -1528,7 +1781,7 @@ local Config: Config = {
 			MaxPartsPerTree = 9,
 			MaxPartsPerRock = 6,
 			MaxPartsPerPoi = 60,
-			ChunkDecorBudget = 48,
+			ChunkDecorBudget = 16, -- lowered (was 48) so massive structures fit Perf.MaxLiveParts
 			ChunkPatchCount = 4,
 			PatchSize = { 40, 90 },
 			DecorEdgeMargin = 12,
@@ -2184,6 +2437,7 @@ local Config: Config = {
 	Durability = {
 		BrokenToolRemains = false,
 		MetalToolMultiplier = 2,
+		UnbreakableItems = { Axe = true }, -- the starting Axe never loses durability (other tools still wear)
 	},
 	WarmSpot = {
 		Tag = "WarmSpot",
@@ -2204,11 +2458,285 @@ local Config: Config = {
 		WatchtowerRevealSeconds = 1, -- seconds between map reveals while standing on a tower
 		WatchtowerTrussWidth = 2, -- ladder (TrussPart) beside the tower
 	},
+	Forest = {
+		Classes = {
+			{
+				Id = "Small",
+				Weight = 30,
+				Height = { 18, 24 }, -- >= Trees.MinTotalHeight
+				TrunkRadius = { 0.6, 0.8 },
+				CanopyRadius = { 3.5, 4.5 },
+				MinSpacing = 4,
+				Gatherable = true,
+				WoodYield = 2,
+			},
+			{
+				Id = "Medium",
+				Weight = 45,
+				Height = { 24, 34 },
+				TrunkRadius = { 0.9, 1.2 },
+				CanopyRadius = { 5, 6.5 },
+				MinSpacing = 6,
+				Gatherable = true,
+				WoodYield = 3,
+			},
+			{
+				Id = "Large",
+				Weight = 20,
+				Height = { 40, 55 },
+				TrunkRadius = { 1.5, 2 },
+				CanopyRadius = { 7.5, 9.5 },
+				MinSpacing = 9,
+				Gatherable = true,
+				WoodYield = 5,
+			},
+			{
+				Id = "Giant",
+				Weight = 5,
+				Height = GIANT_TREE_HEIGHT,
+				TrunkRadius = { 3.2, 4.8 },
+				CanopyRadius = { 13, 17 },
+				MinSpacing = 16,
+				Gatherable = true,
+				WoodYield = 10,
+			},
+		},
+		TreesPerChunk = 32, -- base slots per chunk (old World.TreesPerChunk = 12 was sparse); worst 5x5 window stays <= Perf.MaxLiveTrees
+		RingDensity = { 1, 0.25, 0.25, 0.12 }, -- start forest dense; lake sparse; mountains some; tundra sparse
+		CampBonusTrees = 90, -- extra trees in the camp chunk (concentrates the forest around spawn and camp)
+		PoiClearRadius = 26, -- no trees this close to a POI centre
+		SlotClearRadius = 4, -- no trees this close to a rock, ore, food or spawn-zone slot
+		TrunkNodeMaxHeight = 14, -- gatherable trunk part height cap (keeps the node within Gather.Range)
+		MaxPartsPerTree = 3, -- trunk (the gather node) + 2 foliage tiers; no per-leaf parts
+		SpawnClearRadius = 10, -- no trees on the spawn pad
+		FireClearRadius = 12, -- clearing around every campfire
+		NearCampRadius = 54, -- = Fire.WarmRadius (tier 1)
+		NearCampDensity = 2.5, -- thick right up to the small fire clearing
+		CampEdgeRadius = 110, -- band from NearCampRadius out to here is the thick treeline
+		CampEdgeDensity = 3,
+		GiantMaxPerChunk = 3,
+		PlacementAttempts = 8,
+		TagAttribute = "TreeClass",
+	},
+	Terrain = {
+		BlockSize = 4, -- = Roblox Terrain voxel size, so blocks map 1:1 to voxels
+		HeightQuantum = 1,
+		MaxStep = 4, -- hard cap between edge-adjacent blocks; World tests scan this over many seeds
+		ColumnDepth = 12,
+		BlendWidth = 120,
+		LowWavelength = 160,
+		HighWavelength = 64,
+		LowShare = 0.7,
+		Biomes = {
+			SnowyForest = { Amplitude = 6, MaxStep = 4 }, -- gentle rolling start forest
+			FrozenLake = { Amplitude = 1, MaxStep = 1 }, -- nearly flat
+			MountainsCaves = { Amplitude = 36, MaxStep = 4 }, -- largest relief
+			DeepTundra = { Amplitude = 12, MaxStep = 4 },
+		},
+		CampFlatRadius = 40,
+		CampRampWidth = 80,
+		BaseHeight = 0,
+		FloorY = -80, -- columns extend down to here
+		KillHeight = -120, -- below lowest possible terrain (-max amplitude) minus margin
+		EdgeMargin = 48,
+		EdgeWallHeight = 60,
+		MaxBlocksPerChunkBuild = 1600,
+		BuildBlocksPerTick = 400, -- 6400 blocks per chunk = 16 ticks instead of one hitch
+		BuildMsPerTick = 3,
+	},
+	Loot = {
+		ChestTag = "LootChest",
+		Rarities = RarityData.List,
+		ChestRarityAttribute = "ChestRarity",
+		ChestStructureAttribute = "LootStructure",
+		ChestDepthAttribute = "LootDepth",
+		ChestOpenedAttribute = "LootOpened",
+		MaxDepthTier = 4,
+		OpenRange = 10,
+		ServerOpenRange = 14,
+		OpenRateInterval = 0.3,
+		OpenedFadeSeconds = 20,
+	},
+	Massive = {
+		Ids = {
+			"ResearchStation",
+			"MineComplex",
+			"FrozenShipwreck",
+			"RuinedTemple",
+			"RangerLodge",
+			"ExpandedRuins",
+		},
+		Structures = {
+			ResearchStation = {
+				Id = "ResearchStation",
+				Name = "Research Station",
+				MinFootprintX = 110,
+				MinFootprintZ = 80,
+				MinRooms = 10,
+				MinLevels = 2,
+				UndergroundDepth = 14,
+				Rings = { 2, 3 },
+				CountMin = 1,
+				CountMax = 2,
+				Budget = { Parts = 1000, DressingParts = 280, Lights = 28, Particles = 6 },
+			},
+			MineComplex = {
+				Id = "MineComplex",
+				Name = "Mine Complex",
+				MinFootprintX = 120,
+				MinFootprintZ = 90,
+				MinRooms = 8,
+				MinLevels = 3,
+				UndergroundDepth = 36,
+				Rings = { 2 },
+				CountMin = 1,
+				CountMax = 2,
+				Budget = { Parts = 950, DressingParts = 240, Lights = 32, Particles = 5 },
+			},
+			FrozenShipwreck = {
+				Id = "FrozenShipwreck",
+				Name = "Frozen Shipwreck",
+				MinFootprintX = 130,
+				MinFootprintZ = 44,
+				MinRooms = 6,
+				MinLevels = 3,
+				UndergroundDepth = 0,
+				Rings = { 1 },
+				CountMin = 1,
+				CountMax = 2,
+				Budget = { Parts = 900, DressingParts = 260, Lights = 20, Particles = 6 },
+			},
+			RuinedTemple = {
+				Id = "RuinedTemple",
+				Name = "Ruined Temple",
+				MinFootprintX = 100,
+				MinFootprintZ = 100,
+				MinRooms = 9,
+				MinLevels = 2,
+				UndergroundDepth = 20,
+				Rings = { 2, 3 },
+				CountMin = 1,
+				CountMax = 1,
+				Budget = { Parts = 1000, DressingParts = 260, Lights = 26, Particles = 6 },
+			},
+			RangerLodge = {
+				Id = "RangerLodge",
+				Name = "Ranger Lodge",
+				MinFootprintX = 70,
+				MinFootprintZ = 56,
+				MinRooms = 7,
+				MinLevels = 2,
+				UndergroundDepth = 8,
+				Rings = { 0, 1 },
+				CountMin = 1,
+				CountMax = 2,
+				Budget = { Parts = 700, DressingParts = 200, Lights = 24, Particles = 4 },
+			},
+			ExpandedRuins = {
+				Id = "ExpandedRuins",
+				Name = "Expanded Ruins",
+				MinFootprintX = 120,
+				MinFootprintZ = 120,
+				MinRooms = 12,
+				MinLevels = 2,
+				UndergroundDepth = 16,
+				Rings = { 1, 2, 3 },
+				CountMin = 1,
+				CountMax = 2,
+				Budget = { Parts = 1000, DressingParts = 300, Lights = 30, Particles = 6 },
+			},
+		},
+		CorridorWidthMin = 6,
+		CeilingHeightMin = 10, -- character 5 studs + head room; > Shelter.CeilingHeight (9)
+		DoorWidthMin = 5,
+		DoorHeightMin = 8,
+		StairWidthMin = 5,
+		MaxLiveStructures = MASSIVE_MAX_LIVE_STRUCTURES,
+		MinSeparation = 400,
+		FootprintMargin = 10,
+		DressingSpawnRadius = 90,
+		DressingDespawnRadius = 130,
+		DressingCheckInterval = 0.5,
+		DressingPartsPerTick = 40,
+		MaxLiveParts = MASSIVE_MAX_LIVE_PARTS,
+		PlacementAttempts = 400,
+		EdgeMargin = 40,
+		PoiMargin = 20,
+		MaxSiteRelief = 60,
+		SiteSampleStep = 16,
+		KillMargin = 20,
+		ChestsPerPartAllowance = 6,
+		MaxChestsPerStructure = 16,
+		TempleDreadScale = 0.5,
+	},
+	Trees = {
+		HeadHeight = 5.5,
+		CanopyClearance = 2,
+		MinCanopyBottom = 7.5, -- HeadHeight + CanopyClearance (tested)
+		MinFoliageThickness = 6,
+		MinTotalHeight = 18,
+		SizeClasses = { "Small", "Medium", "Large", "Giant" },
+		GiantHeightMin = GIANT_TREE_HEIGHT[1],
+		GiantHeightMax = GIANT_TREE_HEIGHT[2],
+	},
+	FireRules = {
+		SpawnExcludeCategories = { "hostile", "miniboss", "boss" },
+		SpawnExcludeSpecials = { "Stalker", "Lurker" },
+		SpawnMargin = 6,
+		RepelCategories = { "hostile", "miniboss" },
+		ClearLiveTrees = true,
+		TreeClearRadius = 12,
+		TreeClearPerTier = 4,
+		TreeClearMaxRadius = 24,
+	},
+	WolfScaling = {
+		StartDay = 2,
+		DamagePerDay = 0.05,
+		MaxDamageMultiplier = 2,
+		SpawnRatePerDay = 0.06,
+		MaxSpawnRateMultiplier = 2,
+	},
+	Shelter = {
+		InteriorWidth = 14,
+		InteriorDepth = 14,
+		CeilingHeight = 9,
+		DoorWidth = 5,
+		DoorHeight = 8,
+		WallThickness = 1,
+		WatchtowerHeight = 28,
+		WatchtowerPlatformSize = 10,
+		WatchtowerRailHeight = 3.5,
+		StairWidth = 5,
+		StairRise = 1.5,
+		StairRun = 2,
+		LadderWidth = 3,
+		NarrowInteriorWidth = 8,
+		NarrowCeilingHeight = 8,
+		MaxPartsPerStructure = 52,
+		MaxApronSteps = 10,
+		FoundationMargin = 1,
+		FootprintMargin = 6,
+		InteriorLightRange = 20,
+		InteriorLightBrightness = 1.4,
+	},
+	Shadows = {
+		GlobalShadows = true,
+		TreesCastShadows = true,
+		ShadowSoftness = 0.15, -- crisp, menacing shadow edges
+		ForestFloorDarkness = 0.5,
+		ForestFloorDarknessNight = 0.2,
+		CanopyShadeRadiusFactor = 1.2,
+		NightMinAmbient = { 40, 48, 72 },
+		NightMinOutdoorAmbient = { 60, 70, 100 },
+		NightMinBrightness = 0.6,
+		MaxShadeDiscs = 120,
+		CanopyShadowMinRadius = 5, -- Medium and bigger canopies cast; Small ones only their trunk
+	},
 	-- Phase 4 (brief 20 consumes; brief 21 owns the values).
 	Perf = {
 		TargetFps = 30,
 		FpsSampleSeconds = 5,
-		MaxLiveParts = 6000,
+		MaxLiveParts = BASE_LIVE_PARTS, -- 6000: never raised (PM rule); massive structures must fit inside it
 		MaxLiveMobs = MAX_LIVE_MOBS,
 		ChunkLoadBudgetPerFrame = 1,
 		ChunkPartBudgetPerFrame = 150,
@@ -2220,6 +2748,8 @@ local Config: Config = {
 		StreamingMinRadius = 96,
 		SwingBroadcastRange = 150,
 		SwingMaxPerSecond = 12, -- client cap on relayed swings animated per second
+		MaxLiveTrees = 420, -- 420 trees * 3 parts = 1260 of the 6000 part budget; terrain blocks are voxels, not parts
+		TerrainCountsTowardParts = false, -- 6400 blocks per chunk would blow MaxLiveParts as parts: use Terrain voxels
 	},
 	Settings = {
 		Keys = { "reduceScares" },

@@ -10,7 +10,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local FireTiers = require(Shared:WaitForChild("logic"):WaitForChild("FireTiers"))
 
 local F = Config.Fire
 local R = F.Ring
@@ -157,7 +159,7 @@ function RadiusRing.start(opts: Options): () -> ()
 	-- Decide how many dots each layer gets: nearest fires first, within the global cap.
 	local function allocate(rootPos: Vector3, placing: boolean)
 		local chunks = Workspace:FindFirstChild(Config.World.ChunkFolderName)
-		rayParams.FilterDescendantsInstances = if chunks then { chunks } else {}
+		rayParams.FilterDescendantsInstances = if chunks then { chunks, Workspace.Terrain } else {}
 		local order: { Ring } = {}
 		for _, ring in rings do
 			table.insert(order, ring)
@@ -177,11 +179,7 @@ function RadiusRing.start(opts: Options): () -> ()
 				local radius = fire:GetAttribute(attr)
 				local n = 0
 				if wanted and lit and type(radius) == "number" and radius > 0 then
-					n = math.clamp(
-						math.floor(TWO_PI * radius / R.Spacing),
-						R.MinDots,
-						R.MaxDotsPerLayer
-					)
+					n = FireTiers.ringDotCount(radius, R.Spacing, R.MinDots, R.MaxDotsPerLayer)
 					n = math.min(n, budget)
 					if n < R.MinDots then
 						n = 0

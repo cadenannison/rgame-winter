@@ -17,6 +17,34 @@ local LobbyState = require(script.Parent.LobbyState)
 
 local SummaryScreen = {}
 
+-- Run-end look: opaque dark panel, big white outlined text (readable on a phone over the snow).
+local LOOK = {
+	PanelColor = Color3.fromRGB(8, 11, 16),
+	PanelScale = Vector2.new(0.92, 0.88),
+	PanelMaxSize = Vector2.new(520, 480),
+	TitleMaxText = 40,
+	RowMaxText = 28,
+	RowHeight = 34,
+	StrokeThickness = 2,
+	StrokeColor = Color3.new(0, 0, 0),
+	TextColor = Color3.new(1, 1, 1),
+	ReturnColor = Color3.fromRGB(150, 60, 50),
+}
+
+-- White-outlined text at a larger cap than the lobby labels.
+local function outline(target: TextLabel | TextButton, maxText: number)
+	local label: any = target -- both classes share these properties (the union type does not)
+	label.TextColor3 = LOOK.TextColor
+	local limit = label:FindFirstChildOfClass("UITextSizeConstraint")
+	if limit then
+		limit.MaxTextSize = maxText
+	end
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = LOOK.StrokeColor
+	stroke.Thickness = LOOK.StrokeThickness
+	stroke.Parent = label
+end
+
 local MAX_TEXT = 60 -- cap on server-provided strings
 
 local function cleanText(value: unknown): string?
@@ -44,14 +72,17 @@ function SummaryScreen.start(
 	local joinRemote = Remotes.event(Remotes.PadJoinRequest)
 	local summaryRemote = Remotes.event(Remotes.RunSummary)
 
-	local panel = UiKit.panel(gui, "Summary", LobbyConfig.PanelMaxSize, Vector2.new(0.7, 0.75))
+	local panel = UiKit.panel(gui, "Summary", LOOK.PanelMaxSize, LOOK.PanelScale)
 	panel.ZIndex = 15
+	panel.BackgroundColor3 = LOOK.PanelColor
+	panel.BackgroundTransparency = 0
 	table.insert(cleanups, function()
 		panel:Destroy()
 	end)
 	local head =
-		UiKit.label(panel, "Title", "Run over", UDim2.new(1, -LobbyConfig.MinButton - 8, 0, 32))
+		UiKit.label(panel, "Title", "Run over", UDim2.new(1, -LobbyConfig.MinButton - 8, 0, 40))
 	head.Font = Enum.Font.GothamBold
+	outline(head, LOOK.TitleMaxText)
 	local close = UiKit.button(
 		panel,
 		"Close",
@@ -78,6 +109,32 @@ function SummaryScreen.start(
 		UiKit.button(panel, "Requeue", "Queue again [R]", UDim2.new(1, 0, 0, LobbyConfig.MinButton))
 	requeue.AnchorPoint = Vector2.new(0, 1)
 	requeue.Position = UDim2.fromScale(0, 1)
+	outline(requeue, LOOK.RowMaxText)
+	-- Run server: "Play again" (= back to the lobby, then queue) and "Return to lobby" side by side.
+	local returnButton = UiKit.button(
+		panel,
+		"ReturnToLobby",
+		"Return to lobby",
+		UDim2.new(0.5, -4, 0, LobbyConfig.MinButton)
+	)
+	returnButton.AnchorPoint = Vector2.new(1, 1)
+	returnButton.Position = UDim2.fromScale(1, 1)
+	returnButton.BackgroundColor3 = LOOK.ReturnColor
+	returnButton.Visible = false
+	outline(returnButton, LOOK.RowMaxText)
+	local returnRemote: RemoteEvent? = nil
+	local function requestReturn()
+		if state.isLobby() or not panel.Visible then
+			return
+		end
+		if not returnRemote then
+			returnRemote = Remotes.event(Remotes.ReturnToLobbyRequest)
+		end
+		if returnRemote then
+			returnRemote:FireServer()
+		end
+		state.toast("Returning to the lobby...")
+	end
 
 	local function hide()
 		panel.Visible = false
@@ -93,15 +150,23 @@ function SummaryScreen.start(
 			requeue.Text = if padIndex
 				then `Queue again: pad {padIndex} [R]`
 				else "All pads busy - wait a moment"
+			returnButton.Visible = false
+			requeue.Size = UDim2.new(1, 0, 0, LobbyConfig.MinButton)
 		else
 			local left = math.max(0, math.ceil(Config.Run.SummarySeconds - (os.clock() - shownAt)))
-			UiKit.setEnabled(requeue, false)
-			requeue.Text = `Back to the lobby in {left}s`
+			UiKit.setEnabled(requeue, true)
+			requeue.Text = `Play again ({left}s)`
+			requeue.Size = UDim2.new(0.5, -4, 0, LobbyConfig.MinButton)
+			returnButton.Visible = true
 		end
 	end
 
 	local function doRequeue()
-		if not panel.Visible or not state.isLobby() then
+		if not panel.Visible then
+			return
+		end
+		if not state.isLobby() then
+			requestReturn() -- run server: Play again = back to the lobby pads
 			return
 		end
 		local padIndex = LobbyLogic.pickRequeuePad(state.pads, player.UserId)
@@ -115,8 +180,9 @@ function SummaryScreen.start(
 	end
 
 	local function addRow(text: string, order: number, color: Color3?)
-		local rowLabel = UiKit.label(body, `Row{order}`, text, UDim2.new(1, -8, 0, 26))
+		local rowLabel = UiKit.label(body, `Row{order}`, text, UDim2.new(1, -8, 0, LOOK.RowHeight))
 		rowLabel.LayoutOrder = order
+		outline(rowLabel, LOOK.RowMaxText)
 		if color then
 			rowLabel.TextColor3 = color
 		end
@@ -184,6 +250,7 @@ function SummaryScreen.start(
 
 	close.MouseButton1Click:Connect(hide)
 	requeue.MouseButton1Click:Connect(doRequeue)
+	returnButton.MouseButton1Click:Connect(requestReturn)
 
 	local remoteConn = summaryRemote.OnClientEvent:Connect(show)
 	table.insert(cleanups, function()

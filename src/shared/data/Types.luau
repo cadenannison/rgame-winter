@@ -3,6 +3,8 @@
 -- Every table in src/shared/data/ is typed here so ItemCatalog and the owning briefs share one shape.
 -- Owner: brief 12 (later changes go through brief 18 / the PM).
 
+local Rarity = require("./Rarity")
+
 export type Stack = { id: string, count: number }
 
 export type ItemDef = {
@@ -26,6 +28,9 @@ export type ItemDef = {
 	repelsStalker: boolean?, -- lit light repels the Stalker (Config.Stalker.TorchRepelRadius / FlareRepelRadius)
 	endsHunt: boolean?, -- using it ends an active hunt (flare)
 	repairable: boolean?, -- can be repaired at Config.Repair.Station
+	-- Loot round: stamped by ItemCatalog from data/Rarity.Tags (always set on ItemCatalog.Items entries)
+	rarity: Rarity.Rarity?,
+	lootCategory: Rarity.LootCategory?, -- nil = never found in loot chests
 }
 
 export type Recipe = {

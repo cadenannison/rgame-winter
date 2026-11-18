@@ -128,7 +128,12 @@ function InventoryService.wearSelected(player: Player, amount: number): boolean
 	if inv == nil then
 		return false
 	end
-	local broke = Inventory.wear(inv, selected[player] or 1, amount)
+	local slot = selected[player] or 1
+	local stack = inv.slots[slot]
+	if stack ~= nil and ItemCatalog.isUnbreakable(stack.id) then
+		return false -- the starting Axe never wears (Config.Durability.UnbreakableItems)
+	end
+	local broke = Inventory.wear(inv, slot, amount)
 	sync(player)
 	return broke
 end

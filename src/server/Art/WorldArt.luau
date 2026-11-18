@@ -53,14 +53,17 @@ function WorldArt.styleGround(ground: Part, biome: string, variantShade: number)
 	ground.Material = material(art.Material)
 end
 
--- Random point inside the chunk (axis-aligned square around its centre), clear of the edge.
-local function pointIn(centerX: number, centerZ: number, rng: Random): Vector3
+-- Random point inside the chunk (axis-aligned square around its centre), clear of the edge, on the terrain.
+local function pointIn(
+	centerX: number,
+	centerZ: number,
+	rng: Random,
+	groundY: ((number, number) -> number)?
+): Vector3
 	local half = Config.World.ChunkSize / 2 - W.DecorEdgeMargin
-	return Vector3.new(
-		centerX + rng:NextNumber(-half, half),
-		0,
-		centerZ + rng:NextNumber(-half, half)
-	)
+	local x = centerX + rng:NextNumber(-half, half)
+	local z = centerZ + rng:NextNumber(-half, half)
+	return Vector3.new(x, if groundY then groundY(x, z) else Config.Terrain.BaseHeight, z)
 end
 
 -- Patches first (they sit under everything), then ground cover round-robin over the biome's decor list
@@ -70,7 +73,8 @@ function WorldArt.decorChunk(
 	biome: string,
 	centerX: number,
 	centerZ: number,
-	rng: Random
+	rng: Random,
+	groundY: ((number, number) -> number)? -- terrain top Y (World.heightAt closure); flat base height when nil
 ): number
 	local art = biomeArt(biome)
 	local folder = Instance.new("Folder")
@@ -84,7 +88,7 @@ function WorldArt.decorChunk(
 			break
 		end
 		local size = rng:NextNumber(W.PatchSize[1], W.PatchSize[2])
-		local pos = pointIn(centerX, centerZ, rng)
+		local pos = pointIn(centerX, centerZ, rng, groundY)
 		local k = rng:NextNumber(0.9, 1.08)
 		WorldProps.patch(
 			folder,
@@ -112,7 +116,7 @@ function WorldArt.decorChunk(
 			if entry.left > 0 and used + cost <= budget then
 				entry.left -= 1
 				progressed = true
-				local pos = pointIn(centerX, centerZ, rng)
+				local pos = pointIn(centerX, centerZ, rng, groundY)
 				local cf = CFrame.new(pos) * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0)
 				if WorldProps.decor(folder, cf, entry.kind, rng) then
 					used += cost
@@ -154,7 +158,8 @@ end
 -- carries the hit/depletion attributes); it is made invisible and its art model sits in `parent`.
 function WorldArt.skinNode(node: Part, kind: string, biome: string, parent: Instance, rng: Random)
 	local art = biomeArt(biome)
-	local ground = Vector3.new(node.Position.X, 0, node.Position.Z)
+	-- Slots sit on the terrain with their centre half a height up, so the ground is the part's bottom.
+	local ground = Vector3.new(node.Position.X, node.Position.Y - node.Size.Y / 2, node.Position.Z)
 	local yaw = rng:NextNumber(0, math.pi * 2)
 	local cf = CFrame.new(ground) * CFrame.Angles(0, yaw, 0)
 	local holder = Instance.new("Model")

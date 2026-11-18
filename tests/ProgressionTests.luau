@@ -60,7 +60,7 @@ return function(check: (string, boolean) -> ())
 	)
 
 	-- Durability and repair.
-	local axe = ItemCatalog.Items.Axe
+	local axe = ItemCatalog.Items.Pickaxe -- the Axe is unbreakable, so repair rules use the Pickaxe
 	local torch = ItemCatalog.Items.Torch
 	check(
 		"repair: tools repairable, plain lights not",
@@ -75,7 +75,7 @@ return function(check: (string, boolean) -> ())
 		"repair: missing durability refused",
 		select(2, Repair.check(axe, nil)) == "NotRepairable"
 	)
-	local cost = Repair.cost("Axe") :: { { id: string, count: number } }
+	local cost = Repair.cost("Pickaxe") :: { { id: string, count: number } }
 	check(
 		"repair: cost is a rounded-up fraction of the recipe",
 		cost ~= nil

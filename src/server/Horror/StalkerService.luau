@@ -243,14 +243,17 @@ local function stepActive(dt: number)
 	local distance = math.sqrt((a.x - tp.X) ^ 2 + (a.z - tp.Z) ^ 2)
 	local inputs: DreadLogic.HuntInputs = { distance = distance, light = light, targetSafe = safe }
 	local out = DreadLogic.stepHunt(a.hunt, inputs, dt)
-	if out.strike then
+	-- Server gate: it never strikes from, or at a target standing in, a warm zone.
+	local inWarm = DreadLogic.isInside(a.x, a.z, snap.warmZones, 0)
+		or DreadLogic.isInside(tp.X, tp.Z, snap.warmZones, 0)
+	if out.strike and not inWarm then
 		strike(a, root)
 	end
 	if out.retreatStarted then
 		-- Position present = it struck (client plays the strike sound there); absent = it gave up.
 		CueSender.send(a.target, {
 			kind = "StalkerRetreat",
-			position = if out.strike then Vector3.new(a.x, a.y, a.z) else nil,
+			position = if out.strike and not inWarm then Vector3.new(a.x, a.y, a.z) else nil,
 		})
 	elseif a.lastPhase == "Telegraph" and a.hunt.phase == "Chase" then
 		CueSender.send(a.target, {

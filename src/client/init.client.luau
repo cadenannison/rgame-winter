@@ -46,6 +46,7 @@ if mode == Config.Teleport.ModeLobby then
 else
 	HudController.start()
 	NightFeedback.start()
+	require(script.HUD.DownedUi).start() -- downed banner, revive prompt, spectate + return to lobby
 	-- Phase 3 boot hooks (each file owned by one brief; stubs until filled). See docs/INTEGRATION.md.
 	require(script.Phase3.WorldGenClient).start() -- brief 13
 	require(script.Phase3.EventsClient).start() -- brief 14
@@ -56,4 +57,5 @@ else
 	require(script.Phase4.MetaClient).start(Config.Teleport.ModeRun) -- brief 19
 	require(script.Phase4.AtmosphereClient).start(Config.Teleport.ModeRun) -- brief 20
 	require(script.Art.BiomeFx).start() -- art pass 2: per-biome atmosphere, grade, snow/wind
+	require(script.Loot.ChestClient).start() -- loot chest glow/light/particles and the Open prompt
 end

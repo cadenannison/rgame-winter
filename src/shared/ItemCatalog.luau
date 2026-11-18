@@ -6,6 +6,7 @@ local Types = require("./data/Types")
 local Phase3Items = require("./data/Items")
 local Phase3Recipes = require("./data/Recipes")
 local Phase3Structures = require("./data/Structures")
+local RarityData = require("./data/Rarity")
 
 -- Item, recipe and structure shapes live in shared/data/Types.luau (Phase 3 adds optional fields).
 export type ItemDef = Types.ItemDef
@@ -13,6 +14,8 @@ export type Recipe = Types.Recipe
 export type StructureDef = Types.StructureDef
 
 export type NodeDef = Types.NodeDef
+export type Rarity = RarityData.Rarity
+export type LootCategory = RarityData.LootCategory
 
 local ItemCatalog = {}
 
@@ -177,6 +180,100 @@ for _, def in Phase3Recipes.List do
 end
 for _, def in Phase3Structures.List do
 	mergeInto(ItemCatalog.Structures, def.id, def, "structure")
+end
+
+-- Loot-only gear for the upper rarity tiers (chest finds; no recipes). Stats derive from Config so tuning
+-- stays in one place: weapon damage = SpearDamage * multiplier, durability = base * MetalToolMultiplier * wear.
+local EPIC_WEAPON_MULT = 2.2
+local LEGENDARY_WEAPON_MULT = 3
+local EPIC_WEAR = 1.5
+local LEGENDARY_WEAR = 2
+local EPIC_LIGHT_RADIUS = 36
+local LEGENDARY_LIGHT_RADIUS = 48
+local EPIC_LIGHT_SECONDS = 900
+local LEGENDARY_LIGHT_SECONDS = 1200
+local METAL_WEAR = Config.Durability.MetalToolMultiplier
+local LOOT_GEAR: { ItemDef } = {
+	{
+		id = "AuroraBlade",
+		name = "Aurora Blade",
+		kind = "weapon",
+		maxStack = 1,
+		damage = math.floor(Config.Combat.SpearDamage * EPIC_WEAPON_MULT),
+		durability = math.floor(WEAPON_DURABILITY * METAL_WEAR * EPIC_WEAR),
+		repairable = true,
+	},
+	{
+		id = "SunpiercerSpear",
+		name = "Sunpiercer Spear",
+		kind = "weapon",
+		maxStack = 1,
+		damage = math.floor(Config.Combat.SpearDamage * LEGENDARY_WEAPON_MULT),
+		durability = math.floor(WEAPON_DURABILITY * METAL_WEAR * LEGENDARY_WEAR),
+		repairable = true,
+	},
+	{
+		id = "AuroraPickaxe",
+		name = "Aurora Pickaxe",
+		kind = "tool",
+		maxStack = 1,
+		toolType = "pickaxe",
+		toolTier = Config.ToolTier.Metal,
+		durability = math.floor(TOOL_DURABILITY * METAL_WEAR * EPIC_WEAR),
+		repairable = true,
+	},
+	{
+		id = "SunforgedAxe",
+		name = "Sunforged Axe",
+		kind = "tool",
+		maxStack = 1,
+		toolType = "axe",
+		toolTier = Config.ToolTier.Metal,
+		durability = math.floor(TOOL_DURABILITY * METAL_WEAR * LEGENDARY_WEAR),
+		repairable = true,
+	},
+	{
+		id = "AuroraLantern",
+		name = "Aurora Lantern",
+		kind = "light",
+		maxStack = 1,
+		durability = EPIC_LIGHT_SECONDS,
+		lightRadius = EPIC_LIGHT_RADIUS,
+		repelsStalker = true,
+		repairable = true,
+	},
+	{
+		id = "SunBeacon",
+		name = "Sun Beacon",
+		kind = "light",
+		maxStack = 1,
+		durability = LEGENDARY_LIGHT_SECONDS,
+		lightRadius = LEGENDARY_LIGHT_RADIUS,
+		repelsStalker = true,
+		repairable = true,
+	},
+}
+for _, def in LOOT_GEAR do
+	mergeInto(ItemCatalog.Items, def.id, def, "item")
+end
+
+-- Loot round: stamp rarity and loot category on every item from data/Rarity.Tags (missing tag = programmer error).
+for id, def in ItemCatalog.Items do
+	local tag = RarityData.Tags[id]
+	assert(tag ~= nil, `ItemCatalog: item {id} has no Rarity.Tags entry`)
+	def.rarity = tag.rarity
+	def.lootCategory = tag.category
+end
+
+-- Rarity of an item id ("common" for unknown ids).
+function ItemCatalog.rarityOf(id: string): RarityData.Rarity
+	local def = ItemCatalog.Items[id]
+	return if def and def.rarity then def.rarity else "common"
+end
+
+-- Items in Config.Durability.UnbreakableItems never lose durability and are never repaired (the starting Axe).
+function ItemCatalog.isUnbreakable(id: string): boolean
+	return Config.Durability.UnbreakableItems[id] == true
 end
 
 return ItemCatalog

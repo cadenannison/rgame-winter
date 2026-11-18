@@ -311,3 +311,93 @@ Neither brief edits a file in the other's row. Cross-brief needs go through the 
 | Config: `Blizzard.EventId`, `Meta.StarterGear{Wait,Poll}Seconds`, `Meta.CosmeticTagPrefix/CosmeticSlots`, `Hints.Ids` + "Forge", `Hints.ShowSeconds/CheckInterval/LookupRange/WarnWindowSeconds`, `Perf.SwingMaxPerSecond` | 21 | 19, 20 |
 | Studio-only: `Debug/MetaQA.luau` (bridge "MetaQA": backup/restore/read/setCoins/clearOwned/clearAchievement/clearHint/setStat) | 21 | tools/qa |
 
+
+## Round: terrain/forest/structures/fire/death/balance contracts
+Owner: contracts agent (done). Agents: A terrain, B trees/shadows, C structures, D fire radius, E death/revive, F balance. Config is frozen for this round except by its owner.
+
+### World (pure, `src/shared/logic/World.luau`; test skeleton `tests/TerrainContractTests.luau`, A extends)
+| name | semantics | consumers |
+|---|---|---|
+| `World.heightAt(seed, x, z, flatX?, flatZ?): number` | Block top Y, pure/deterministic. Flat (=`Terrain.BaseHeight`) within `CampFlatRadius` of the flat centre (default origin; pass camp x,z), ramps over `CampRampWidth` | A, B (tree Y), C (structure Y), E |
+| `World.blockHeight(seed, ix, iz, flatX?, flatZ?)`, `World.blockIndex(x,z) -> ix,iz`, `World.blockCenter(ix,iz) -> x,z`, `World.blockOrigin(x,z) -> x,z` (min corner) | Block grid helpers (size `Terrain.BlockSize`) | A, B |
+| `World.biomeAt(x,z): string` (Biomes id), `World.ringAt(x,z)`, `World.amplitudeAt(x,z)` | Biome lookups / blended amplitude | A, B |
+| `World.halfExtent()`, `World.isPastEdge(x,z)`, `World.belowKillHeight(y)`, `World.shouldKill(x,y,z)` | Fell-off checks (edge uses `Terrain.EdgeMargin`) | A (edge wall), E |
+
+### Config
+| path | value / meaning | consumers |
+|---|---|---|
+| `Terrain.BlockSize`=4, `HeightQuantum`=1, `MaxStep`=4 (hard cap, scan-tested), `BlendWidth`, `LowWavelength`, `HighWavelength`, `LowShare` | block grid + noise shape | A |
+| `Terrain.Biomes[id] = {Amplitude, MaxStep}` ids SnowyForest 6, FrozenLake 1 (near flat), MountainsCaves 36, DeepTundra 12 | per-biome relief | A, B |
+| `Terrain.CampFlatRadius`=40, `CampRampWidth`=80, `BaseHeight`=0, `FloorY`=-80 | flat camp, column floor | A, B, C |
+| `Terrain.KillHeight`=-120, `EdgeMargin`=48, `EdgeWallHeight`=60, `MaxBlocksPerChunkBuild` | kill/edge/build budget | A, E |
+| `Forest.Classes[]` = `{Id,Weight,Height{min,max},TrunkRadius,CanopyRadius,MinSpacing,Gatherable,WoodYield}` Small/Medium/Large/Giant | tree size classes | B, F |
+| `Forest.TreesPerChunk`=80, `RingDensity`={1,.35,.5,.2}, `MaxPartsPerTree`=4, `GiantMaxPerChunk`=3, `PlacementAttempts`, `TagAttribute` | density/perf | B |
+| `Forest.SpawnClearRadius`=10, `FireClearRadius`=12, `NearCampRadius`=54, `NearCampDensity`=0.4, `CampEdgeRadius`=110, `CampEdgeDensity`=1.3 | density near spawn/camp, clearing at fire | B |
+| `Fire.BaseRadius`=R0=18; `Fire.WarmRadius`=54 (3 R0); `Fire.Tiers[i]` (i=1 is spec tier 0): WarmRadius 54/72/90, BuildRadius 90/126/162, LightRange 72/90/108 | each upgrade adds R0 | D, C (build range), all fire readers |
+| Mob repel radius | unchanged formula: warm + `Night.RepelMargin` (6) (`FireRepel.repelRadius`); `Fire.RepelRadius`=58 is only the fallback | D |
+| `Fire.Ring`: DotDiameter 1.8, Spacing 10, MinDots 24, MaxDotsPerLayer 110, MaxDotsTotal 220, FadeStart 30, FadeEnd 110, RayLength 200; `Fire.Meter.ShowRange`=100 | scaled for 3x radii | D |
+| `Durability.UnbreakableItems = { Axe = true }` | ids that never lose durability (apply at the durability decrement, server) | F (or E/gather owner) |
+| `Combat.HareHitsMin/Max`=2/3, `WolfHitsMin/Max`=4/5; `Mobs.Hare.Health` 8 -> 20 (3 hits at `ToolDamage` 8); Wolf 35 (5 hits) | hits-to-kill targets | F |
+| `Downed.BleedoutSeconds`=60 (revive window), `ReviveSeconds`=4 (hold), `ReviveRange`=8, `DownedWalkSpeed`=3 (existing); new `DownedJumpPower`=0, `SpectateOnDeath`=true, `SpectateCycleInterval`=0.4, `ReviveBarHoldRequired`=true, `ReviveCancelRange`=12, `DownedHealth`=1 | death/revive | E |
+| `Shelter.InteriorWidth/Depth`=14, `CeilingHeight`=9, `DoorWidth`=5, `DoorHeight`=8, `WallThickness`=1, `WatchtowerHeight`=28, `WatchtowerPlatformSize`=10, `WatchtowerRailHeight`=3.5, `StairWidth`=5, `StairRise`=1.5, `StairRun`=2, `LadderWidth`=3 | structure minimums | C |
+| `Shadows.GlobalShadows`, `TreesCastShadows`, `ShadowSoftness`=0.3, `ForestFloorDarkness`=0.35, `ForestFloorDarknessNight`=0.15, `CanopyShadeRadiusFactor`=1.2, `NightMinAmbient`, `NightMinOutdoorAmbient`, `NightMinBrightness`, `MaxShadeDiscs`=120 | plain tuning values | B |
+| `Perf.MaxLiveTrees`=700, `Perf.TerrainCountsTowardParts`=false | `MaxLiveParts` (6000) unchanged. Terrain MUST be Roblox Terrain voxels (FillBlock, voxel = BlockSize 4), not parts: 6400 blocks per chunk would blow the budget | A, B |
+
+Notes: heightAt returns block tops sampled at block centres; `MaxStep` between edge-adjacent blocks is scan-tested over a 12-stud sample grid, A should extend to all blocks. Old fire literals in tests (e.g. NightTests with 18/22) use explicit args, not Config. Tier-0 naming: Config indices are 1-based, `Tiers[1]` is the spec's tier 0.
+
+### Appended note: death / downed / revive (agent E)
+- Server hook for A's world edge: `SurvivalService.killOutright(player, cause?)` ends a player outright (no downed window, not revivable, cause "Fall"). Call it where `World.shouldKill(x, y, z)` is true; Survival's own Heartbeat already applies `World.shouldKill` (kill height and edge) to every living or downed player each tick via `DownedLogic.fellOut`.
+- Pure logic: `src/shared/logic/DownedLogic.luau` (onZeroHealth, canStartRevive, channelStep, progress, nextSpectate, pickReviveTarget, fellOut). Tests: `tests/DownedTests.luau`.
+- Config.Downed additions (E): `DeadAttribute` ("RunDead" Player attribute, spectator), `BleedAttribute` ("DownedBleed", seconds left), `ReviveProgressAttribute` ("ReviveProgress" on the downed player), `ReviveRefreshSeconds`, `ReviveStaleSeconds`, `PoseDropY`, `PoseTiltDegrees`, `PoseJointName`, `ReturnRemoteName`.
+- Revive protocol: client resends `ReviveRequest(target)` every `ReviveRefreshSeconds` while holding; the server cancels after `ReviveStaleSeconds` without a refresh (release), beyond `ReviveCancelRange`, or if either side stops being valid.
+- New remote `Config.Downed.ReturnRemoteName` ("ReturnToLobbyRequest", no payload) is created lazily by RunLifecycleService.Start. NOT added to `Remotes.luau` (not E's file): the Remotes owner should add `Remotes.ReturnToLobbyRequest = "ReturnToLobbyRequest"` and its entry in `Remotes.all`, and switch the two callers (RunLifecycleService, SummaryScreen/DownedUi) to it.
+- Client: `src/client/HUD/DownedUi.luau` (started from init.client in run mode); summary screen restyled in `src/client/Lobby/SummaryScreen.luau`.
+
+
+### C footprints (enterable structures)
+Exclusion radii in studs from the POI position (include `Shelter.FootprintMargin` = 6; apron steps on steep ground may reach ~10 further, ignore). Source of truth: `PoiPlan.kindFootprint(kind)` (`src/shared/logic/PoiPlan.luau`); trees/camp/spawn exclusion should call it rather than copy numbers.
+| kind | radius | notes |
+|---|---|---|
+| cabin | 23 | LogCabin 21, Lodge 23, Trapper 22 |
+| plane | 38 | Airliner 38, Cargo 36 (long fuselage plus wing/scorch) |
+| cave | 28 | Cavern 28, Grotto 26 |
+| ruin | 31 | Vault 26, TwinChambers 31 |
+| campsite | 22 | Tent 21, Watchtower 22 (tower is the `campsite` kind, variant `Watchtower`) |
+| hotspring | 14 | `PoiPlan.PropFootprints` |
+Placement: floor Y = highest terrain under the footprint (`PoiPlan.siteFloor`), foundation fills below, door yaw is the cardinal facing the lowest ground, variant = `PoiPlan.pickVariant(seed, poi.id, kind, biome)`. Doors are open (no scripted doors); mobs can path through. Part budget per POI <= `Art.World.MaxPartsPerPoi` (tested).
+
+### Appended note: integration pass (terrain/forest/structures/fire/death/balance)
+- Fall path is single: `ChunkService.setFallHandler` -> `SurvivalService.killOutright(player, "Fall")` (wired in Phase3 Wiring); Survival's own Heartbeat fell-out check was removed. MobService despawns mobs where `World.shouldKill`.
+- Ground Y: ChunkService (slots, camp fire, spawn, teleport) and WorldArt.decorChunk use `World.heightAt` (camp-aware). Placement/ghost/ring ground rays now include `Workspace.Terrain` (not only the chunk folder); `Placement.GroundRayHeight/Length` = 40/100 for slopes.
+- Trees: `ForestPlacement.poiClears(layout, chunk)` gives per-POI exclusion radii (`PoiPlan.kindFootprint`) including neighbour chunks. Fires placed after a chunk loads do not clear trees (tree set must stay deterministic for node memory); only the camp clearing applies.
+- Mobs never spawn inside a lit fire's repel circle. Fire PointLights clamp to `Night.FireLightMaxRange` (60, the Roblox cap); `Tiers[i].LightRange` is informational.
+- `Remotes.ReturnToLobbyRequest` is registered in Remotes.all. `InventoryService.wearSelected` skips `ItemCatalog.isUnbreakable` items.
+
+
+## Round: loot + massive structures + trees
+Owner: contracts agent (shared files frozen for later agents H/I/J/K/L/M; ask the PM for changes). Tests: `tests/LootTests.luau`.
+
+### Rarity (shared, replicated, no weights)
+- `src/shared/data/Rarity.luau`: types `Rarity` ("common"|"uncommon"|"rare"|"epic"|"legendary"), `LootCategory` ("gear"|"tool"|"weapon"|"clothing"|"material"|"food"); `Rarity.List`, `Rarity.Categories`, `Rarity.rank(r): number`, `Rarity.isRarity(v): boolean`, `Rarity.Colors[r] = {r,g,b}`, `Rarity.Tags[itemId] = { rarity, category? }` (category nil = never in loot). Add a Tags entry for every new item (ItemCatalog asserts at load).
+- `ItemDef.rarity: Rarity?` and `ItemDef.lootCategory: LootCategory?` (stamped on every `ItemCatalog.Items` entry); `ItemCatalog.rarityOf(id): Rarity`; types `ItemCatalog.Rarity`, `ItemCatalog.LootCategory`.
+
+### Loot (config split)
+- Public `Config.Loot`: `ChestTag` "LootChest", `Rarities`, attributes `ChestRarityAttribute` "ChestRarity", `ChestStructureAttribute` "LootStructure", `ChestDepthAttribute` "LootDepth", `ChestOpenedAttribute` "LootOpened", `MaxDepthTier` 4, `OpenRange` 10, `ServerOpenRange` 14, `OpenRateInterval` 0.3, `OpenedFadeSeconds` 20.
+- SERVER-ONLY weights: `src/server/Loot/LootTables.luau` (under src/server = ServerScriptService.Server, never replicated; has no requires; do NOT require from shared/client). Contents: `ringWeights[ring+1]` (chest rarity by ring), `structureWeights[type]` (multipliers), `structureChests[type]` ({min,max} chests per structure), `depth` ({PerTier, MaxTier}), `chests[chestRarity]` ({items={min,max}, categoryWeights, rarityWeights}), `stackCounts[category]`. Structure type keys: small POIs `cabin, plane, cave, ruin, campsite`; massive ids from `Config.Massive.Ids`.
+- Pure rolling `src/shared/logic/LootRoll.luau` (pass `LootTables` as `LootRoll.Tables`; `rng: () -> number` in [0,1)): `buildPool(ItemCatalog.Items)`, `chestWeights(t, ring, structureType, depthTier)`, `pickChestRarity(t, ring, structureType, depthTier, rng): string`, `chestCount(t, structureType, rng): number`, `rollChest(t, pool, chestRarity, rng): {Stack}`, `weightedPick`, `bucket`, `randomInt`. Depth: deeper chests (depthTier 0..4) multiply higher rarities by `(1 + PerTier*tier)^(rank-1)`. Empty item buckets fall back to the next lower rarity.
+- Remotes (`shared/Remotes.luau`, both in `Remotes.all`): `Remotes.LootOpenRequest` client->server `LootOpenPayload = { chest: Instance }` (handler order: type-check Instance with ChestTag, range <= ServerOpenRange, Guard at `OpenRateInterval`, state not yet looted, then roll/grant); `Remotes.LootOpened` server->client `LootOpenedPayload = { chest, rarity: string, items: {ItemStack}, overflow: boolean }`.
+
+### Massive structures (`Config.Massive`, helper `src/shared/logic/MassiveRules.luau`)
+- `Ids` = ResearchStation, MineComplex, FrozenShipwreck, RuinedTemple, RangerLodge, ExpandedRuins; `Structures[id]`: `MinFootprintX/Z, MinRooms, MinLevels, UndergroundDepth, Rings, CountMin, CountMax, Budget {Parts, DressingParts, Lights, Particles}`.
+- Globals: `CorridorWidthMin` 6, `CeilingHeightMin` 10, `DoorWidthMin` 5, `DoorHeightMin` 8, `StairWidthMin` 5, `MaxLiveStructures` 2, `MinSeparation` 400, `FootprintMargin` 10, `DressingSpawnRadius` 90, `DressingDespawnRadius` 130, `DressingCheckInterval` 0.5, `DressingPartsPerTick` 40, `MaxLiveParts` 2000.
+- `MassiveRules.footprintRadius(id)`, `ringAllowed(id, ring)`, `validatePlan(PlanSummary): {string}` (empty = OK; use in tests for plans). `Config.Perf.MaxLiveParts` stays 6000 (PM: never raise); integration lowers decor density to fit massive structures.
+- Massive types also key `LootTables` (see above).
+
+### Trees (`Config.Trees`, helper `src/shared/logic/TreeRules.luau`)
+- `HeadHeight` 5.5, `CanopyClearance` 2, `MinCanopyBottom` 7.5, `MinFoliageThickness` 6, `MinTotalHeight` 18, `SizeClasses` {Small,Medium,Large,Giant}, `GiantHeightMin/Max` 70/100. `Forest.Classes` Small height is now {18,24}.
+- `TreeRules.minCanopyBottom()`, `foliageBottom(height, wantedFraction)`, `canopyOk(height, foliageBottom)`.
+
+### For L (fixes)
+- `Config.FireRules`: `SpawnExcludeCategories` {hostile,miniboss,boss}, `SpawnExcludeSpecials` {Stalker,Lurker}, `SpawnMargin` 6, `RepelCategories`, `ClearLiveTrees`, `TreeClearRadius` 12, `TreeClearPerTier` 4, `TreeClearMaxRadius` 24.
+- `Config.Terrain.BuildBlocksPerTick` 400 and `BuildMsPerTick` 3 (yield when either is hit; `MaxBlocksPerChunkBuild` stays the old chunk cap).
+- `Config.WolfScaling` (`StartDay`, `DamagePerDay`, `MaxDamageMultiplier`, `SpawnRatePerDay`, `MaxSpawnRateMultiplier`); `MobScaling.wolfDamageFactor(day)` and `MobScaling.wolfSpawnFactor(day)` multiply onto `MobScaling.multipliers`.

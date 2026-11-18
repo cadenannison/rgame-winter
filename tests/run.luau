@@ -24,6 +24,8 @@ check("format thousand", NumberFormat.format(1500) == "1.5K")
 require("./ProfileTests")(check)
 require("./SimTests")(check)
 require("./WorldTests")(check)
+require("./TerrainContractTests")(check)
+require("./TerrainTests")(check)
 require("./SurvivalTests")(check)
 require("./ItemTests")(check)
 require("./MobTests")(check)
@@ -34,6 +36,7 @@ require("./FlowTests")(check)
 require("./PlayabilityTests")(check)
 require("./TeleportTests")(check)
 require("./RunTests")(check)
+require("./DownedTests")(check) -- death/downed/revive (round: death)
 require("./PadTests")(check)
 require("./LobbyTests")(check)
 require("./DataTests")(check) -- brief 12 (Phase 3 data)
@@ -45,6 +48,13 @@ require("./MetaTests")(check) -- brief 21 (Phase 4 contract data)
 require("./MetaLogicTests")(check) -- brief 19
 require("./AtmosphereTests")(check) -- brief 20
 require("./LivePartsTests")(check)
+require("./PoiTests")(check) -- agent C enterable structures
+require("./LootTests")(check) -- contracts round: loot, massive structures, trees
+require("./ChestTests")(check) -- chest looks and loot-only gear (agent I)
+require("./LootServiceTests")(check) -- loot server (agent H)
+require("./StructureBTests")(check) -- massive structures B (agent K)
+require("./StructureATests")(check) -- massive structures A (agent J)
+require("./MassiveWiringTests")(check) -- integration: massive placement + chunk hooks
 
 if failures > 0 then
 	error(`{failures} test(s) failed`)

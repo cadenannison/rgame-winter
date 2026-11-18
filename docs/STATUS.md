@@ -32,5 +32,22 @@ Fix: DataService logs "[Data] loaded <name> in Nms (<store>)" or "[Data] load fa
 Open: "cannison" Studio profile starts fresh (no old runs/coins); fallback path itself not exercised live (QAForceLoadFailure still kicks by design); chat command assumes Player.Chatted fires under TextChatService (the DebugCommand remote "mode" also works).
 SAVE NEEDED not required (no place edits).
 
+## Round: terrain / forest / structures / fire radius / death-revive / balance, 2026-11-17
+check.sh tier=full OK. Headless only: NO Studio play, NO QA scenarios, NO MCP this round (PM hand-tests; list in docs/HAND_TESTS_ROUND.md). Not committed.
+Built: Terrain as Roblox Terrain voxels from World.heightAt (per-biome amplitude, step cap, edge fall + kill height, mobs despawn) | forest (4 size classes incl. giants, dense near camp, shadows tuned, 3 parts/tree, MaxLiveTrees 420, parts estimate 5897/6000) | enterable POIs (cabin, plane, ruin, cave, watchtower; variants per biome, PoiPlan) | fire warm radius 54/72/90, build 90/126/162, light 72/90/108 | downed/revive/spectate, no joint break, Return to lobby / Play again, dark summary panel | Axe unbreakable (repair n/a), hare 3 hits, wolf 5 hits.
+Contracts: docs/INTEGRATION.md section "Round: terrain/forest/structures/fire/death/balance contracts".
+Open: fires placed after a chunk loads do not clear trees (only the camp clearing); Boss/Lurker/Stalker spawns ignore the fire repel circle; fire PointLight clamped to 60 studs (Roblox cap), larger LightRange is attribute-only; depleted trees vanish whole (no stump); parts margin thin (5897/6000); terrain chunk build is one synchronous FillBlock pass (watch for hitch); wolf needs 6 axe hits from about day 5 (health scaling).
+SAVE NEEDED: no (no MCP/instance work).
+
+## Round: loot + massive structures + trees: contracts (agent contracts), 2026-11-17
+check.sh tier=full OK. Headless only, no MCP. Contracts frozen for H/I/J/K/L/M: docs/INTEGRATION.md "Round: loot + massive structures + trees". Added: data/Rarity (tags on every item), server-only loot weights (src/server/Loot/LootTables) + pure LootRoll, Loot remotes, Config.Massive/Trees/FireRules/WolfScaling, Terrain build tick budget, MassiveRules/TreeRules, tests/LootTests. Perf.MaxLiveParts stays 6000 (reverted: never raise). Small trees now >= 18 studs.
+Open: epic/legendary items exist only as ArcticCoat and boss materials (other categories fall back to rare); no item data changes yet for new epic weapons/tools.
+
+## Round: loot + massive structures + trees + fixes, 2026-11-17
+check.sh tier=full OK. Headless only: NO Studio, QA or MCP; PM hand-tests (docs/HAND_TESTS_ROUND.md). Not committed. Perf.MaxLiveParts stays 6000.
+Built: LootService (seeded chests, server-only weights in src/server/Loot/LootTables) | ChestArt + client visuals (5 rarities) + 6 epic/legendary gear items | research station, mine complex, shipwreck, temple, ranger lodge, expanded ruins (builders in src/server/World/Structures, plans in src/shared/logic) | trees: bare trunk, canopy clearance | fixes: fire warm-radius rules, terrain build budget queue, fire clears trees, wolf health flat (damage/spawn scale) | wiring: MassiveService, MassivePlacement.
+Open: with 2 live structures the full 5x5 stream window would exceed 6000 parts, so outer chunks defer near structures (PM: smaller StreamInRadius, fewer live structures or smaller budgets); ChunkDecorBudget cut 48 -> 16; mob spawns not excluded from structure footprints; Kit B chest height (room.y+1) vs Kit A floor point; LurkerSpots/CueSpots unwired; no ambient/chest sound ids in Assets; no first-open-chest hint (needs Config.Hints); giant bare trunks capped ~18 by gather-node reach; epic/legendary items sparse (only new Aurora/Sun gear + ArcticCoat + boss mats); loot remotes not headless-tested.
+SAVE NEEDED: no.
+
 ## Next
 PM: human gate for Phases 1-4 (STOP_AFTER Phase 4).

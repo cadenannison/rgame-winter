@@ -163,7 +163,7 @@ function PlacementGhost.start(opts: Options): Ghost
 		end
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Include
-		params.FilterDescendantsInstances = { chunks }
+		params.FilterDescendantsInstances = { chunks, Workspace.Terrain }
 		return params
 	end
 

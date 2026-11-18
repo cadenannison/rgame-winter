@@ -962,9 +962,8 @@ function HudController.start()
 					elseif
 						stack
 						and itemDef
-						and stack.durability
-						and Repair.isRepairable(itemDef)
-					then `{Repair.percent(itemDef, stack.durability)}%`
+						and stack.durability ~= nil
+					then Repair.durabilityLabel(itemDef, stack.durability) or ""
 					else ""
 			end
 			-- Onboarding credit from real inventory changes.

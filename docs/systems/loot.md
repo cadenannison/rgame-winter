@@ -1,0 +1,12 @@
+# Loot (server)
+Tier: full
+Purpose: Seeded world loot chests rolled server-side. One opening per chest per run; items go to the opener's inventory, overflow drops at their feet; opened chests stay open and empty. Not the party storage chest (Items/StorageService).
+Owner files: src/server/Loot/LootService.luau, src/shared/logic/LootChests.luau (pure seeded plan), src/server/Loot/LootTables.luau (server-only weights, contracts agent), tests/LootServiceTests.luau
+Public API: `LootService.RegisterChest(slot: {Position, Depth, StructureType, Ring?, Index?, ChunkKey?}, parent): Instance`, `UnregisterChest(chest)`, `ResetRun(seed?)`, `SetSeed(seed)`, `SetArtBuilder(fn(slot, rarity, parent) -> Instance)`, `ChestCount()`, `start()`/`stop()`. Remotes: `LootOpenRequest` (client->server, `{chest}`), `LootOpened` (server->client, `{chest, rarity, items, overflow}`).
+Data touched: tag Config.Loot.ChestTag; chest attributes ChestRarity, LootStructure, LootDepth, LootOpened (contents never replicated).
+Invariants: same run seed + slot position/structure/index => same rarity and contents, independent of registration or open order; chest items never exceed LootTables.chests[rarity].items max; a chest opens at most once (marked opened before any grant); overflow stacks drop at the player's feet as pickup prompts (max 24 live, 120s life); ResetRun removes all chests and drops; PlayerRemoving removes their drops and rate-limit entry.
+Exploit surface: open remote validates payload type, registered chest, range <= ServerOpenRange from the character, Guard at OpenRateInterval, alive and unopened state; client never supplies contents or rarity; drop pickups re-check range server-side.
+Playtest checklist: (hand) 1. open a chest near a structure: items land in the hotbar, toast via LootOpened. 2. fill inventory and open: leftovers appear at feet, prompts pick them up. 3. reopen: nothing happens, chest stays open. 4. second player opens a different chest. 5. run end calls ResetRun: no chests left. Headless: tests/LootServiceTests.luau.
+Status: wired (integration round): MassiveService registers chest slots, sets the ChestArt builder, calls start()/ResetRun; Studio hand-check pending
+
+Integration notes: call `LootService.start()` once at boot; `ResetRun(seed)` at run start/end; structure builders feed ChestSlots (Position, Depth, StructureType) plus Ring from the chunk's biome ring. Seed defaults to the Workspace world-seed attribute. Drop tuning constants are local to LootService (could move to Config.Loot on a contract change).

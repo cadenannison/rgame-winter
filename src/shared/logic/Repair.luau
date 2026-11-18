@@ -8,11 +8,26 @@ local Types = require("../data/Types")
 
 local Repair = {}
 
+function Repair.isUnbreakable(def: Types.ItemDef): boolean
+	return ItemCatalog.isUnbreakable(def.id)
+end
+
 function Repair.isRepairable(def: Types.ItemDef): boolean
-	if def.durability == nil then
+	if def.durability == nil or Repair.isUnbreakable(def) then
 		return false
 	end
 	return def.repairable == true or def.kind == "tool" or def.kind == "weapon"
+end
+
+-- HUD durability label: "n/a" for unbreakable items, "N%" for repairable ones, nil for no label.
+function Repair.durabilityLabel(def: Types.ItemDef, durability: number?): string?
+	if Repair.isUnbreakable(def) then
+		return "n/a"
+	end
+	if durability ~= nil and Repair.isRepairable(def) then
+		return `{Repair.percent(def, durability)}%`
+	end
+	return nil
 end
 
 -- Full-repair cost: CostFraction of each recipe input (rounded up, at least MinCost). nil = no recipe.
@@ -30,8 +45,11 @@ function Repair.cost(itemId: string): { Types.Stack }?
 	return out
 end
 
--- (ok, reason): NotRepairable | FullDurability | NoRecipe | Ok.
+-- (ok, reason): Unbreakable | NotRepairable | FullDurability | NoRecipe | Ok.
 function Repair.check(def: Types.ItemDef, durability: number?): (boolean, string)
+	if Repair.isUnbreakable(def) then
+		return false, "Unbreakable"
+	end
 	if not Repair.isRepairable(def) or durability == nil or def.durability == nil then
 		return false, "NotRepairable"
 	end

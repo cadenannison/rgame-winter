@@ -49,6 +49,23 @@ function FireTiers.costText(cost: Cost, nameOf: (string) -> string): string
 	return table.concat(parts, ", ")
 end
 
+-- Dots in one ring: circumference / spacing, clamped to [minDots, maxPerLayer].
+function FireTiers.ringDotCount(
+	radius: number,
+	spacing: number,
+	minDots: number,
+	maxPerLayer: number
+): number
+	return math.clamp(math.floor(2 * math.pi * radius / spacing), minDots, maxPerLayer)
+end
+
+-- Studs around a fire of `tier` that hold no live trees (Config.FireRules; capped). Pure.
+function FireTiers.treeClearRadius(tier: unknown): number
+	local rules = Config.FireRules
+	local extra = rules.TreeClearPerTier * (FireTiers.clamp(tier) - 1)
+	return math.min(rules.TreeClearMaxRadius, rules.TreeClearRadius + extra)
+end
+
 -- Horizontal (XZ) test: is the point within the build radius of any lit fire in the list?
 function FireTiers.inBuildRange(fires: { BuildFire }, x: number, z: number): boolean
 	for _, fire in fires do

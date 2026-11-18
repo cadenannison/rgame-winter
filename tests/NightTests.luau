@@ -4,6 +4,8 @@
 local Config = require("../src/shared/Config")
 local MobAI = require("../src/shared/logic/MobAI")
 local FireRepel = require("../src/shared/logic/FireRepel")
+local FireTiers = require("../src/shared/logic/FireTiers")
+local MobRules = require("../src/shared/logic/MobRules")
 local LightingMath = require("../src/shared/logic/LightingMath")
 local Sim = require("./sim")
 
@@ -42,17 +44,20 @@ return function(check: (string, boolean) -> ())
 	}) == "Leave")
 
 	-- Fire repel geometry
-	local fire: FireRepel.Fire = { x = 0, z = 0, radius = 18 }
+	local w1 = Config.Fire.Tiers[1].WarmRadius
+	local w3 = Config.Fire.Tiers[#Config.Fire.Tiers].WarmRadius
+	local fb = Config.Fire.RepelRadius
+	local fire: FireRepel.Fire = { x = 0, z = 0, radius = w1 }
 	local m = Config.Night.RepelMargin
-	check("repel radius uses attribute + margin", FireRepel.repelRadius(18, 22, m) == 18 + m)
-	check("repel radius grows with upgrade", FireRepel.repelRadius(30, 22, m) == 30 + m)
-	check("repel radius falls back", FireRepel.repelRadius(nil, 22, m) == 22)
-	check("inside repel edge", FireRepel.insideAny(18 + m - 1, 0, { fire }, m, 22) == 1)
-	check("outside repel edge", FireRepel.insideAny(18 + m + 1, 0, { fire }, m, 22) == nil)
-	local tx, tz = FireRepel.clampTarget(3, 0, fire, 24)
-	check("clamp pushes target out of repel circle", math.abs(tx - 24) < 1e-6 and tz == 0)
-	local ox, oz = FireRepel.clampTarget(40, 0, fire, 24)
-	check("clamp leaves outside target", ox == 40 and oz == 0)
+	check("repel radius uses attribute + margin", FireRepel.repelRadius(w1, fb, m) == w1 + m)
+	check("repel radius grows with upgrade", FireRepel.repelRadius(w3, fb, m) == w3 + m)
+	check("repel radius falls back", FireRepel.repelRadius(nil, fb, m) == fb)
+	check("inside repel edge", FireRepel.insideAny(w1 + m - 1, 0, { fire }, m, fb) == 1)
+	check("outside repel edge", FireRepel.insideAny(w1 + m + 1, 0, { fire }, m, fb) == nil)
+	local tx, tz = FireRepel.clampTarget(3, 0, fire, w1 + m)
+	check("clamp pushes target out of repel circle", math.abs(tx - (w1 + m)) < 1e-6 and tz == 0)
+	local ox, oz = FireRepel.clampTarget(w1 + m + 20, 0, fire, w1 + m)
+	check("clamp leaves outside target", ox == w1 + m + 20 and oz == 0)
 
 	-- Lighting interpolation
 	local df, tw = Config.Time.DayFraction, Config.Lighting.TwilightPhase
@@ -91,4 +96,96 @@ return function(check: (string, boolean) -> ())
 	local sim2 = build()
 	local r2 = sim2:runDays(2)
 	check("sim night-danger deterministic", r.hash == r2.hash and r.events == r2.events)
+
+	-- Fire rules (Config.FireRules): spawn exclusion, repel, bite gate, bosses break through
+	local fires = { { x = 0, z = 0, radius = Config.Fire.WarmRadius } }
+	local edge = Config.Fire.WarmRadius + Config.FireRules.SpawnMargin
+	check(
+		"fire rules: hostile never spawns in warm radius",
+		MobRules.spawnExcluded("hostile", 10, 0, fires)
+	)
+	check(
+		"fire rules: hostile excluded up to the margin",
+		MobRules.spawnExcluded("hostile", edge - 0.5, 0, fires)
+	)
+	check(
+		"fire rules: hostile may spawn past the margin",
+		not MobRules.spawnExcluded("hostile", edge + 1, 0, fires)
+	)
+	check(
+		"fire rules: miniboss and boss spawn excluded too",
+		MobRules.spawnExcluded("miniboss", 5, 0, fires)
+			and MobRules.spawnExcluded("boss", 5, 0, fires)
+	)
+	check("fire rules: animals unaffected", not MobRules.spawnExcluded("animal", 5, 0, fires))
+	local bx, bz = MobRules.spawnPoint("boss", 3, 4, fires)
+	check(
+		"fire rules: boss spawn point pushed outside",
+		not MobRules.spawnExcluded("boss", bx, bz, fires)
+	)
+	local ax, az = MobRules.spawnPoint("animal", 3, 4, fires)
+	check("fire rules: animal spawn point unchanged", ax == 3 and az == 4)
+	check(
+		"fire rules: hostile/miniboss repelled",
+		MobRules.repelledByFire("hostile", false) and MobRules.repelledByFire("miniboss", false)
+	)
+	check(
+		"fire rules: bosses and breakers ignore the edge",
+		not MobRules.repelledByFire("boss", false) and not MobRules.repelledByFire("hostile", true)
+	)
+	local rep = MobRules.repelledByFire("hostile", false)
+	check(
+		"fire rules: no bite at a target inside the warm radius",
+		not MobRules.biteAllowed(
+			rep,
+			{ x = edge + 1, z = 0 },
+			{ x = Config.Fire.WarmRadius - 1, z = 0 },
+			fires
+		)
+	)
+	check(
+		"fire rules: no bite while the mob is inside the repel edge",
+		not MobRules.biteAllowed(
+			rep,
+			{ x = Config.Fire.WarmRadius + 1, z = 0 },
+			{ x = Config.Fire.WarmRadius + 3, z = 0 },
+			fires
+		)
+	)
+	check(
+		"fire rules: bite allowed outside the warm area",
+		MobRules.biteAllowed(rep, { x = edge + 5, z = 0 }, { x = edge + 7, z = 0 }, fires)
+	)
+	check(
+		"fire rules: fire-breaker bites inside",
+		MobRules.biteAllowed(false, { x = 5, z = 0 }, { x = 2, z = 0 }, fires)
+	)
+	-- Stalker movement: stepping toward a target inside the fire never ends inside the margin
+	local DreadLogic = require("../src/shared/logic/DreadLogic")
+	local reps = { { x = 0, z = 0, radius = Config.Fire.WarmRadius } }
+	local px, pz, clearAll = Config.Fire.WarmRadius + Config.Stalker.FireRepelMargin + 20, 0, true
+	for _ = 1, 400 do
+		local nx, nz, clear = DreadLogic.moveToward(
+			px,
+			pz,
+			0,
+			0,
+			Config.Stalker.ChaseSpeed,
+			0.1,
+			reps,
+			Config.Stalker.FireRepelMargin
+		)
+		px, pz = nx, nz
+		if not clear or DreadLogic.isInside(px, pz, reps, 0) then
+			clearAll = false
+		end
+	end
+	check("fire rules: stalker chasing into a fire never enters the warm radius", clearAll)
+	-- Tree clear radius is tiered and capped
+	check(
+		"fire rules: tree clear radius grows by tier, capped",
+		FireTiers.treeClearRadius(1) == Config.FireRules.TreeClearRadius
+			and FireTiers.treeClearRadius(2) > FireTiers.treeClearRadius(1)
+			and FireTiers.treeClearRadius(99) <= Config.FireRules.TreeClearMaxRadius
+	)
 end

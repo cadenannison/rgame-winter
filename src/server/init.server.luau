@@ -208,6 +208,7 @@ local function startRun()
 	-- LoadCharacter; Spawn starts after every gameplay system so characters never load unwired.
 	ChunkService.start() -- builds the camp chunk, camp fire, and registers tree/rock gather nodes
 	require(script.Phase3.Wiring).apply() -- brief 18: Phase 3 cross-system setters (needs the run seed)
+	require(script.World.MassiveService).start() -- loot chests + massive structures (needs the seed and camp)
 	DayNightService.start()
 	SurvivalService.start()
 	FireService.start()

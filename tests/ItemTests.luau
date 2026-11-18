@@ -6,6 +6,7 @@ local ItemCatalog = require("../src/shared/ItemCatalog")
 local Inventory = require("../src/shared/logic/Inventory")
 local Crafting = require("../src/shared/logic/Crafting")
 local ItemsGather = require("../src/shared/logic/ItemsGather")
+local Repair = require("../src/shared/logic/Repair")
 
 return function(check: (string, boolean) -> ())
 	local size = Config.Inventory.HotbarSize + Config.Inventory.BackpackSize
@@ -127,5 +128,28 @@ return function(check: (string, boolean) -> ())
 			end
 			return true
 		end)()
+	)
+
+	-- Unbreakable tools (Config.Durability.UnbreakableItems): the starting Axe never needs repair.
+	local axeDef = ItemCatalog.Items.Axe
+	local pickDef = ItemCatalog.Items.Pickaxe
+	check(
+		"unbreakable: axe flagged, pickaxe not",
+		ItemCatalog.isUnbreakable("Axe") and not ItemCatalog.isUnbreakable("Pickaxe")
+	)
+	check("unbreakable: axe not repairable", not Repair.isRepairable(axeDef))
+	check(
+		"unbreakable: axe repair refused",
+		select(2, Repair.check(axeDef, axeDef.durability :: number)) == "Unbreakable"
+	)
+	check("unbreakable: axe label n/a", Repair.durabilityLabel(axeDef, 1) == "n/a")
+	check("unbreakable: pickaxe still repairable", Repair.isRepairable(pickDef))
+	check(
+		"unbreakable: pickaxe label is a percent",
+		Repair.durabilityLabel(pickDef, (pickDef.durability :: number) / 2) == "50%"
+	)
+	check(
+		"unbreakable: plain resource has no label",
+		Repair.durabilityLabel(ItemCatalog.Items.Wood, nil) == nil
 	)
 end
