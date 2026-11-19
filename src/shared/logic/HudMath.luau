@@ -76,6 +76,9 @@ local TRUE_WORDS: { [string]: boolean } =
 local FALSE_WORDS: { [string]: boolean } =
 	{ ["false"] = false, ["off"] = false, ["0"] = false, ["no"] = false }
 
+local NUMBER_COMMANDS: { [string]: boolean } =
+	{ setDay = true, clockSpeed = true, teleportRing = true }
+
 -- Parse "<command> [arg]" (text after "/debug") against known command names.
 -- Arg typing follows DebugCommands: bool for blizzard/stalker/invincible, string for darkEvent, else number.
 -- Returns ok, name-or-error, arg.
@@ -87,7 +90,16 @@ function HudMath.parseDebug(text: string, names: { string }): (boolean, string, 
 	if not table.find(names, name) then
 		return false, "unknown command; try: " .. table.concat(names, ", "), nil
 	end
-	if name == "blizzard" or name == "stalker" or name == "invincible" then
+	if name == "blizzard" then
+		-- bool (legacy toggle) or the BlizzardService words: start | stop | intensity <n>
+		local word = string.lower(rest or "")
+		if TRUE_WORDS[word] then
+			return true, name, true
+		elseif FALSE_WORDS[word] == false then
+			return true, name, false
+		end
+		return true, name, rest or ""
+	elseif name == "stalker" or name == "invincible" then
 		local word = string.lower(rest or "")
 		if TRUE_WORDS[word] then
 			return true, name, true
@@ -95,19 +107,9 @@ function HudMath.parseDebug(text: string, names: { string }): (boolean, string, 
 			return true, name, false
 		end
 		return false, name .. " needs true/false", nil
-	elseif
-		name == "darkEvent"
-		or name == "give"
-		or name == "spawnMob"
-		or name == "mob"
-		or name == "mobs"
-		or name == "structures"
-		or name == "tp"
-		or name == "chest"
-		or name == "seed"
-		or name == "respawn"
-	then
-		return true, name, rest or "" -- string arg (darkEvent: empty string clears)
+	elseif not NUMBER_COMMANDS[name] then
+		-- every other command takes a string arg (or none); DebugCommands.validate normalizes it
+		return true, name, rest or ""
 	end
 	local n = tonumber(rest or "")
 	if n == nil or n ~= n or n == math.huge or n == -math.huge then

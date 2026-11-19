@@ -27,7 +27,12 @@ end
 local list: { Types.Recipe } = {
 	-- Tier 1: workbench
 	r("StonePickaxe", 1, "workbench", { { id = "Wood", count = 3 }, { id = "Stone", count = 4 } }),
-	r("Bow", 1, "workbench", { { id = "Wood", count = 5 }, { id = "Hide", count = 1 } }),
+	r(
+		"Bow",
+		1,
+		"workbench",
+		{ { id = "Wood", count = 5 }, { id = "Hide", count = 1 }, { id = "Rope", count = 1 } }
+	), -- Rope = bowstring
 	r("Arrow", 1, "workbench", { { id = "Wood", count = 1 }, { id = "Stone", count = 1 } }, 4),
 	r("Torch", 0, nil, { { id = "Wood", count = 2 }, { id = "Hide", count = 1 } }),
 	-- Creature drops (Art Pass 3)
@@ -57,6 +62,7 @@ local list: { Types.Recipe } = {
 	),
 	r("StorageChest", Config.Storage.CraftStationTier, Config.Storage.CraftStation, {
 		{ id = "Wood", count = Config.Storage.CraftWood },
+		{ id = "Rope", count = Config.Storage.CraftRope },
 	}),
 	r("Wall", 1, "workbench", { { id = "Wood", count = 6 } }),
 	r("Door", 1, "workbench", { { id = "Wood", count = 8 }, { id = "Stone", count = 1 } }),

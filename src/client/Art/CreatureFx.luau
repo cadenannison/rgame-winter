@@ -40,7 +40,10 @@ local FLOCK_HIDE_AT = 0.9 -- scatter value above which followers hide (they have
 
 -- Brute telegraph
 local MAX_RINGS = 3
-local RING_RADIUS_PER_SIZE = 1.6 -- slam radius = max(root.Size.X, root.Size.Z) * this
+-- Slam radius comes from Config.Mobs (reach + strike leeway), the same numbers the server hit test uses.
+local BRUTE = Config.Mobs.Species.FrostboundBrute
+local RING_RADIUS =
+	Fx.slamRadius(BRUTE.attackRange, BRUTE.tune.strikeLeeway or Config.Night.StrikeLeeway)
 local RING_FALLBACK_TOTAL = 1.2 -- seconds, if TelegraphLeft is missing
 local RING_THICKNESS = 0.2
 local RING_LIFT = 0.15 -- studs above the ground
@@ -242,7 +245,7 @@ local function stepRing(rec: Tracked, root: BasePart, now: number)
 	local active = rec.state == "Telegraph"
 	local fx: RingFx? = rings[model]
 	if active then
-		local outer = math.max(root.Size.X, root.Size.Z) * RING_RADIUS_PER_SIZE
+		local outer = RING_RADIUS
 		fx = fx or ensureRing(model, outer)
 		if not fx then
 			return
@@ -261,7 +264,7 @@ local function stepRing(rec: Tracked, root: BasePart, now: number)
 			if t >= 1 then
 				dropRing(model)
 			else
-				local outer = math.max(root.Size.X, root.Size.Z) * RING_RADIUS_PER_SIZE
+				local outer = RING_RADIUS
 				placeRing(fx, root, outer, outer)
 				fx.disc.Transparency = FILL_TO + (1 - FILL_TO) * t
 				fx.outline.Transparency = OUTLINE_TRANSPARENCY + (1 - OUTLINE_TRANSPARENCY) * t

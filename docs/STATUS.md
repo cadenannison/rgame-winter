@@ -40,11 +40,24 @@ Nothing committed since Phase 0. Place ids: placeId 130366229723914 (Studio inst
 ## Round: bug fixes + sprint/forage + blizzard (orchestrated; headless only)
 - check.sh tier=full green (1464 checks). No playtest, QA scenario or MCP.
 - Done: InputGuard on all handlers; GroundProbe (campfire/spawn/structures) + `/debug groundcheck`; Drop on G; deny/craft sounds muted; durability kept on drop; sprint; forage/nodes/relics + 3 recipes (13 items); blizzard rework (1.5 days, no overlay, wind snow, 60-stud whiteout); `/debug forage|sprint|blizzard`.
-- Open: campfire root cause unconfirmed (use groundcheck); coin credit from nodes/relics not wired into RunPayout; forage respawn assumes Day increments at dawn; forage parts not counted by ChunkService (headroom only); Rope has no use; "StructureBeacon" glow tag unused; blizzard streak sign/whiteout/wind numbers untuned; lobby Leave key still Q.
+- Open: campfire root cause unconfirmed (use groundcheck); blizzard streak sign/whiteout/wind numbers untuned. (Forage coin credit, forage respawn, forage parts budget, Rope, StructureBeacon tag and lobby Leave key were fixed in the Bug-fix round 2 below.)
 - Next: PM hand-test docs/HAND_TESTS_ROUND.md (new section at the end).
 
 ## Round: Art Pass 3 creatures + 8 new mobs (orchestrated, 3 agents; headless only)
 - check.sh tier=full green (1621 checks). No playtest, QA or MCP; nothing seen in Studio (Motor6D hinge pivots, pose angles, silhouettes unverified).
 - Done: MobService split (MobKinds/Registry/World/Spawner/Combat/State/Actions, Drivers/Legacy + SpeciesKit, Species/*); 8 species (SnowGrouse, RidgeStag, LakeSeal, RimeWolverine, ScrapHound, CarrionCrow, FrostboundBrute, AuroraWisp) with pure behaviors (logic/MobBehaviors*), ring-weighted spawns, caps, dread weighting (MobDread, AmbientCues); items Feather/Venison/Blubber/Claw/Fang/DenseHide/CrystalShard/AuroraDust + recipes InsulatedCoat, BlubberTorch, FangSpear, AuroraTorch; shared rig contract (docs/CREATURES_CONTRACT.md), AnimKit + client CreatureAnim (120-stud cull), CreatureFx (crow flock, brute slam ring, wisp glow/trail, <=4 lights); Defs for all 24 kinds (Stalker and lurkers attach via HorrorWorld.makeModel).
-- Open: Blubber is a torch ingredient, not campfire fuel (FireService feed is wood-only); cancelled legacy windup now reports Chase not Attack; HudMath.parseDebug mis-parses `forage|sprint|groundcheck` (pre-existing); caribou/stag have no graze anim; brute slam ring radius = max(X,Z)*1.6 of root size (match real reach when tuning); wisp touch costs 4 warmth (cap 12/wisp); mob parts budget MaxMobParts 600 + 200 headroom under MaxLiveParts 6000 (unchanged); FX tuning constants local to CreatureFx.
+- Open: cancelled legacy windup now reports Chase not Attack; caribou/stag have no graze anim; wisp touch costs 4 warmth (cap 12/wisp); mob parts budget MaxMobParts 600 + 200 headroom under MaxLiveParts 6000 (unchanged); FX tuning constants local to CreatureFx.
 - Next: PM hand-test docs/HAND_TESTS_ROUND.md (Art Pass 3 section). No SAVE NEEDED (no MCP).
+
+## Bug-fix round 2 (PM brief, 9 items; headless only)
+- check.sh tier=full green (1722 checks). No playtest, QA scenario or MCP; nothing seen in Studio.
+- 1 HudMath.parseDebug: only setDay/clockSpeed/teleportRing are numeric; blizzard start|stop|intensity n now parses (was bool-only); forage/sprint/groundcheck and all string commands pass through. tests/DebugParseTests.luau covers every DebugCommands.NAMES entry with and without args, then validates.
+- 2 Fuel is data-driven: Config.Items.Entries[id].fuelSeconds (Wood 120 = Fire.WoodFuelSeconds, Stick 40, Pinecone 30, Blubber 300), scaled per fire tier; FireLogic.fuelSeconds/pickFuel; AddFuelRequest(fire, itemId?) with the server choosing/validating the item; FireService.setFuelSpender replaces setWoodSpender; ActionPick hasFuel/selectedFuel; HUD prompt "Add <item>".
+- 3 RunResult.forageCoins in RunPayout.coins (capped by MaxCoinsPerRun); RunLifecycleService claims ForageService.takeCoinCredit in settle (provider wired in init.server; forage PlayerRemoving clear is deferred so the leave-settle can still claim).
+- 4 Verified: DayClock rolls Day over exactly where night ends and daylight starts (StartClockHour 8, phase 0), so the forage regrow trigger is correct. Extracted DayClock.isNewDay (used by ForageService) and tested it over 4 days.
+- 5 ChunkService extra-parts providers are keyed ("massive", "forage"); chunk streaming allowance and Forage budgetOk (PerfBudget.hasPartRoom) count both. MaxLiveParts stays 6000.
+- 6 Rope: StorageChest +1 Rope (Config.Storage.CraftRope), Bow +1 Rope (bowstring). Rope is hand-craftable from 3 FrozenReed.
+- 7 Removed the dead "StructureBeacon" glow tag (nothing applied it; fires and warm spots still glow).
+- 8 Slam radius = CreatureFxLogic.slamRadius(attackRange, strikeLeeway) = 10, used by the server hit test and the client ring. Source of truth for art root size is Config.Mobs.Species.FrostboundBrute.size (5x7x5); Def comment updated.
+- 9 Lobby Leave key Q -> V (Q is Ping); prompt text derives from LobbyConfig.Keys.Leave; handler already goes through InputGuard.
+- Note: Stick/Pinecone/Blubber are now fuel by id; Pinecone is also food, so selecting it still eats (fuel only via auto-pick when no Wood/Stick held). StorageChest/Bow now cost Rope: players need to forage reeds first.

@@ -8,6 +8,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 local Logic = Shared:WaitForChild("logic")
+local FireLogic = require(Logic:WaitForChild("FireLogic"))
 local FireTiers = require(Logic:WaitForChild("FireTiers"))
 local ItemsGather = require(Logic:WaitForChild("ItemsGather"))
 local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
@@ -35,7 +36,19 @@ function HudPrompt.compute(a: Args): (Instance?, string, number?, boolean)
 		return interact.target, interact.text, nil, interact.warn
 	end
 	if action == "fuel" and a.fireInstance then
-		return a.fireInstance, `Add wood {a.inputHint}`, nil, false
+		local id = FireLogic.pickFuel(
+			a.counts,
+			if a.shownStack then a.shownStack.id else nil,
+			Config.Fire.FuelOrder,
+			function(itemId: string): number?
+				local def = ItemCatalog.Items[itemId]
+				return if def then def.fuelSeconds else nil
+			end
+		)
+		return a.fireInstance,
+			`Add {if id then a.itemName(id) else "fuel"} {a.inputHint}`,
+			nil,
+			false
 	end
 	if action == "craft" and a.benchInstance then
 		return a.benchInstance, `Craft {a.inputHint}`, nil, false

@@ -1,7 +1,7 @@
 --!strict
 -- Pad UI: a tappable billboard over every tagged pad (status + timer) and a bottom panel while the
 -- local player stands on one (countdown, party list, leave, host mode toggle).
--- Input: walk onto a pad (server detects), click/tap its billboard, Q = leave, F = host mode toggle.
+-- Input: walk onto a pad (server detects), click/tap its billboard, V = leave, F = host mode toggle.
 -- Sends intent only (PadJoinRequest / PadLeaveRequest / PadModeRequest); the server decides.
 
 local CollectionService = game:GetService("CollectionService")
@@ -81,7 +81,12 @@ function PadHud.start(gui: ScreenGui, state: LobbyState.State, qa: { [string]: a
 	layout.Padding = UDim.new(0, 8)
 	layout.Parent = row
 	row.Parent = panel
-	local leaveButton = UiKit.button(row, "Leave", "Leave [Q]", UDim2.new(0.4, -4, 1, 0))
+	local leaveButton = UiKit.button(
+		row,
+		"Leave",
+		`Leave [{LobbyConfig.Keys.Leave.Name}]`,
+		UDim2.new(0.4, -4, 1, 0)
+	)
 	local modeButton = UiKit.button(row, "Mode", "", UDim2.new(0.6, -4, 1, 0))
 
 	local function myPadIndex(): number
@@ -293,7 +298,7 @@ function PadHud.start(gui: ScreenGui, state: LobbyState.State, qa: { [string]: a
 			end
 			if index > 0 and lastIndex == 0 then
 				state.play("PadJoinSound")
-				state.toast(`On pad {index}. Q to leave.`)
+				state.toast(`On pad {index}. {LobbyConfig.Keys.Leave.Name} to leave.`)
 			elseif index == 0 and lastIndex > 0 then
 				state.play("PadLeaveSound")
 			end

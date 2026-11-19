@@ -38,7 +38,7 @@ return function(check: (string, boolean) -> ())
 	)
 
 	local ctx: ActionPick.Context =
-		{ fireInRange = false, hasWood = false, targetKind = "none", selectedKind = nil }
+		{ fireInRange = false, hasFuel = false, targetKind = "none", selectedKind = nil }
 	check("pick none", ActionPick.choose(ctx) == "none")
 	ctx.selectedKind = "food"
 	ctx.targetKind = "gather"
@@ -47,18 +47,20 @@ return function(check: (string, boolean) -> ())
 	check("pick place beats target", ActionPick.choose(ctx) == "place")
 	ctx.selectedKind, ctx.selectedId = "tool", "Axe"
 	check("pick gather with tool", ActionPick.choose(ctx) == "gather")
-	ctx.fireInRange, ctx.hasWood = true, true
+	ctx.fireInRange, ctx.hasFuel = true, true
 	check("target beats fuel when holding a tool", ActionPick.choose(ctx) == "gather")
-	ctx.selectedKind, ctx.selectedId = "resource", "Wood"
+	ctx.selectedKind, ctx.selectedId, ctx.selectedFuel = "resource", "Wood", true
 	check("wood in hand fuels", ActionPick.choose(ctx) == "fuel")
-	ctx.selectedKind, ctx.selectedId, ctx.targetKind = nil, nil, "none"
+	ctx.selectedKind, ctx.selectedId, ctx.selectedFuel = "resource", "Blubber", true
+	check("blubber in hand fuels", ActionPick.choose(ctx) == "fuel")
+	ctx.selectedKind, ctx.selectedId, ctx.selectedFuel, ctx.targetKind = nil, nil, nil, "none"
 	check("fuel when nothing targeted", ActionPick.choose(ctx) == "fuel")
-	ctx.hasWood = false
+	ctx.hasFuel = false
 	check("no fuel without wood", ActionPick.choose(ctx) == "none")
 	ctx.craftStation = true
 	check("craft at a station", ActionPick.choose(ctx) == "craft")
 	ctx.craftStation, ctx.upgradeAvailable = false, true
 	check("upgrade near a fire", ActionPick.choose(ctx) == "upgrade")
-	ctx.selectedKind, ctx.selectedId, ctx.hasWood = "resource", "Wood", true
+	ctx.selectedKind, ctx.selectedId, ctx.hasFuel, ctx.selectedFuel = "resource", "Wood", true, true
 	check("wood in hand still fuels over upgrade", ActionPick.choose(ctx) == "fuel")
 end

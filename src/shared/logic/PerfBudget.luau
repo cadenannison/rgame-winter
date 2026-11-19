@@ -46,6 +46,17 @@ function PerfBudget.maxChunks(
 	return math.min(totalChunks, math.max(players, 1) * perPlayer + 1)
 end
 
+-- True when a new non-chunk part (forage pickup) still fits: chunk parts plus every extra reservation
+-- (massive structures + live forage) stay below the cap minus the reserve kept for mobs and effects.
+function PerfBudget.hasPartRoom(
+	chunkParts: number,
+	extraParts: number,
+	partCap: number,
+	reserve: number
+): boolean
+	return chunkParts + extraParts < partCap - reserve
+end
+
 -- How many chunks the streamer may build this tick: the per-tick budget, further limited by headroom under
 -- the live part cap (avgChunkParts = a typical chunk's part count). Always >= 0.
 function PerfBudget.chunkAllowance(

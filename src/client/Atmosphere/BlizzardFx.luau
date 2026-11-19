@@ -210,7 +210,7 @@ local function whiteoutStep()
 	blendNumber(Lighting, "FogEnd", B.PeakVisibility, w)
 end
 
--- Fires / beacons stay faintly visible through the whiteout: a faint always-on-top highlight on the
+-- Fires and warm spots stay faintly visible through the whiteout: a faint always-on-top highlight on the
 -- nearest few (capped), removed when the whiteout fades.
 local function glowStep(w: number)
 	local camera = Workspace.CurrentCamera

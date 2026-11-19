@@ -33,6 +33,13 @@ export type Results = {
 
 local RunLifecycleService = {}
 
+-- Coins earned by picking up nodes and relics, claimed once per settle (wired from init.server: ForageService).
+local forageCreditProvider: ((player: Player) -> number)? = nil
+
+function RunLifecycleService.setForageCreditProvider(fn: ((player: Player) -> number)?)
+	forageCreditProvider = fn
+end
+
 local run: RunState.Run? = nil
 local seed = 0
 local studioFallback = false
@@ -118,6 +125,17 @@ local function sendSummary(player: Player, summary: RunPayout.Summary, cause: st
 	Remotes.event(Remotes.RunSummary):FireClient(player, payload)
 end
 
+-- Forage coins for this player (0 without a provider or on error). Taken even when the profile is missing,
+-- so a credit is never paid twice.
+local function claimForageCredit(player: Player): number
+	local provider = forageCreditProvider
+	if not provider then
+		return 0
+	end
+	local ok, value = pcall(provider, player)
+	return if ok and type(value) == "number" then value else 0
+end
+
 -- Pays one member out (stats, coins, achievements). Returns the results row plus the summary to show.
 local function settle(
 	player: Player,
@@ -139,6 +157,7 @@ local function settle(
 		bossKills = bossKills,
 		partners = friendCounts[userId] or 0,
 		darkEventsSurvived = if member then member.darkEvents else 0,
+		forageCoins = claimForageCredit(player),
 	}, profile and profile.maxDays or nil)
 	if profile then
 		RunPayout.apply(profile, summary)

@@ -30,6 +30,47 @@ function FireLogic.addFuel(fire: Fire, seconds: number, maxFuel: number): number
 	return added
 end
 
+-- Burn seconds one item adds to a fire of a given tier. itemSeconds is the tier-1 value from Config.Items
+-- (fuelSeconds); tierWoodSeconds / baseWoodSeconds scale it with the tier's wood value (nil/<=0 = no fuel).
+function FireLogic.fuelSeconds(
+	itemSeconds: number?,
+	tierWoodSeconds: number,
+	baseWoodSeconds: number
+): number
+	if itemSeconds == nil or itemSeconds <= 0 or baseWoodSeconds <= 0 then
+		return 0
+	end
+	return itemSeconds * tierWoodSeconds / baseWoodSeconds
+end
+
+-- Which fuel item to feed: the selected one if it is fuel and held, else the first held item in `order`,
+-- else any other held fuel item (by id, deterministic). fuelOf(id) is the item's fuelSeconds (nil = not fuel).
+function FireLogic.pickFuel(
+	counts: { [string]: number },
+	selectedId: string?,
+	order: { string },
+	fuelOf: (string) -> number?
+): string?
+	local function usable(id: string): boolean
+		return (counts[id] or 0) > 0 and (fuelOf(id) or 0) > 0
+	end
+	if selectedId ~= nil and usable(selectedId) then
+		return selectedId
+	end
+	for _, id in order do
+		if usable(id) then
+			return id
+		end
+	end
+	local best: string? = nil
+	for id in counts do
+		if usable(id) and (best == nil or id < best) then
+			best = id
+		end
+	end
+	return best
+end
+
 -- Remaining burn as a 0-1 fraction of the cap, rounded to FRACTION_STEPS so the replicated attribute
 -- changes only when the bar visibly moves.
 local FRACTION_STEPS = 100

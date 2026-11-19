@@ -21,6 +21,7 @@ local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 local Logic = Shared:WaitForChild("logic")
 local HudMath = require(Logic:WaitForChild("HudMath"))
 local ActionPick = require(Logic:WaitForChild("ActionPick"))
+local FireLogic = require(Logic:WaitForChild("FireLogic"))
 local FireTiers = require(Logic:WaitForChild("FireTiers"))
 local Crafting = require(Logic:WaitForChild("Crafting"))
 local Repair = require(Logic:WaitForChild("Repair"))
@@ -403,6 +404,11 @@ function HudController.start()
 		return if def then def.name else id
 	end
 
+	local function fuelOf(id: string): number?
+		local def = ItemCatalog.Items[id]
+		return if def then def.fuelSeconds else nil
+	end
+
 	local function currentAction(): string
 		local def = selectedDef()
 		local canUpgrade = upgradableFire() ~= nil
@@ -410,7 +416,8 @@ function HudController.start()
 			craftStation = benchInstance ~= nil and not (canUpgrade and fireDist < benchDist),
 			upgradeAvailable = canUpgrade,
 			fireInRange = fireInstance ~= nil,
-			hasWood = (counts["Wood"] or 0) > 0,
+			hasFuel = FireLogic.pickFuel(counts, nil, Config.Fire.FuelOrder, fuelOf) ~= nil,
+			selectedFuel = def ~= nil and def.fuelSeconds ~= nil,
 			targetKind = targetKind,
 			selectedKind = if def then def.kind else nil,
 			selectedId = if def then def.id else nil,
@@ -451,7 +458,10 @@ function HudController.start()
 		local target = fire or fireInstance
 		if target then
 			recent["fuel"] = os.clock()
-			Remotes.event(Remotes.AddFuelRequest):FireServer(target)
+			-- Name the selected fuel item; otherwise the server picks (Config.Fire.FuelOrder).
+			local def = selectedDef()
+			Remotes.event(Remotes.AddFuelRequest)
+				:FireServer(target, if def and def.fuelSeconds then def.id else nil)
 		end
 	end
 	-- Upgrade: affordable -> request; otherwise a toast with the cost (the server re-checks both).
@@ -636,8 +646,13 @@ function HudController.start()
 				hints.complete("placeCampfire")
 				Feedback.sound("CraftSound", nil)
 			end
-			if delta("Wood") < 0 and now - (recent["fuel"] or -math.huge) < RECENT_SECONDS then
-				hints.complete("addWood")
+			if now - (recent["fuel"] or -math.huge) < RECENT_SECONDS then
+				for id in before do
+					if fuelOf(id) ~= nil and delta(id) < 0 then
+						hints.complete("addWood")
+						break
+					end
+				end
 			end
 			if delta("RawMeat") < 0 and now - (recent["eat"] or -math.huge) < RECENT_SECONDS then
 				hints.complete("eat")

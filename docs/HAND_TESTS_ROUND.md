@@ -108,3 +108,15 @@ Use `/debug mob <id>` (spawns in front) and `/debug mobs` (nearby list with Stat
 - Rings: teleport to each ring (`/debug tp ring N`) and watch spawn mix; outer rings meaner (more hostiles, more aggression, capped scaling).
 - Dread: alone attracts more crows/wisps, a full group suppresses them; no visible meters.
 - Perf: many mobs live, parts stay under 6000 (watch MaxMobParts 600); mobs beyond ~120 studs freeze; wisp PointLights <= 4; phone emulation framerate.
+
+
+## Bug-fix round 2 (nothing played in Studio)
+- Chat `/debug forage`, `/debug sprint`, `/debug sprint off`, `/debug groundcheck`, `/debug blizzard start`, `/debug blizzard stop`, `/debug blizzard intensity 0.5`, `/debug respawn`, `/debug mobs`, `/debug mob Wolf`: each runs, none says "needs a number".
+- Campfire: hold Blubber (get from a seal/polar kill or /debug give Blubber), stand at a fire, press E: fuel rises more than for Wood, prompt reads "Add Blubber". Same with Stick (short burn). Wood still works; with nothing fuel-like held the Act button is not "Add fuel". Far away or at full fuel: rejected.
+- Pick up coal / ice block / crystal / relic fragment nodes, then end the run: the summary coins include them (also when you leave mid-run).
+- Forage (sticks, berries) you picked grows back at the next dawn (Day counter ticks at 08:00 after the night), not before.
+- Walk a forage-dense area with 4 players: FPS fine; check Perf part count still under 6000.
+- Craft: Storage Chest and Bow now need 1 Rope; Rope crafts by hand from 3 Frozen Reed.
+- Brute (`/debug mob FrostboundBrute`): telegraph ring is 10 studs radius and the slam hits exactly inside it (step just outside the ring: no damage); model size looks right (5x7x5 root).
+- Blizzard: fires still glow faintly through the whiteout.
+- Lobby: step on a pad, press V (or tap Leave) to leave; Q does nothing there; the Leave button reads "Leave [V]". In a run, Q still opens the ping wheel.

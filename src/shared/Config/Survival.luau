@@ -84,6 +84,7 @@ export type FireConfig = {
 	BurnSeconds: number,
 	MaxFuelSeconds: number,
 	WoodFuelSeconds: number,
+	FuelOrder: { string }, -- auto-pick order when no fuel item is selected (fuel values live in Config.Items.Entries)
 	AddFuelRange: number,
 	MaxPerTeam: number,
 	CookRadius: number,
@@ -301,7 +302,8 @@ local Sections: Sections = {
 		RepelRadius = 3 * FIRE_R0 + 6, -- fallback repel edge when a fire has no WarmRadius attribute (runtime: warm + Night.RepelMargin)
 		BurnSeconds = 180, -- burn time from one fuel add
 		MaxFuelSeconds = 600, -- cap on stored burn time
-		WoodFuelSeconds = 120, -- burn time added per wood
+		WoodFuelSeconds = 120, -- burn time added per wood (= Items.Entries.Wood.fuelSeconds)
+		FuelOrder = { "Wood", "Stick", "Pinecone", "Blubber" }, -- auto-pick priority; other fuel items follow by id
 		AddFuelRange = 10, -- max studs from player to fire to add fuel
 		MaxPerTeam = 6, -- max active campfires per run
 		CookRadius = 6, -- studs within which food can be cooked

@@ -41,4 +41,10 @@ function DayClock.elapsedForDay(day: number, t: TimeCfg): number
 	return (math.max(day, 1) - 1) * t.DayLengthSeconds
 end
 
+-- True when the published Day attribute value is a new day (dawn: the counter rolls over as the night ends
+-- and daylight starts at StartClockHour). lastDay nil = first observation (nothing to regrow yet, harmless).
+function DayClock.isNewDay(lastDay: number?, day: unknown): boolean
+	return type(day) == "number" and day == day and day ~= lastDay
+end
+
 return DayClock

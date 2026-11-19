@@ -15,7 +15,9 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local DayClock = require(Shared.logic.DayClock)
 local ForagePlan = require(Shared.logic.ForagePlan)
+local PerfBudget = require(Shared.logic.PerfBudget)
 local SiteGround = require(Shared.logic.SiteGround)
 local GatherService = require(script.Parent.Parent.Items.GatherService)
 local ChunkService = require(script.Parent.Parent.World.ChunkService)
@@ -117,7 +119,13 @@ local function budgetOk(): boolean
 	if liveCount >= F.MaxLiveParts then
 		return false
 	end
-	return ChunkService.getStats().parts + liveCount < Config.Perf.MaxLiveParts - F.PartHeadroom
+	-- chunk parts + every extra reservation (massive structures + our own live parts)
+	return PerfBudget.hasPartRoom(
+		ChunkService.getStats().parts,
+		ChunkService.getExtraParts(),
+		Config.Perf.MaxLiveParts,
+		F.PartHeadroom
+	)
 end
 
 local function terrainReady(x: number, z: number): boolean
@@ -255,11 +263,12 @@ local function step()
 	end
 	if seed ~= currentSeed then
 		currentSeed = seed
+		ChunkService.setExtraPartsProvider("forage", ForageService.liveCount) -- ChunkService.stop clears providers
 		resetRun()
 	end
 	local day = Workspace:GetAttribute(Config.Time.DayAttribute)
-	if type(day) == "number" and day ~= lastDay then
-		lastDay = day
+	if DayClock.isNewDay(lastDay, day) then
+		lastDay = day :: number
 		table.clear(pickedToday) -- dawn: forage grows back
 	end
 	local roots = playerRoots()
@@ -389,7 +398,7 @@ function ForageService.DebugSpawnNear(player: Player): number
 end
 
 -- Coins earned from picked-up valuables (Config.Forage.CoinValues) since the last claim. Clears the credit.
--- Wire into the run-end payout (RunPayout is outside this round's ownership).
+-- Paid at run end: RunLifecycleService.settle claims it via RunPayout (forageCoins).
 function ForageService.takeCoinCredit(player: Player): number
 	local credit = coinCredit[player] or 0
 	coinCredit[player] = nil
@@ -409,10 +418,14 @@ function ForageService.start()
 		return
 	end
 	started = true
+	ChunkService.setExtraPartsProvider("forage", ForageService.liveCount) -- chunk streaming counts our parts
 	table.insert(
 		connections,
 		Players.PlayerRemoving:Connect(function(player: Player)
-			coinCredit[player] = nil
+			-- deferred so RunLifecycle's own PlayerRemoving settle can still claim the credit
+			task.defer(function()
+				coinCredit[player] = nil
+			end)
 		end)
 	)
 	table.insert(
@@ -434,6 +447,7 @@ function ForageService.start()
 end
 
 function ForageService.stop()
+	ChunkService.setExtraPartsProvider("forage", nil)
 	for _, c in connections do
 		c:Disconnect()
 	end

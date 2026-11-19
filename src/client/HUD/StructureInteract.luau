@@ -131,7 +131,7 @@ function StructureInteract.new(
 						label = P.Labels.Cook,
 					},
 					distance = (p - from).Magnitude,
-					refusal = "The fire is out. Add wood first",
+					refusal = "The fire is out. Add fuel first",
 					feedbackAt = p,
 				}
 			end

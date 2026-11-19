@@ -30,7 +30,7 @@ return {
 	SoundLifetime = 5,
 	MaxAchievementsShown = 64,
 	Keys = {
-		Leave = Enum.KeyCode.Q,
+		Leave = Enum.KeyCode.V, -- not Q: Q is the in-run Ping key (HudConfig.Ping.Key)
 		Mode = Enum.KeyCode.F,
 		Stats = Enum.KeyCode.T,
 		Leaderboard = Enum.KeyCode.L,

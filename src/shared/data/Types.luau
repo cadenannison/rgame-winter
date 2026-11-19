@@ -30,6 +30,7 @@ export type ItemDef = {
 	repelsStalker: boolean?, -- lit light repels the Stalker (Config.Stalker.TorchRepelRadius / FlareRepelRadius)
 	endsHunt: boolean?, -- using it ends an active hunt (flare)
 	repairable: boolean?, -- can be repaired at Config.Repair.Station
+	fuelSeconds: number?, -- campfire burn time per item at tier 1 (stamped from Config.Items; nil = not fuel)
 	-- Loot round: stamped by ItemCatalog from data/Rarity.Tags (always set on ItemCatalog.Items entries)
 	rarity: Rarity.Rarity?,
 	lootCategory: Rarity.LootCategory?, -- nil = never found in loot chests

@@ -9,6 +9,7 @@ export type RunResult = {
 	bossKills: number,
 	partners: number, -- other party members (friend bonus proxy)
 	darkEventsSurvived: number?, -- dark events this player was alive for at the end
+	forageCoins: number?, -- coins from picked-up nodes/relics (Config.Forage.CoinValues, ForageService credit)
 }
 
 export type Summary = {
@@ -62,6 +63,7 @@ function RunPayout.coins(result: RunResult): number
 		+ count(result.bossKills) * meta.CoinsPerBossKill
 		+ math.clamp(count(result.partners), 0, Config.Teleport.MaxPartySize - 1) * meta.CoinsPerFriendInParty
 		+ count(result.darkEventsSurvived) * meta.CoinsPerDarkEventSurvived
+		+ count(result.forageCoins)
 	return math.clamp(math.floor(total), 0, meta.MaxCoinsPerRun)
 end
 

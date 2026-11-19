@@ -91,6 +91,7 @@ export type StorageConfig = {
 	OpenAttribute: string, -- Player attribute: chest the player has open (structure id string, "" = none)
 	-- Items round
 	CraftWood: number, -- wood to craft one storage chest
+	CraftRope: number, -- rope (lashings) to craft one storage chest
 	CraftStation: string, -- Config.Craft.Stations key
 	CraftStationTier: number, -- workbench tier needed
 	MaxPerPlayer: number, -- storage chests one player may have placed at once
@@ -105,6 +106,7 @@ export type ItemEntry = {
 	stack: number?, -- nil = category default
 	equipSlot: string?, -- Equipment.Slots entry the item may be worn in
 	coldResistance: number?, -- points while equipped (counts toward the HUD x/12 total)
+	fuelSeconds: number?, -- campfire burn time of one item at tier 1 (nil = not fuel); higher tiers scale by their WoodFuelSeconds
 }
 
 export type ItemsConfig = {
@@ -520,6 +522,7 @@ local Sections: Sections = {
 		MaxChestsPerRun = 4,
 		OpenAttribute = "OpenChest",
 		CraftWood = 8,
+		CraftRope = 1,
 		CraftStation = "workbench",
 		CraftStationTier = 1,
 		MaxPerPlayer = 4,
@@ -556,12 +559,15 @@ local Sections: Sections = {
 			food = "meat",
 		},
 		Entries = {
+			-- Fuel (campfire): Wood is the baseline and must equal Config.Fire.WoodFuelSeconds (tested).
+			Wood = { fuelSeconds = 120 },
+			Stick = { fuelSeconds = 40 },
 			Hide = { category = "animalPart" },
 			Bone = { category = "animalPart" },
 			-- Art Pass 3 creature drops: Feather 20, Venison 10, Blubber / Claw / Fang / DenseHide 10, shards 10
 			Feather = { category = "material", stack = 20 },
 			Venison = { category = "meat", stack = 10 },
-			Blubber = { category = "animalPart", stack = 10 },
+			Blubber = { category = "animalPart", stack = 10, fuelSeconds = 300 },
 			Claw = { category = "animalPart", stack = 10 },
 			Fang = { category = "animalPart", stack = 10 },
 			DenseHide = { category = "animalPart", stack = 10 },
@@ -571,7 +577,7 @@ local Sections: Sections = {
 			Crystal = { category = "rareMaterial" },
 			IceShard = { category = "rareMaterial" },
 			RelicFragment = { category = "rareMaterial" },
-			Pinecone = { category = "berries" },
+			Pinecone = { category = "berries", fuelSeconds = 30 },
 			Winterberry = { category = "berries" },
 			FrostMushroom = { category = "berries" },
 			FrostShard = { category = "rareMaterial" },

@@ -7,6 +7,12 @@ export type Offset = { x: number, y: number, z: number }
 
 local CreatureFxLogic = {}
 
+-- Ground-slam radius: Config reach (attackRange) plus the dodge leeway. The server hit test (SpeciesKit) and the
+-- client telegraph ring both use it, so the ring always matches where the slam lands. Never read root size.
+function CreatureFxLogic.slamRadius(attackRange: number, leeway: number): number
+	return math.max(attackRange, 0) + math.max(leeway, 0)
+end
+
 -- Fraction (0..1) of a wind-up that has elapsed. total <= 0 counts as already full.
 function CreatureFxLogic.telegraphProgress(total: number, elapsed: number): number
 	if total <= 0 then

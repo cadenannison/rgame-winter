@@ -113,7 +113,7 @@ local HudConfig = {
 		openCraft = "Press C (or the Craft button) to open crafting.",
 		craftCampfire = "Craft a Campfire: 5 Wood + 2 Stone (craft a Pickaxe to mine rocks).",
 		placeCampfire = "Select the Campfire and click (E / Act) to place it.",
-		addWood = "Hold Wood next to a fire and press E (Act) to add fuel.",
+		addWood = "Hold Wood (or Sticks, Blubber) next to a fire and press E (Act) to add fuel.",
 		eat = "Hunt a hare (click it with your Axe), then select Raw Meat and press E to eat.",
 	} :: { [string]: string },
 	OnboardingDoneText = "You know the basics. Survive the nights!",

@@ -3,7 +3,8 @@
 
 export type Context = {
 	fireInRange: boolean,
-	hasWood: boolean,
+	hasFuel: boolean, -- any Config.Items fuel item is held
+	selectedFuel: boolean?, -- the selected hotbar item is fuel
 	targetKind: string, -- "gather" | "attack" | "none"
 	selectedKind: string?, -- ItemCatalog kind of the selected hotbar item
 	selectedId: string?, -- ItemCatalog id of the selected hotbar item
@@ -14,7 +15,7 @@ export type Context = {
 local ActionPick = {}
 
 -- Returns "fuel" | "gather" | "attack" | "eat" | "place" | "craft" | "upgrade" | "none".
--- The selected item states intent first (eat food, place a placeable, fuel with wood in hand),
+-- The selected item states intent first (eat food, place a placeable, fuel with a fuel item in hand),
 -- then the target under aim/nearest, then fuel as the fallback when nothing is targeted.
 function ActionPick.choose(ctx: Context): string
 	if ctx.selectedKind == "food" then
@@ -23,8 +24,8 @@ function ActionPick.choose(ctx: Context): string
 	if ctx.selectedKind == "placeable" then
 		return "place"
 	end
-	local canFuel = ctx.fireInRange and ctx.hasWood
-	if canFuel and ctx.selectedId == "Wood" then
+	local canFuel = ctx.fireInRange and ctx.hasFuel
+	if canFuel and ctx.selectedFuel == true then
 		return "fuel"
 	end
 	if ctx.targetKind == "gather" or ctx.targetKind == "attack" then
@@ -43,7 +44,7 @@ function ActionPick.choose(ctx: Context): string
 end
 
 ActionPick.Labels = {
-	fuel = "Add wood",
+	fuel = "Add fuel",
 	gather = "Gather",
 	attack = "Attack",
 	eat = "Eat",

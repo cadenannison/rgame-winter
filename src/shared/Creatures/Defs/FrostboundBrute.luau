@@ -1,5 +1,5 @@
 --!strict
--- Frostbound Brute: huge hunched ice-armoured bruiser. Root size (suggested for new kind): 5.5 x 9.5 x 4.5.
+-- Frostbound Brute: huge hunched ice-armoured bruiser. Root size comes from Config.Mobs.Species.FrostboundBrute.size (5 x 7 x 5): the single source of truth; rows below are fractions of it.
 -- Telegraph = both fists raised overhead and trembling (readable from far), Attack = SlamDown snap.
 -- Mount "Slam" on each fist marks the impact point for client Art/CreatureFx. Sound hooks (silent):
 -- growl on Telegraph, slam thud on Attack, footstep, hurt, death.

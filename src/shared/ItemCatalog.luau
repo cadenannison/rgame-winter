@@ -285,6 +285,7 @@ for id, def in ItemCatalog.Items do
 	def.maxStack = (entry and entry.stack)
 		or Config.Items.CategoryStack[category]
 		or Config.Items.FallbackStack
+	def.fuelSeconds = entry and entry.fuelSeconds
 	if entry and entry.equipSlot then
 		def.equipSlot = entry.equipSlot
 		def.coldResistance = entry.coldResistance or def.coldResistance

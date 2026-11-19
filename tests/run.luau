@@ -75,6 +75,8 @@ require("./BlizzardTests")(check) -- blizzard rework: wind, whiteout, duration
 require("./InputGroundTests")(check) -- bug-fix round: input gate, ground fix, drop durability
 require("./AnimKitTests")(check) -- art pass 3: creature pose math
 require("./CreatureFxTests")(check) -- art pass 3 (creature fx helpers)
+require("./BugfixRoundTests")(check) -- bug-fix round: fuel, forage respawn, rope, payouts, budgets
+require("./DebugParseTests")(check) -- bug-fix round: every /debug command through the parser
 
 print(`tests: {passes} passed, {failures} failed`)
 if failures > 0 then

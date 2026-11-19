@@ -23,7 +23,7 @@ local LIT_ATTRIBUTE = F.LitAttribute
 local RATE_KEY = "AddFuel"
 local UPGRADE_RATE_KEY = "UpgradeFire"
 
-export type WoodSpender = (player: Player, amount: number) -> boolean
+export type FuelSpender = (player: Player, itemId: string, amount: number) -> boolean
 
 -- A lit campfire for range checks: position plus the radii of its current tier.
 export type LitFire = { x: number, z: number, warmRadius: number, buildRadius: number }
@@ -31,7 +31,7 @@ export type LitFire = { x: number, z: number, warmRadius: number, buildRadius: n
 local FireService = {}
 
 local fires: { [Instance]: boolean } = {}
-local woodSpender: WoodSpender? = nil
+local fuelSpender: FuelSpender? = nil
 local fuelBurnProvider: (() -> number)? = nil
 local connections: { RBXScriptConnection } = {}
 local accumulator = 0
@@ -155,8 +155,8 @@ function FireService.getTier(fire: Instance): number
 end
 
 -- Server hook: Inventory code installs the function that removes wood from a player; returns true if spent.
-function FireService.setWoodSpender(fn: WoodSpender?)
-	woodSpender = fn
+function FireService.setFuelSpender(fn: FuelSpender?)
+	fuelSpender = fn
 end
 
 -- Wiring (init.server): event fuel burn multiplier provider (EventService.getModifiers().fuelBurn).
@@ -244,9 +244,14 @@ local function playerRoot(player: Player): BasePart?
 	return humanoid.RootPart
 end
 
+local function fuelOf(id: string): number?
+	local def = ItemCatalog.Items[id]
+	return if def then def.fuelSeconds else nil
+end
+
 -- Handler order: type -> sanity -> rate limit -> state -> range -> act.
-local function onAddFuel(player: Player, fire: unknown)
-	if typeof(fire) ~= "Instance" then
+local function onAddFuel(player: Player, fire: unknown, itemId: unknown)
+	if typeof(fire) ~= "Instance" or (itemId ~= nil and type(itemId) ~= "string") then
 		return
 	end
 	local target = fire :: Instance
@@ -271,15 +276,30 @@ local function onAddFuel(player: Player, fire: unknown)
 	if readFuel(target) >= row.MaxFuelSeconds then
 		return
 	end
-	local spend = woodSpender
+	local spend = fuelSpender
 	if not spend then
 		return
 	end
-	local okSpend, spent = pcall(spend, player, 1)
+	-- The client names an item (selected hotbar fuel) or nothing; the server decides what burns and for how long.
+	local counts: { [string]: number } = {}
+	for id, def in ItemCatalog.Items do
+		if def.fuelSeconds ~= nil then
+			counts[id] = InventoryService.count(player, id)
+		end
+	end
+	local chosen = FireLogic.pickFuel(counts, itemId :: string?, F.FuelOrder, fuelOf)
+	if chosen == nil then
+		return
+	end
+	local seconds = FireLogic.fuelSeconds(fuelOf(chosen), row.WoodFuelSeconds, F.WoodFuelSeconds)
+	if seconds <= 0 then
+		return
+	end
+	local okSpend, spent = pcall(spend, player, chosen, 1)
 	if not okSpend or spent ~= true then
 		return
 	end
-	FireService.addFuel(target, row.WoodFuelSeconds)
+	FireService.addFuel(target, seconds)
 end
 
 local function notify(player: Player, text: string)
@@ -366,11 +386,11 @@ function FireService.start()
 	table.insert(
 		connections,
 		Remotes.event(Remotes.AddFuelRequest).OnServerEvent
-			:Connect(function(player: Player, fire: unknown)
+			:Connect(function(player: Player, fire: unknown, itemId: unknown)
 				if player.Parent ~= Players then
 					return
 				end
-				onAddFuel(player, fire)
+				onAddFuel(player, fire, itemId)
 			end)
 	)
 	table.insert(

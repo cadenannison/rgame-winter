@@ -90,7 +90,7 @@ local fallen: { [Player]: boolean } = {}
 -- a structure whenever one of its covering chunks was rebuilt (carved voids would be overwritten).
 local sites: { MassivePlacement.Site } = {}
 local generations: { [number]: number } = {}
-local extraPartsProvider: (() -> number)? = nil
+local extraPartsProviders: { [string]: (() -> number)? } = {} -- keyed: "massive", "forage"
 
 -- Node state kept outside chunk models so depleted nodes stay depleted across unload/reload
 -- (docs/KNOWN_ISSUES fix). key = "<chunkIndex>:<tag>:<i>".
@@ -404,10 +404,9 @@ local function applyDiff(positions: { WorldLayout.Vec2 }, budgeted: boolean)
 	local average = if loadedCount > 0
 		then totalParts / loadedCount
 		else PERF.ChunkPartBudgetPerFrame
-	local extraProvider = extraPartsProvider
 	local allowance = PerfBudget.chunkAllowance(
 		PERF.ChunkLoadBudgetPerFrame,
-		totalParts + (if extraProvider then extraProvider() else 0),
+		totalParts + ChunkService.getExtraParts(),
 		PERF.MaxLiveParts,
 		average
 	)
@@ -546,10 +545,23 @@ function ChunkService.refreshTerrain(index: number)
 	)
 end
 
--- Voxels are free but structure parts are not: MassiveService reports its live part estimate so chunk
--- streaming keeps the total under Perf.MaxLiveParts.
-function ChunkService.setExtraPartsProvider(fn: (() -> number)?)
-	extraPartsProvider = fn
+-- Voxels are free but other parts are not: MassiveService ("massive") reports its live structure part
+-- estimate and ForageService ("forage") its live pickup parts, so chunk streaming keeps the total under
+-- Perf.MaxLiveParts. One provider per key; nil removes it.
+function ChunkService.setExtraPartsProvider(key: string, fn: (() -> number)?)
+	extraPartsProviders[key] = fn
+end
+
+-- Sum of every registered provider (a throwing provider counts as 0).
+function ChunkService.getExtraParts(): number
+	local total = 0
+	for _, provider in extraPartsProviders do
+		local ok, value = pcall(provider :: () -> number)
+		if ok and type(value) == "number" then
+			total += value
+		end
+	end
+	return total
 end
 
 function ChunkService.getSeed(): number?
@@ -841,7 +853,7 @@ function ChunkService.stop()
 	table.clear(pendingByChunk)
 	table.clear(generations)
 	sites = {}
-	extraPartsProvider = nil
+	table.clear(extraPartsProviders)
 	PoiService.stop()
 	layout = nil
 end

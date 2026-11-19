@@ -153,9 +153,10 @@ local function startRun()
 	end
 
 	-- Cross-system wiring (set before start so no request can arrive unwired).
-	FireService.setWoodSpender(function(player: Player, amount: number): boolean
-		return InventoryService.remove(player, "Wood", amount)
+	FireService.setFuelSpender(function(player: Player, itemId: string, amount: number): boolean
+		return InventoryService.remove(player, itemId, amount)
 	end)
+	RunLifecycleService.setForageCreditProvider(ForageService.takeCoinCredit)
 	FoodService.install()
 	Spawn.setSpawnProvider(ChunkService.getCampSpawnPosition)
 	local function shouldHold(player: Player): boolean

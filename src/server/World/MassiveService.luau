@@ -335,7 +335,7 @@ function MassiveService.start()
 	DebugService.expose("Massive", MassiveService) -- Studio /debug seed
 	DebugService.expose("Loot", LootService) -- Studio /debug chest
 	MassiveService.reset(ChunkService.getSeed())
-	ChunkService.setExtraPartsProvider(MassiveService.livePartsEstimate)
+	ChunkService.setExtraPartsProvider("massive", MassiveService.livePartsEstimate)
 	-- Mob spawns are excluded from every massive structure footprint (live or not).
 	MobService.setSpawnBlocker(function(x: number, z: number): boolean
 		return MassivePlacement.blocks(ChunkService.getSites(), x, z)
@@ -363,7 +363,7 @@ function MassiveService.stop()
 		unregisterEnd()
 		unregisterEnd = nil
 	end
-	ChunkService.setExtraPartsProvider(nil)
+	ChunkService.setExtraPartsProvider("massive", nil)
 	MobService.setSpawnBlocker(nil)
 	MassiveService.reset(nil)
 	started = false

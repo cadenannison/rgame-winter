@@ -10,6 +10,7 @@ local Config = require(Shared.Config)
 local FireRepel = require(Shared.logic.FireRepel)
 local MobBehaviors = require(Shared.logic.MobBehaviors)
 local CombatBehaviors = require(Shared.logic.MobBehaviorsCombat)
+local CreatureFxLogic = require(Shared.logic.CreatureFxLogic)
 local MobRules = require(Shared.logic.MobRules)
 local MobSpecies = require(Shared.logic.MobSpecies)
 local Mobs = script.Parent.Parent
@@ -179,16 +180,11 @@ function SpeciesKit.engage(row: MobRow, env: Env, opts: EngageOpts)
 		row.nextAttackAt = now + def.attackCooldown
 		MobState.setTarget(row, info.player)
 		MobState.attacked(row, now)
+		local reach = CreatureFxLogic.slamRadius(def.attackRange, opts.leeway)
 		for _, candidate in env.infos do
 			local dist = SpeciesKit.flat(pos, candidate.root.Position)
-			local hit = if opts.aoe
-				then dist <= def.attackRange + opts.leeway
-				else candidate == info
-			if
-				hit
-				and dist <= def.attackRange + opts.leeway
-				and strikeAllowed(row, env, candidate)
-			then
+			local hit = if opts.aoe then dist <= reach else candidate == info
+			if hit and dist <= reach and strikeAllowed(row, env, candidate) then
 				MobActions.dealDamage(row, candidate)
 			end
 		end
