@@ -156,7 +156,7 @@ local Sections: Sections = {
 				},
 			},
 		},
-		TierOrder = { "Hide", "Fur", "Arctic", "Insulated" },
+		TierOrder = { "Hide", "Fur", "Arctic", "Insulated", "Feather", "Fang", "Aurora" },
 		DefaultTier = "Default",
 		Tiers = {
 			Hide = {
@@ -186,6 +186,27 @@ local Sections: Sections = {
 				material = "Fabric",
 				trimMaterial = "Fabric",
 				scale = 1.08,
+			},
+			Feather = {
+				main = { 214, 226, 238 },
+				trim = { 150, 190, 224 },
+				material = "Fabric",
+				trimMaterial = "Fabric",
+				scale = 1,
+			},
+			Fang = {
+				main = { 108, 82, 58 },
+				trim = { 232, 226, 206 },
+				material = "Leather",
+				trimMaterial = "SmoothPlastic",
+				scale = 1,
+			},
+			Aurora = {
+				main = { 232, 192, 72 },
+				trim = { 90, 255, 205 },
+				material = "Metal",
+				trimMaterial = "Neon",
+				scale = 1,
 			},
 			Default = {
 				main = { 90, 102, 118 },

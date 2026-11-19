@@ -72,6 +72,12 @@ local VARIANTS: { [string]: { [string]: { string } } } = {
 		default = { "Vault", "TwinChambers" },
 		DeepTundra = { "TwinChambers", "Vault" },
 	},
+	shed = {
+		default = { "Woodshed", "Smokehouse" },
+	},
+	fishhut = {
+		default = { "IceHut", "BaitShack" },
+	},
 	campsite = {
 		default = { "Tent", "Watchtower" },
 		SnowyForest = { "Tent", "Watchtower", "Tent" },
@@ -79,7 +85,7 @@ local VARIANTS: { [string]: { [string]: { string } } } = {
 	},
 }
 
-PoiPlan.EnterableKinds = { "cabin", "plane", "cave", "ruin", "campsite" }
+PoiPlan.EnterableKinds = { "cabin", "plane", "cave", "ruin", "campsite", "shed", "fishhut" }
 
 function PoiPlan.variantIds(kind: string, biome: string): { string }
 	local byBiome = VARIANTS[kind]
@@ -360,6 +366,68 @@ local function cabin(variant: string): Partial
 	return p
 end
 
+-- Small single-story outbuildings (rings 1-2): a woodshed / smokehouse in the forest, an ice hut / bait shack
+-- on the lake. Same room shell as the cabin (one floor, one doorway), distinct silhouettes and dressing.
+local function outbuilding(kind: string, variant: string): Partial
+	local out: { Box } = {}
+	local fishing = kind == "fishhut"
+	local o: RoomOpts = {
+		iw = S.InteriorWidth,
+		id = S.InteriorDepth,
+		h = S.CeilingHeight,
+		t = S.WallThickness,
+		dw = S.DoorWidth,
+		dh = S.DoorHeight,
+		wall = if fishing then "WallDark" else "Wall",
+		floor = "Floor",
+		roof = if fishing then "Roof" else "WallDark",
+	}
+	if variant == "Smokehouse" or variant == "BaitShack" then
+		o.id = S.InteriorDepth + 2
+	end
+	room(out, o)
+	openDoorLeaf(out, o)
+	local iw, id = o.iw, o.id
+	local backZ = -id / 2
+	add(out, "Lamp", 0, o.h - 1, 0, 0.8, 0.8, 0.8, "Lamp", false, { light = warmLight() })
+	windowPane(out, "WindowL", -(iw / 2 - 2.5), 3.4, id / 2 + 0.65, false)
+	if fishing then
+		-- hole in the floor-level ice (visual), rod rack, bucket; a tall pole with a lantern marks the hut from afar
+		add(out, "IceHole", 0, 0, 1, 3, 0.2, 3, "Glass", false)
+		add(out, "RodRack", iw / 2 - 1.2, 0, backZ + 3, 0.6, 5, 6, "WallDark", true)
+		add(out, "Bucket", -iw / 2 + 2, 0, backZ + 2, 1.6, 1.8, 1.6, "Metal", true)
+		add(out, "Pole", iw / 2 + 2.5, 0, id / 2 + 1.5, 0.5, 11, 0.5, "WallDark", true)
+		add(
+			out,
+			"PoleLantern",
+			iw / 2 + 2.5,
+			11,
+			id / 2 + 1.5,
+			1,
+			1,
+			1,
+			"Lamp",
+			false,
+			{ light = warmLight() }
+		)
+		if variant == "BaitShack" then
+			add(out, "NetPile", -iw / 2 + 2.4, 0, backZ + 6, 3, 1.2, 4, "Blanket", false)
+		end
+	else
+		-- stacked firewood (woodshed) or hanging racks (smokehouse); open lean-to roof overhang at the front
+		add(out, "WoodStackA", -(iw / 2 - 1.6), 0, backZ + 2, 2.8, 3, 7, "Wall", true)
+		add(out, "WoodStackB", -(iw / 2 - 1.6), 3, backZ + 2, 2.8, 2.4, 6.4, "WallDark", true)
+		add(out, "Overhang", 0, o.h, id / 2 + 2.4, iw + 2, 0.5, 4, "WallDark", false)
+		if variant == "Smokehouse" then
+			add(out, "SmokeRack", iw / 2 - 2.5, 0, backZ + 4, 2, 4, 8, "WallDark", true)
+			add(out, "Chimney", 0, o.h, backZ - 0.2, 3, 6, 2, "StoneDark", false)
+		end
+	end
+	local p = roomPartial(o, out)
+	p.crate = { x = iw / 2 - 2.2, y = 0, z = backZ + 2.4 }
+	return p
+end
+
 local function plane(variant: string): Partial
 	local out: { Box } = {}
 	local cargo = variant == "Cargo"
@@ -616,6 +684,8 @@ local function partialFor(kind: string, variant: string): Partial?
 		return cave(variant)
 	elseif kind == "ruin" then
 		return ruin(variant)
+	elseif kind == "shed" or kind == "fishhut" then
+		return outbuilding(kind, variant)
 	elseif kind == "campsite" then
 		if variant == "Watchtower" then
 			return watchtower()

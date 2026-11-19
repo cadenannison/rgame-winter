@@ -39,9 +39,14 @@ return function(check: (string, boolean) -> ())
 	local covered, distinct = true, true
 	for id, def in ItemCatalog.Items do
 		if def.equipSlot then
-			local plans = GearPlan.parts(id, def.equipSlot)
-			if #plans == 0 then
-				covered = false
+			-- "Accessory" items are worn in either accessory slot (ProfileSchema.slotAccepts)
+			local slots: { string } = if def.equipSlot == "Accessory"
+				then { "Accessory1", "Accessory2" }
+				else { def.equipSlot }
+			for _, slot in slots do
+				if #GearPlan.parts(id, slot) == 0 then
+					covered = false
+				end
 			end
 		end
 	end

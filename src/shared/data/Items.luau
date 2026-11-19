@@ -167,6 +167,48 @@ local list: { Types.ItemDef } = {
 		coldResistance = 3,
 	},
 	{
+		id = "HideLeggings",
+		name = "Hide Leggings",
+		kind = "clothing",
+		maxStack = 1,
+	},
+	{
+		id = "FurLeggings",
+		name = "Fur Leggings",
+		kind = "clothing",
+		maxStack = 1,
+	},
+	{
+		id = "HideGloves",
+		name = "Hide Gloves",
+		kind = "clothing",
+		maxStack = 1,
+	},
+	{
+		id = "FurMittens",
+		name = "Fur Mittens",
+		kind = "clothing",
+		maxStack = 1,
+	},
+	{
+		id = "FeatherScarf",
+		name = "Feather Scarf",
+		kind = "clothing",
+		maxStack = 1,
+	},
+	{
+		id = "FangCharm",
+		name = "Fang Charm",
+		kind = "clothing",
+		maxStack = 1,
+	},
+	{
+		id = "AuroraAmulet",
+		name = "Aurora Amulet",
+		kind = "clothing",
+		maxStack = 1,
+	},
+	{
 		id = "BlubberTorch",
 		name = "Blubber Torch",
 		kind = "light",

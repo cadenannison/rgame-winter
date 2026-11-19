@@ -30,7 +30,7 @@ Chunks.Variants = {
 		food = 4,
 		spawnZones = 2,
 		poiSlots = 1,
-		poiKinds = { "campsite" },
+		poiKinds = { "campsite", "shed" },
 	},
 	{
 		id = "ForestCreek",
@@ -42,7 +42,7 @@ Chunks.Variants = {
 		food = 3,
 		spawnZones = 2,
 		poiSlots = 1,
-		poiKinds = { "cabin", "plane" },
+		poiKinds = { "cabin", "plane", "shed" },
 	},
 	-- Frozen lake: open ice, thin-ice patches, fish.
 	{
@@ -55,7 +55,7 @@ Chunks.Variants = {
 		food = 3,
 		spawnZones = 3,
 		poiSlots = 1,
-		poiKinds = { "thinice" },
+		poiKinds = { "thinice", "fishhut" },
 	},
 	{
 		id = "LakeShore",
@@ -67,7 +67,7 @@ Chunks.Variants = {
 		food = 2,
 		spawnZones = 2,
 		poiSlots = 2,
-		poiKinds = { "cabin", "thinice" },
+		poiKinds = { "cabin", "thinice", "fishhut" },
 	},
 	{
 		id = "LakeIsland",

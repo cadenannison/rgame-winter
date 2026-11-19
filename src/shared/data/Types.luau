@@ -107,7 +107,7 @@ export type ChunkVariant = {
 	food: number,
 	spawnZones: number,
 	poiSlots: number,
-	poiKinds: { string }, -- "cabin" | "plane" | "cave" | "campsite" | "hotspring" | "ruin" | "thinice"
+	poiKinds: { string }, -- "cabin" | "plane" | "cave" | "campsite" | "shed" | "fishhut" | "hotspring" | "ruin" | "thinice"
 }
 
 -- Dark event. Effects are multipliers; caps in Config.Events.

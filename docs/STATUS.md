@@ -70,5 +70,8 @@ Nothing committed since Phase 0. Place ids: placeId 130366229723914 (Studio inst
 ## Round: Art Pass 4 items, worn gear, structures (orchestrated, 3 agents; headless only)
 - check.sh tier=full green (1951). No playtest, QA or MCP; nothing seen in Studio. Details: docs/ART_STATUS.md "Pass 4".
 - Orchestrator: Config modules ArtItems/ArtGear/ArtStructures, shared/IconAssets, GallerySets extended, HudController hotbar icon setItem.
-- Open: massive structures still multi-level (ring rule needs PM decision); gear/landmark/grip offsets are guesses; Config.Ui.HeldVisual type is legacy.
+- Open: gear/landmark/grip offsets are guesses; Config.Ui.HeldVisual type is legacy.
+- Follow-up (PM brief): all 6 massive structures now Config.Massive Rings {2,3} (player rings 3-4; multi-floor plans unchanged), so rings 1-2 (internal 0-1) hold only single-story POIs. New small POI kinds `shed` (Woodshed/Smokehouse; SnowyForest chunks ForestClearing + ForestCreek) and `fishhut` (IceHut/BaitShack; FrozenLake chunks LakeOpen + LakeShore), data in PoiPlan/Chunks/LootTables. Per ring now: ring 1 = 4 kinds (cabin x3, campsite x2, plane x2, shed x2 = 9 variants, 1 chest max/structure); ring 2 = 4 kinds (cabin x2, plane x2, campsite x2, fishhut x2 = 8 variants + thin-ice hazard, planes up to 2 chests, others 1).
+- Follow-up: 7 new gear items (HideLeggings, FurLeggings, HideGloves, FurMittens, FeatherScarf, FangCharm, AuroraAmulet) for Legs/Hands/Neck/Accessory x2 with warmth, armor, recipes (bench tier 1-3 / forge), ItemModels and gear looks (tiers Feather/Fang/Aurora). docs/systems/chest-art.md rewritten. check.sh green (1952).
+- Balance note: worn resistance is a capped sum (12); Fur set (6) + all extras (up to 6) can now reach the tundra requirement 9 without Arctic. Retune extras or biome requirements if unwanted.
 - Next: PM hand test (HAND_TESTS_ROUND.md "Art Pass 4"). No SAVE NEEDED (no MCP).

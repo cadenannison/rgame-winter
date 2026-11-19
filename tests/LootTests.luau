@@ -11,7 +11,7 @@ local TreeRules = require("../src/shared/logic/TreeRules")
 local LootTables = require("../src/server/Loot/LootTables")
 
 local SAMPLES = 4000
-local SMALL_POIS = { "cabin", "plane", "cave", "ruin", "campsite" }
+local SMALL_POIS = { "cabin", "plane", "cave", "ruin", "campsite", "shed", "fishhut" }
 
 local function meanRank(items: { LootRoll.Stack }, sum: { number }): ()
 	for _, s in items do
@@ -236,8 +236,21 @@ return function(check: (string, boolean) -> ())
 	)
 	check(
 		"massive: ring rules",
-		MassiveRules.ringAllowed("FrozenShipwreck", 1)
-			and not MassiveRules.ringAllowed("FrozenShipwreck", 3)
+		MassiveRules.ringAllowed("FrozenShipwreck", 2)
+			and not MassiveRules.ringAllowed("FrozenShipwreck", 1)
+	)
+	check(
+		"massive: multi-floor structures only in rings 3-4 (internal 2-3)",
+		(function()
+			for _, def in M.Structures do
+				for _, ring in def.Rings do
+					if ring < 2 then
+						return false
+					end
+				end
+			end
+			return true
+		end)()
 	)
 	check(
 		"massive: validatePlan accepts the minimum, rejects a short corridor",

@@ -159,3 +159,11 @@ Use `/debug mob <id>` (spawns in front) and `/debug mobs` (nearby list with Stat
 - Chest glow = small particles only; rarity looks differ; beams short, rare+, near only.
 - `/debug gallery structures|chests|signs|massive|clear`: every structure appears (massive one at a time).
 - Part counts stay under 6000.
+
+## Art Pass 4 follow-up: rings, new gear (nothing played in Studio yet)
+- Rings 1 and 2: every structure is single story; no massive structure appears (`/debug tp ring 1|2`, walk around). Massive ones (research station, mine, shipwreck, lodge, ruined temple, expanded ruins) only in rings 3-4 (check each is reachable and still builds).
+- Variety: ring 1 shows cabins, campsites/watchtowers, crashed planes and woodsheds/smokehouses; ring 2 shows cabins, planes, campsites, ice huts/bait shacks (lantern pole readable from afar). Each is enterable, lit, has a loot crate.
+- New gear (`/debug give <id>`): HideLeggings, FurLeggings, HideGloves, FurMittens, FeatherScarf, FangCharm, AuroraAmulet. Equip in Legs / Hands / Neck / Accessory slots: icon, Warmth +N and Armor in tooltip, visible on the character (and a second client), unequip/death clears.
+- Recipes: hide leggings/gloves at a bench (tier 1); fur leggings at the forge; fur mittens, feather scarf, fang charm at bench tier 2; aurora amulet at bench tier 3.
+- Balance check: Fur set plus extras vs tundra cold requirement (see STATUS balance note).
+- chest-art.md matches what you see (small glow particles, client-only short beams).

@@ -100,6 +100,13 @@ Rarity.Tags = {
 	ArcticBoots = t("rare", "clothing"),
 	ArcticCoat = t("epic", "clothing"),
 	ArcticHood = t("rare", "clothing"),
+	HideLeggings = t("common", "clothing"),
+	HideGloves = t("common", "clothing"),
+	FurLeggings = t("uncommon", "clothing"),
+	FurMittens = t("uncommon", "clothing"),
+	FeatherScarf = t("uncommon", "clothing"),
+	FangCharm = t("rare", "clothing"),
+	AuroraAmulet = t("epic", "clothing"),
 	-- loot-only upper tiers (ItemCatalog LOOT_GEAR)
 	AuroraBlade = t("epic", "weapon"),
 	AuroraPickaxe = t("epic", "tool"),

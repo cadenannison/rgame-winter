@@ -469,6 +469,39 @@ local BESPOKE: { [string]: () -> ModelSpec } = {
 	InsulatedCoat = function()
 		return coat(ORANGE, DARK_IRON)
 	end,
+	HideLeggings = function()
+		return legs(HIDE, LEATHER)
+	end,
+	FurLeggings = function()
+		return legs(FUR, WHITE)
+	end,
+	HideGloves = function()
+		return gloves(HIDE, LEATHER)
+	end,
+	FurMittens = function()
+		return gloves(FUR, WHITE)
+	end,
+	FeatherScarf = function()
+		return spec({
+			blk(1.4, 0.36, 1.1, 0, 0.35, 0, WHITE, "Fabric"),
+			blk(0.42, 1.2, 0.22, 0.4, -0.4, 0.58, WHITE, "Fabric"),
+			blk(0.42, 0.22, 0.24, 0.4, -1.0, 0.58, ICE, "Fabric"),
+		}, 0)
+	end,
+	FangCharm = function()
+		return spec({
+			cyl(1.1, 0.1, 0, 0.5, 0, LEATHER, "Fabric", { 90, 0, 0 }),
+			wedge(0.32, 0.95, 0.32, 0, -0.2, 0, BONE, "SmoothPlastic"),
+			ball(0.3, 0, 0.1, 0, LEATHER, "Fabric"),
+		}, 0)
+	end,
+	AuroraAmulet = function()
+		return spec({
+			cyl(1.1, 0.1, 0, 0.55, 0, LEATHER, "Fabric", { 90, 0, 0 }),
+			cyl(0.95, 0.14, 0, -0.2, 0, GOLD, "Metal", { 90, 0, 0 }),
+			ball(0.6, 0, -0.2, 0.05, AURORA, "Neon"),
+		}, 0)
+	end,
 	-- Materials
 	Wood = function()
 		return spec({

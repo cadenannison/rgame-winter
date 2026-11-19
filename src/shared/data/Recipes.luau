@@ -73,6 +73,26 @@ local list: { Types.Recipe } = {
 	r("HideHood", 1, "workbench", { { id = "Hide", count = 2 } }),
 	r("HideCoat", 1, "workbench", { { id = "Hide", count = 4 } }),
 	r("HideBoots", 1, "workbench", { { id = "Hide", count = 2 } }),
+	r("HideLeggings", 1, "workbench", { { id = "Hide", count = 3 } }),
+	r("HideGloves", 1, "workbench", { { id = "Hide", count = 2 } }),
+	-- Extra worn slots from creature drops (bench tier 2-3)
+	r("FurMittens", 1, "workbench", { { id = "Hide", count = 3 }, { id = "Feather", count = 4 } }),
+	r(
+		"FeatherScarf",
+		1,
+		"workbench",
+		{ { id = "Feather", count = 8 }, { id = "Rope", count = 1 } }
+	),
+	r("FangCharm", 1, "workbench", {
+		{ id = "Fang", count = 3 },
+		{ id = "Claw", count = 1 },
+		{ id = "Rope", count = 1 },
+	}),
+	r("AuroraAmulet", 1, "workbench", {
+		{ id = "AuroraDust", count = 2 },
+		{ id = "CrystalShard", count = 1 },
+		{ id = "Rope", count = 1 },
+	}),
 	-- Map table
 	r("Map", 1, "mapTable", { { id = "Hide", count = 1 }, { id = "Wood", count = 1 } }),
 	-- Cooking station recipes (multi-input food; single raw items cook via CookRequest)
@@ -98,6 +118,7 @@ local list: { Types.Recipe } = {
 	r("FurHood", 2, "forge", { { id = "Hide", count = 4 }, { id = "IronIngot", count = 1 } }),
 	r("FurCoat", 2, "forge", { { id = "Hide", count = 8 }, { id = "IronIngot", count = 2 } }),
 	r("FurBoots", 2, "forge", { { id = "Hide", count = 4 }, { id = "IronIngot", count = 1 } }),
+	r("FurLeggings", 2, "forge", { { id = "Hide", count = 6 }, { id = "IronIngot", count = 1 } }),
 	r("ArcticHood", 2, "forge", {
 		{ id = "WardenCore", count = 1 },
 		{ id = "Hide", count = 6 },
@@ -124,6 +145,10 @@ Recipes.BenchTier = {
 	MapTable = 2,
 	CookingStation = 2,
 	InsulatedCoat = 2,
+	FurMittens = 2,
+	FeatherScarf = 2,
+	FangCharm = 2,
+	AuroraAmulet = 3,
 	FangSpear = 2,
 	Forge = 2,
 	Watchtower = 3,
