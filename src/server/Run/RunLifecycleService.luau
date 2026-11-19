@@ -15,8 +15,10 @@ local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local RunPayout = require(Shared.logic.RunPayout)
 local TeleportData = require(Shared.logic.TeleportData)
+local ReturnPlan = require(Shared.logic.ReturnPlan)
 local Guard = require(script.Parent.Parent.Net.Guard)
 local DataService = require(script.Parent.Parent.Data.DataService)
+local DebugService = require(script.Parent.Parent.Debug.DebugService)
 local DayNightService = require(script.Parent.Parent.Survival.DayNightService)
 local SurvivalService = require(script.Parent.Parent.Survival.SurvivalService)
 local TeleportAdapter = require(script.Parent.Parent.Party.TeleportAdapter)
@@ -57,10 +59,24 @@ local function now(): number
 	return os.clock()
 end
 
+local RETURN_TEXTS: ReturnPlan.Texts = {
+	StudioFallback = Config.Run.ReturnStudioText,
+	TeleportFailed = Config.Run.ReturnFailedToast,
+}
+
+local function toastPlayers(targets: { Player }, text: string)
+	for _, p in targets do
+		if p.Parent == Players then
+			Remotes.event(Remotes.Notify):FireClient(p, Config.Run.ReturnNotifyKind, text)
+		end
+	end
+end
+
 local function returnToLobby(targets: { Player })
 	if #targets == 0 then
 		return
 	end
+	local plan = ReturnPlan.decide(RunService:IsStudio(), true, RETURN_TEXTS)
 	local current = run
 	local partyIds: { number } = current and table.clone(current.order) or {}
 	if #partyIds == 0 then
@@ -82,16 +98,21 @@ local function returnToLobby(targets: { Player })
 			end
 		end
 	end
+	if plan.kind == "studioFallback" then
+		-- Studio cannot teleport (the adapter fake only records the call): persist the lobby mode override
+		-- for the next Test and say so, instead of silently doing nothing.
+		if plan.setStudioLobbyMode then
+			DebugService.run(targets[1], "mode", Config.Teleport.ModeLobby)
+		end
+		if plan.toast then
+			toastPlayers(targets, plan.toast)
+		end
+		return
+	end
 	if not success then
-		if RunService:IsStudio() then
-			warn("RunLifecycleService: return to lobby failed (Studio: not kicking)")
-			return
-		end
-		for _, p in targets do
-			if p.Parent == Players then
-				p:Kick(Config.Run.ReturnFailedMessage)
-			end
-		end
+		-- Visible failure; the player stays and can press Return again (the lock clears after SummarySeconds).
+		warn("RunLifecycleService: return to lobby failed")
+		toastPlayers(targets, ReturnPlan.failureToast(nil, RETURN_TEXTS))
 	end
 end
 

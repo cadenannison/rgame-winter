@@ -70,6 +70,12 @@ require("./MassiveWiringTests")(check) -- integration: massive placement + chunk
 require("./SiteGroundTests")(check) -- items round: terrain grounding (agent A)
 require("./ChestCountsTests")(check) -- items round: chest counts, beacon top rarity, beams (agent A)
 require("./InventoryTests")(check) -- items round: move path, stacks, chests, migration (agent B)
+require("./SlotViewTests")(check) -- backpack slot view-model
+require("./EconomyCraftTests")(check)
+require("./BlizzardDebugTests")(check)
+require("./ReturnPlanTests")(check)
+require("./AgentATests")(check)
+require("./SlotLayoutTests")(check) -- slot layout: areas, strict move validation, end-to-end mapping, rescue
 require("./EquipmentTests")(check) -- items round: equipment slots and worn resistance (agent B)
 require("./BlizzardTests")(check) -- blizzard rework: wind, whiteout, duration
 require("./InputGroundTests")(check) -- bug-fix round: input gate, ground fix, drop durability

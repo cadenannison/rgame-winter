@@ -137,9 +137,7 @@ function DebugService.run(player: Player, name: unknown, arg: unknown): (boolean
 		setInvincible(player, value :: boolean)
 	elseif command == "teleportRing" then
 		player:SetAttribute(D.PlayerRingAttribute, value :: number)
-	elseif
-		DebugCommands.ACTION_ONLY[command] or (command == "blizzard" and type(value) == "table")
-	then
+	elseif DebugCommands.ACTION_ONLY[command] or command == "blizzard" then
 		if #(registry[command] or {}) == 0 then
 			return false, "no handler registered"
 		end
@@ -370,23 +368,8 @@ local function onGroundCheck(player: Player)
 end
 
 local function onBlizzard(player: Player, arg: unknown)
-	if type(arg) ~= "table" then
-		return -- boolean toggles are handled through the world attribute
-	end
-	local BlizzardService = worldService("Blizzard")
-	local a = arg :: { action: string, value: number? }
-	if a.action == "start" then
-		say(
-			player,
-			if BlizzardService.DebugStart() then "blizzard started" else "blizzard already active"
-		)
-	elseif a.action == "stop" then
-		BlizzardService.DebugStop()
-		say(player, "blizzard stopped")
-	elseif a.action == "intensity" then
-		BlizzardService.DebugSetIntensity(a.value)
-		say(player, `blizzard intensity {a.value}`)
-	end
+	-- Weather only exists on run servers; a lobby server answers with a clear line instead of nothing.
+	say(player, DebugCommands.runBlizzard(arg, exposed.Blizzard :: any))
 end
 
 local function onForage(player: Player)
@@ -433,7 +416,15 @@ local function onMobs(player: Player)
 	say(player, `mobs ({#list}): ` .. table.concat(parts, " | "))
 end
 
+-- /debug inv: every non-empty server slot with its area; warns on items outside any displayed area.
+local function onInv(player: Player)
+	for _, line in worldService("Inventory").debugDump(player) do
+		say(player, line)
+	end
+end
+
 local function registerBuiltins()
+	DebugService.register("inv", onInv)
 	DebugService.register("mob", onMob)
 	DebugService.register("mobs", onMobs)
 	DebugService.register("blizzard", onBlizzard)

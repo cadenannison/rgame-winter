@@ -8,6 +8,7 @@ local ItemCatalog = require("../src/shared/ItemCatalog")
 local Equipment = require("../src/shared/logic/Equipment")
 local Inventory = require("../src/shared/logic/Inventory")
 local InventoryMove = require("../src/shared/logic/InventoryMove")
+local SlotLayout = require("../src/shared/logic/SlotLayout")
 
 local function newCtx(): InventoryMove.Ctx
 	return {
@@ -434,6 +435,11 @@ return function(check: (string, boolean) -> ())
 					local from = randAddr()
 					local count = rng:NextInteger(0, 25)
 					InventoryMove.move(ctx, from, randAddr(), count)
+				end
+			end
+			for _, part in { ctx.inv, ctx.equip, box } do
+				if #SlotLayout.strays(part.slots :: any, part.size) > 0 then
+					propOk = false -- invariant: every non-empty slot index is inside a valid area
 				end
 			end
 			local after: { [string]: number } = {}

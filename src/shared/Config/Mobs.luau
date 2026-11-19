@@ -78,6 +78,7 @@ export type SpeciesDef = {
 	size: { number }, -- hitbox {x, y, z}
 	color: { number }, -- stub body colour {r, g, b} 0-255
 	tune: { [string]: number }, -- behavior knobs read by Species/<Kind>.luau
+	fireSafe: boolean?, -- explicit Aggro override (nil = Aggro.FireSafeRoles decides): never aggroes a target inside a fire
 }
 
 export type SpawningConfig = {
@@ -130,9 +131,12 @@ export type MobConfig = {
 	DebugListRadius: number, -- studs: "/debug mobs" lists mobs within this
 	DebugListMax: number, -- most rows "/debug mobs" prints
 	AttackHoldSeconds: number, -- State stays Attack this long after a bite (client plays the swing)
+	DisplayNames: { [string]: string }, -- kind id -> player-facing name (others: PascalCase split, MobNames)
 }
 
 export type CombatConfig = {
+	WolfDamageFraction: number,
+	WolfCooldownMultiplier: number,
 	MeleeRange: number,
 	MeleeCooldown: number,
 	MeleeBaseDamage: number,
@@ -201,7 +205,39 @@ export type ProjectileConfig = {
 	MeleeFriendlyFire: boolean, -- always false: melee never hurts players
 }
 
+-- Round contract (Agent A owns). Day wildlife density, replacement and aggro rules.
+export type WildlifeConfig = {
+	DayDensityMultiplier: number, -- scales day wildlife spawn weight/caps (0.5 = half the old density)
+	OutsideFireOnly: boolean, -- day wildlife never spawns inside a fire's WarmRadius
+	RespawnDays: { number }, -- {min, max}: a killed animal is replaced this many days later (by day counter)
+	RespawnMinPlayerDistance: number, -- studs: replacement spawns at least this far from every player
+	NearRadius: number, -- mob-count targets within this of a player (rings 1-4 = index 1-4); audit via /debug mobs
+	TargetMin: { number },
+	TargetMax: { number },
+	LegacyCaps: { [string]: number }, -- live cap per legacy kind (they were uncapped and ate the whole budget)
+	LegacyDefaultCap: number, -- cap for a legacy kind not listed in LegacyCaps
+	UrgentAttempts: number, -- natural-spawn attempts per tick while under TargetMin near the player
+	BudgetFloorFromTargets: boolean, -- live budget is at least the ring TargetMax x players (MaxLiveMobs still caps)
+}
+
+export type AggroConfig = {
+	LeashDistance: number, -- studs: fireSafe hostile gives up beyond this from its target
+	LoseSightSeconds: number, -- target out of sight this long = give up and wander
+	FireSafeRoles: { string }, -- roles flagged fireSafe by default (non-horror hostiles)
+	HitGraceSeconds: number, -- a target that hit the mob this recently may aggro it inside the fire radius
+	SightEyeHeight: number, -- studs above the mob's root the line-of-sight ray starts
+	FireSafeExclude: { string }, -- horror / ambush kinds never flagged fireSafe (they ignore fire rules)
+}
+
+export type PoiseConfig = {
+	HeavyMobs: { string }, -- species whose telegraph/slam cannot be cancelled by hits (flinch visual only)
+	StaggerOnlyBetweenAttacks: boolean,
+}
+
 export type Sections = {
+	Wildlife: WildlifeConfig,
+	Aggro: AggroConfig,
+	Poise: PoiseConfig,
 	Scaling: ScalingConfig,
 	Mobs: MobConfig,
 	Night: NightConfig,
@@ -298,7 +334,7 @@ local Sections: Sections = {
 			Health = 35, -- hit points
 			Damage = 10, -- damage per bite
 			WalkSpeed = 12, -- patrol speed
-			FleeSpeed = 20, -- chase speed
+			FleeSpeed = 19, -- chase speed: above walk 16, below sprint 16 x Sprint.SpeedMultiplier (tested)
 			AggroRange = 50, -- studs at which it starts hunting
 			AttackRange = 4, -- studs to bite
 			AttackCooldown = 2, -- seconds between bites (windup included)
@@ -443,7 +479,7 @@ local Sections: Sections = {
 				hitRadius = 3,
 				hostileWeightPerRing = 0.2,
 				cost = 2,
-				minDay = 2,
+				minDay = 1,
 				nightOnly = false,
 				breaksStructures = false,
 				size = { 2, 2, 3.5 },
@@ -476,7 +512,7 @@ local Sections: Sections = {
 				hitRadius = 3,
 				hostileWeightPerRing = 0.25,
 				cost = 1,
-				minDay = 3,
+				minDay = 2,
 				nightOnly = true,
 				breaksStructures = false,
 				size = { 2, 2.6, 4 },
@@ -542,7 +578,7 @@ local Sections: Sections = {
 				hitRadius = 6,
 				hostileWeightPerRing = 0.3,
 				cost = 3,
-				minDay = 4,
+				minDay = 3,
 				nightOnly = false,
 				breaksStructures = true,
 				size = { 5, 7, 5 },
@@ -572,7 +608,7 @@ local Sections: Sections = {
 				fleeRange = 0,
 				hitRadius = 4,
 				cost = 0,
-				minDay = 2,
+				minDay = 1,
 				nightOnly = true,
 				breaksStructures = false,
 				size = { 2, 2, 2 },
@@ -614,6 +650,7 @@ local Sections: Sections = {
 		DebugListRadius = 150,
 		DebugListMax = 12,
 		AttackHoldSeconds = 0.35, -- State stays Attack this long after a bite
+		DisplayNames = { ArcticHare = "Hare" },
 	},
 	Night = {
 		WindupSeconds = 0.7,
@@ -634,7 +671,34 @@ local Sections: Sections = {
 		FireLightName = "WarmLight",
 		CueVolume = 0.4,
 	},
+	Wildlife = {
+		DayDensityMultiplier = 0.5,
+		OutsideFireOnly = true,
+		RespawnDays = { 1, 3 },
+		RespawnMinPlayerDistance = 70,
+		NearRadius = 150,
+		TargetMin = { 3, 3, 5, 5 },
+		TargetMax = { 6, 6, 9, 9 },
+		LegacyCaps = { ArcticHare = 2, Caribou = 2, Fish = 2, Wolf = 6 },
+		LegacyDefaultCap = 2,
+		UrgentAttempts = 4,
+		BudgetFloorFromTargets = true,
+	},
+	Aggro = {
+		LeashDistance = 50,
+		LoseSightSeconds = 4,
+		FireSafeRoles = { "hostile" },
+		HitGraceSeconds = 8,
+		SightEyeHeight = 2,
+		FireSafeExclude = { "SnowLurker", "IceWraith" },
+	},
+	Poise = {
+		HeavyMobs = { "FrostboundBrute" },
+		StaggerOnlyBetweenAttacks = true,
+	},
 	Combat = {
+		WolfDamageFraction = 0.2, -- wolf hit = this share of the target's max health before armor
+		WolfCooldownMultiplier = 0.85, -- wolf attack cooldown x this (~15% shorter)
 		MeleeRange = 8, -- base studs player to target center for a hit (plus MobStats.HitRadius and LagCompensation)
 		MeleeCooldown = 0.5, -- seconds between swings
 		MeleeBaseDamage = 4, -- fist / non-weapon damage (weapons use ItemCatalog damage)

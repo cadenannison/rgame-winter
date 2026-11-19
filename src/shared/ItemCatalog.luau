@@ -286,10 +286,27 @@ for id, def in ItemCatalog.Items do
 		or Config.Items.CategoryStack[category]
 		or Config.Items.FallbackStack
 	def.fuelSeconds = entry and entry.fuelSeconds
+	def.warmth = entry and entry.warmth
+	def.armor = Config.Armor.Values[id]
 	if entry and entry.equipSlot then
 		def.equipSlot = entry.equipSlot
 		def.coldResistance = entry.coldResistance or def.coldResistance
 	end
+end
+
+-- Workbench tier a recipe needs (0 = not a workbench recipe: by hand or another station). Data: data/Recipes.BenchTier.
+function ItemCatalog.benchTierOf(recipeId: string): number
+	local recipe = ItemCatalog.Recipes[recipeId]
+	if recipe == nil or recipe.station ~= "workbench" then
+		return 0
+	end
+	return Phase3Recipes.BenchTier[recipeId] or 1
+end
+
+-- Damage reduction fraction of one item (0 when it has no armor).
+function ItemCatalog.armorOf(id: string): number
+	local def = ItemCatalog.Items[id]
+	return if def and def.armor then def.armor else 0
 end
 
 -- Max stack of an item id (Config.Items.FallbackStack for unknown ids).

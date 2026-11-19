@@ -14,7 +14,9 @@ local CreatureRegistry = require(Shared.Creatures.Registry)
 local MobDread = require(Shared.logic.MobDread)
 local MobRules = require(Shared.logic.MobRules)
 local MobScaling = require(Shared.logic.MobScaling)
+local MobSpawnPick = require(Shared.logic.MobSpawnPick)
 local MobSpecies = require(Shared.logic.MobSpecies)
+local MobWildlife = require(Shared.logic.MobWildlife)
 local Server = script.Parent.Parent
 local MobKinds = require(script.Parent.MobKinds)
 local MobRegistry = require(script.Parent.MobRegistry)
@@ -36,6 +38,7 @@ local spawnBlocker: ((x: number, z: number) -> boolean)? = nil -- true = no natu
 local spawnBiasProvider: ((Vector3) -> number)? = nil -- hot springs attract mobs
 local eventBudgetMultiplier = 1 -- EventService spawn modifier (blizzard / false night)
 local nextGroupId = 0
+local pending: { MobWildlife.Pending } = {} -- killed animals waiting for their replacement day
 local rng = Random.new()
 local chunkService: any = nil
 local groundProbe: any = nil
@@ -224,12 +227,188 @@ local function spawnMember(
 	if MobRules.spawnExcluded(kind.category, ground.X, ground.Z, fires) then
 		return false
 	end
+	-- Day wildlife keeps out of every lit fire's radius too (Config.Wildlife.OutsideFireOnly).
+	if MobWildlife.dayBlocked(MobWorld.getDanger(), ground.X, ground.Z, fires) then
+		return false
+	end
 	if
 		kind.species and not MobSpecies.groundedOk(terrainY(ground.X, ground.Z, ground.Y), ground.Y)
 	then
 		return false -- ungrounded site: unbuilt chunk, roof, tree top
 	end
 	return MobSpawner.createMob(kind, ground, { groupId = groupId }) ~= nil
+end
+
+-- Live creatures within Wildlife.NearRadius of a point (flat distance).
+local function countNear(center: Vector3): number
+	local here = MobWorld.toPoint(center)
+	local n = 0
+	for _, row in MobRegistry.rows() do
+		if
+			MobRules.distance(here, MobWorld.toPoint(row.root.Position))
+			<= Config.Wildlife.NearRadius
+		then
+			n += 1
+		end
+	end
+	return n
+end
+
+local function playerDists(infos: { PlayerInfo }, x: number, z: number): { number }
+	local candidate = { x = x, z = z }
+	local dists: { number } = {}
+	for _, info in infos do
+		table.insert(dists, MobRules.distance(candidate, MobWorld.toPoint(info.root.Position)))
+	end
+	return dists
+end
+
+-- Random site 60..160 studs from one player (the anchor).
+local function candidateSite(anchor: Vector3): (number, number)
+	local angle = rng:NextNumber(0, math.pi * 2)
+	local dist = rng:NextNumber(Config.Mobs.SpawnMinDistance, Config.Mobs.SpawnMaxDistance)
+	return anchor.X + math.cos(angle) * dist, anchor.Z + math.sin(angle) * dist
+end
+
+-- Spawns `count` members of a kind around (x, z); true when the first member was placed.
+local function spawnGroup(
+	kind: MobKind,
+	count: number,
+	x: number,
+	z: number,
+	anchorY: number
+): boolean
+	local fires = MobWorld.collectFires()
+	local groupId = if count > 1 then MobSpawner.newGroupId() else nil
+	for i = 1, count do
+		local mx, mz = x, z
+		if i > 1 then
+			local a = rng:NextNumber(0, math.pi * 2)
+			mx += math.cos(a) * Config.Mobs.Spawning.PackSpread
+			mz += math.sin(a) * Config.Mobs.Spawning.PackSpread
+		end
+		if not spawnMember(kind, mx, mz, anchorY, groupId, fires) and i == 1 then
+			return false
+		end
+	end
+	return true
+end
+
+-- A killed animal is replaced RespawnDays later (by the day counter), away from every player.
+function MobSpawner.noteKill(kindName: string)
+	local kind = MobKinds.ByName[kindName]
+	if not kind then
+		return
+	end
+	local role = if kind.species then kind.species.role else "passive"
+	if MobWildlife.replaces(role, kind.category) then
+		MobWildlife.schedule(pending, kindName, MobWorld.getDay(), rng:NextNumber())
+	end
+end
+
+-- Pending replacements not yet placed (QA / debug).
+function MobSpawner.pendingCount(): number
+	return #pending
+end
+
+-- Places one due replacement; true when it consumed this tick.
+local function tryReplacement(infos: { PlayerInfo }, budget: number, danger: boolean): boolean
+	local entry = MobWildlife.nextDue(pending, MobWorld.getDay())
+	if not entry then
+		return false
+	end
+	local kind = MobKinds.ByName[entry.kind]
+	if not kind then
+		MobWildlife.remove(pending, entry)
+		return false
+	end
+	if MobRegistry.liveOf(kind.name) >= MobSpawnPick.cap(kind.name, danger, true) then
+		MobWildlife.remove(pending, entry) -- the world already holds enough of this kind
+		return false
+	end
+	local anchor = infos[rng:NextInteger(1, #infos)].root.Position
+	local x, z = candidateSite(anchor)
+	if not MobWildlife.respawnPointOk(playerDists(infos, x, z)) then
+		return false
+	end
+	local ring = MobWorld.ringAt(Vector3.new(x, 0, z))
+	local def = kind.species
+	if def then
+		if MobSpecies.ringWeight(def, ring) <= 0 then
+			return false
+		end
+	elseif table.find(kind.biomes or {}, Biomes.forRing(ring).id) == nil then
+		return false
+	end
+	if kind.cost > 0 and MobRegistry.costUsed() + kind.cost > budget then
+		return false
+	end
+	if def and not MobSpecies.partsOk(MobRegistry.partsUsed(), def.partCap, chunkParts()) then
+		return false
+	end
+	if spawnGroup(kind, 1, x, z, anchor.Y) then
+		MobWildlife.remove(pending, entry)
+		return true
+	end
+	return false
+end
+
+-- One natural-spawn attempt: site, weighted pick, cost / parts checks. True when a mob was placed.
+local function attemptSpawn(
+	infos: { PlayerInfo },
+	anchorIndex: number,
+	budget: number,
+	day: number,
+	danger: boolean,
+	dread: number
+): boolean
+	local anchor = infos[anchorIndex].root.Position
+	local x, z = candidateSite(anchor)
+	if
+		not MobRules.spawnDistanceOk(
+			playerDists(infos, x, z),
+			Config.Mobs.SpawnMinDistance,
+			Config.Mobs.SpawnMaxDistance
+		)
+	then
+		return false
+	end
+	local ring = MobWorld.ringAt(Vector3.new(x, 0, z))
+	local live: { [string]: number } = {}
+	for name in MobKinds.ByName do
+		live[name] = MobRegistry.liveOf(name)
+	end
+	local pick = MobSpawnPick.pick({
+		entries = MobKinds.SpawnEntries,
+		ring = ring,
+		day = day,
+		danger = danger,
+		dread = dread,
+		live = live,
+		limits = true,
+	}, rng:NextNumber())
+	local kind = if pick then MobKinds.ByName[pick] else nil
+	if not kind then
+		return false
+	end
+	local costUsed = MobRegistry.costUsed()
+	if kind.cost > 0 and costUsed + kind.cost > budget then
+		return false
+	end
+	local def = kind.species
+	local count = MobSpawnPick.groupSize(kind.name, MobRegistry.liveOf(kind.name), danger, true)
+	while count > 1 and kind.cost > 0 and costUsed + kind.cost * count > budget do
+		count -= 1
+	end
+	if count < 1 then
+		return false
+	end
+	if
+		def and not MobSpecies.partsOk(MobRegistry.partsUsed(), def.partCap * count, chunkParts())
+	then
+		return false
+	end
+	return spawnGroup(kind, count, x, z, anchor.Y)
 end
 
 function MobSpawner.trySpawn(infos: { PlayerInfo })
@@ -256,87 +435,26 @@ function MobSpawner.trySpawn(infos: { PlayerInfo })
 	if MobRegistry.count() >= Config.Scaling.MaxLiveMobs then
 		return
 	end
-
-	local anchorIndex = rng:NextInteger(1, #infos)
-	local anchor = infos[anchorIndex].root.Position
-	local angle = rng:NextNumber(0, math.pi * 2)
-	local dist = rng:NextNumber(Config.Mobs.SpawnMinDistance, Config.Mobs.SpawnMaxDistance)
-	local x = anchor.X + math.cos(angle) * dist
-	local z = anchor.Z + math.sin(angle) * dist
-	local candidate = { x = x, z = z }
-	local dists: { number } = {}
-	for _, info in infos do
-		table.insert(dists, MobRules.distance(candidate, MobWorld.toPoint(info.root.Position)))
-	end
-	if
-		not MobRules.spawnDistanceOk(
-			dists,
-			Config.Mobs.SpawnMinDistance,
-			Config.Mobs.SpawnMaxDistance
-		)
-	then
+	if tryReplacement(infos, MobWildlife.budget(budget, maxRing, #infos), danger) then
 		return
 	end
-	local ring = MobWorld.ringAt(Vector3.new(x, 0, z))
-	local biomeId = Biomes.forRing(ring).id
-	-- Legacy rows (biome lists) and species rows (ring weights) share one weighted pick.
-	local names: { string } = {}
-	local weights: { number } = {}
-	for _, row in MobScaling.spawnTable(MobKinds.SpawnEntries, biomeId, day, danger) do
-		table.insert(names, row.kind)
-		table.insert(weights, row.weight * MobScaling.weightFactor(row.kind, day))
+
+	-- The anchor player's ring sets how many creatures should be near them (Config.Wildlife targets).
+	local anchorIndex = rng:NextInteger(1, #infos)
+	local anchor = infos[anchorIndex].root.Position
+	local anchorRing = MobWorld.ringAt(anchor)
+	budget = MobWildlife.budget(budget, anchorRing, #infos)
+	local attempts = MobWildlife.attempts(countNear(anchor), anchorRing)
+	if attempts <= 0 then
+		return
 	end
 	local points: { MobDread.Point } = {}
 	for _, info in infos do
 		table.insert(points, MobWorld.toPoint(info.root.Position))
 	end
 	local dread = MobDread.factor(points, anchorIndex, #infos)
-	for _, kind in MobKinds.SpeciesKinds do
-		local def = kind.species
-		if def and MobSpecies.underCap(def, MobRegistry.liveOf(kind.name)) then
-			local w = MobSpecies.spawnWeight(def, ring, day, danger)
-			if w > 0 then
-				table.insert(names, kind.name)
-				table.insert(weights, MobDread.weight(def.role, w, dread))
-			end
-		end
-	end
-	local pick = MobRules.pickWeighted(weights, rng:NextNumber())
-	if not pick then
-		return
-	end
-	local kind = MobKinds.ByName[names[pick]]
-	if not kind then
-		return
-	end
-	local costUsed = MobRegistry.costUsed()
-	if kind.cost > 0 and costUsed + kind.cost > budget then
-		return
-	end
-	local def = kind.species
-	local count = 1
-	if def then
-		count = MobSpecies.groupSize(def, MobRegistry.liveOf(kind.name))
-		while count > 1 and kind.cost > 0 and costUsed + kind.cost * count > budget do
-			count -= 1
-		end
-		if
-			count < 1
-			or not MobSpecies.partsOk(MobRegistry.partsUsed(), def.partCap * count, chunkParts())
-		then
-			return
-		end
-	end
-	local fires = MobWorld.collectFires()
-	local groupId = if count > 1 then MobSpawner.newGroupId() else nil
-	for i = 1, count do
-		local mx, mz = x, z
-		if i > 1 then
-			local a = rng:NextNumber(0, math.pi * 2)
-			mx += math.cos(a) * Config.Mobs.Spawning.PackSpread
-			mz += math.sin(a) * Config.Mobs.Spawning.PackSpread
-		end
-		if not spawnMember(kind, mx, mz, anchor.Y, groupId, fires) and i == 1 then
+	for _ = 1, attempts do
+		if attemptSpawn(infos, anchorIndex, budget, day, danger, dread) then
 			return
 		end
 	end

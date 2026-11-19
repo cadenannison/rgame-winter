@@ -90,6 +90,10 @@ function MobCombat.applyDamage(row: MobRow, damage: number, killer: Player?)
 		return -- already dead or removed
 	end
 	row.health -= damage
+	if killer then
+		row.sp.lastHitAt = os.clock() -- Aggro: the hitter may aggro a fire-safe mob inside a fire radius
+		row.sp.lastHitBy = killer
+	end
 	row.model:SetAttribute(HEALTH_ATTRIBUTE, math.max(0, row.health))
 	if row.health > 0 then
 		row.provoked = true -- Retaliate / TerritorialWarn read this on the next AI step

@@ -112,7 +112,8 @@ local function registerChests(entry: Live)
 		site.id,
 		lootSeed or ChunkService.getSeed() or 0,
 		site.key,
-		candidates
+		candidates,
+		site.ring
 	)
 	entry.chestCount = #picks
 	for _, pick in picks do

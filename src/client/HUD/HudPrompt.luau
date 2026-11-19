@@ -11,6 +11,7 @@ local Logic = Shared:WaitForChild("logic")
 local FireLogic = require(Logic:WaitForChild("FireLogic"))
 local FireTiers = require(Logic:WaitForChild("FireTiers"))
 local ItemsGather = require(Logic:WaitForChild("ItemsGather"))
+local MobNames = require(Logic:WaitForChild("MobNames"))
 local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
 
 export type Args = {
@@ -76,7 +77,10 @@ function HudPrompt.compute(a: Args): (Instance?, string, number?, boolean)
 			return nil, "", nil, false
 		end
 		local hits = target:GetAttribute(ItemCatalog.NodeHitsAttribute)
-		local progress = if type(hits) == "number" then hits / Config.Gather.HitsToDeplete else nil
+		-- Hits-based work shows progress; instant pickups (forage) show none (Config.Gather.Effort ShowProgress).
+		local progress = if type(hits) == "number"
+			then ItemsGather.progressOf(node.kind, hits)
+			else nil
 		local stack = a.shownStack
 		local ok = ItemsGather.canHarvest(
 			node.kind,
@@ -98,7 +102,7 @@ function HudPrompt.compute(a: Args): (Instance?, string, number?, boolean)
 				and humanoid.MaxHealth > 0
 			then hp / humanoid.MaxHealth
 			else nil
-		local name = HudConfig.MobNames[target.Name] or target.Name
+		local name = HudConfig.MobNames[target.Name] or MobNames.display(target.Name)
 		return target, `Hunt {name} {a.inputHint}`, progress, false
 	end
 	return nil, "", nil, false

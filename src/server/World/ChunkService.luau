@@ -19,6 +19,7 @@ local PerfBudget = require(Shared:WaitForChild("logic"):WaitForChild("PerfBudget
 local FireTiers = require(Shared:WaitForChild("logic"):WaitForChild("FireTiers"))
 local MassivePlacement = require(Shared:WaitForChild("logic"):WaitForChild("MassivePlacement"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
+local Biomes = require(Shared:WaitForChild("data"):WaitForChild("Biomes"))
 local Server = ServerScriptService:WaitForChild("Server")
 local DebugService = require(Server:WaitForChild("Debug"):WaitForChild("DebugService"))
 local GatherService = require(Server:WaitForChild("Items"):WaitForChild("GatherService"))
@@ -316,7 +317,10 @@ local function buildChunk(chunk: WorldLayout.Chunk, root: Folder, forced: boolea
 		fill(SLOT_TAGS.Tree, chunk.trees)
 	end
 	fill(SLOT_TAGS.Rock, chunk.rocks)
-	fill(ORE_TAG, chunk.ore)
+	local biomeDef = Biomes.ById[chunk.biome]
+	if biomeDef and biomeDef.ring + 1 >= Config.Loot.Rings.IronNodeMinRing then -- iron nodes: ring gate
+		fill(ORE_TAG, chunk.ore)
+	end
 	fill(SLOT_TAGS.Food, chunk.food)
 	fill(SLOT_TAGS.SpawnZone, chunk.spawnZones)
 	for _, poi in chunk.pois do

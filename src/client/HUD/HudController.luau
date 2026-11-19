@@ -24,7 +24,7 @@ local ActionPick = require(Logic:WaitForChild("ActionPick"))
 local FireLogic = require(Logic:WaitForChild("FireLogic"))
 local FireTiers = require(Logic:WaitForChild("FireTiers"))
 local Crafting = require(Logic:WaitForChild("Crafting"))
-local Repair = require(Logic:WaitForChild("Repair"))
+local SlotViewModel = require(Logic:WaitForChild("SlotViewModel"))
 local MetaSnapshot = require(Logic:WaitForChild("MetaSnapshot"))
 local RadiusRing = require(script.Parent.Parent:WaitForChild("Fire"):WaitForChild("RadiusRing"))
 local FireMeter = require(script.Parent.Parent:WaitForChild("Fire"):WaitForChild("FireMeter"))
@@ -598,37 +598,15 @@ function HudController.start()
 			table.clear(stacks)
 			table.clear(counts)
 			hasItems = false
-			for i, stack in p.slots do
-				if
-					type(i) == "number"
-					and type(stack) == "table"
-					and type(stack.id) == "string"
-				then
-					local n = if type(stack.count) == "number" then stack.count else 1
-					stacks[i] = {
-						id = stack.id,
-						count = n,
-						durability = if type(stack.durability) == "number"
-							then stack.durability
-							else nil,
-					}
-					counts[stack.id] = (counts[stack.id] or 0) + n
-					hasItems = true
-				end
+			for i, stack in SlotViewModel.decodeSlots(p.slots) do
+				stacks[i] = stack
+				counts[stack.id] = (counts[stack.id] or 0) + stack.count
+				hasItems = true
 			end
 			for i, slot in slots do
-				local stack = stacks[i]
-				local def = if stack then ItemCatalog.Items[stack.id] else nil
-				slot.name.Text = if def then def.name elseif stack then stack.id else ""
-				local itemDef = if stack then ItemCatalog.Items[stack.id] else nil
-				slot.count.Text = if stack and stack.count > 1
-					then `x{stack.count}`
-					elseif
-						stack
-						and itemDef
-						and stack.durability ~= nil
-					then Repair.durabilityLabel(itemDef, stack.durability) or ""
-					else ""
+				local v = SlotViewModel.view(stacks[i])
+				slot.name.Text = v.name
+				slot.count.Text = v.countText
 			end
 			-- Onboarding credit from real inventory changes.
 			local now = os.clock()

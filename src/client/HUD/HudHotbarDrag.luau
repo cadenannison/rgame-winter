@@ -12,6 +12,7 @@ local UserInputService = game:GetService("UserInputService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
+local SlotLayout = require(Shared:WaitForChild("logic"):WaitForChild("SlotLayout"))
 local HudWidgets = require(script.Parent:WaitForChild("HudWidgets"))
 
 local HudHotbarDrag = {}
@@ -50,8 +51,9 @@ function HudHotbarDrag.attach(
 				end
 			end
 			local n = string.match(object.Name, PANEL_SLOT_PATTERN)
-			if n ~= nil and object:IsA("GuiButton") then
-				return tonumber(n)
+			local index = if n ~= nil and object:IsA("GuiButton") then tonumber(n) else nil
+			if index ~= nil and SlotLayout.areaOf(index) ~= nil then
+				return index
 			end
 		end
 		return nil

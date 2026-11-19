@@ -39,6 +39,11 @@ export type RunConfig = {
 	PollInterval: number, -- seconds between run roster polls (own cadence, not Meters.TickInterval)
 	SeedWaitSeconds: number, -- run server boot waits this long for the first player's teleport data (seed)
 	ReturnFailedMessage: string, -- kick text when returning to the lobby failed
+	SummaryStateAttribute: string, -- LocalPlayer attribute (client-set): "" | "open" | "dismissed"
+	ReturnStudioText: string, -- toast when Studio cannot teleport (fallback: lobby mode override)
+	ReturnFailedToast: string, -- toast when a real return teleport failed after its retries
+	ReturnNotifyKind: string, -- Remotes.Notify kind for those toasts
+	ReturnButtonResetSeconds: number, -- Return button text resets after this long
 	RefusedMessage: string, -- kick text for a player not in this run's party
 	DefaultCause: string, -- summary "what got you" when nothing was recorded
 }
@@ -144,6 +149,11 @@ local Sections: Sections = {
 		PollInterval = 0.5,
 		SeedWaitSeconds = 20,
 		ReturnFailedMessage = "Could not return to the lobby. Please rejoin.",
+		SummaryStateAttribute = "SummaryState",
+		ReturnStudioText = "Studio cannot teleport. Lobby mode is set: Stop, then press Test again.",
+		ReturnFailedToast = "Could not reach the lobby. Try again in a moment.",
+		ReturnNotifyKind = "error",
+		ReturnButtonResetSeconds = 8, -- the Return button text resets if nothing happened
 		RefusedMessage = "This run is not available to you.",
 		DefaultCause = "Cold",
 	},

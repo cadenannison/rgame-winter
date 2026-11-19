@@ -120,3 +120,29 @@ Use `/debug mob <id>` (spawns in front) and `/debug mobs` (nearby list with Stat
 - Brute (`/debug mob FrostboundBrute`): telegraph ring is 10 studs radius and the slam hits exactly inside it (step just outside the ring: no damage); model size looks right (5x7x5 root).
 - Blizzard: fires still glow faintly through the whiteout.
 - Lobby: step on a pad, press V (or tap Leave) to leave; Q does nothing there; the Leave button reads "Leave [V]". In a run, Q still opens the ping wheel.
+
+
+## Backpack grid fix (headless only)
+- Open Backpack (B), drag a stack from the hotbar into the 27-slot grid: the grid slot shows name, icon-less label, count (x N) and rarity border, same as hotbar slots. Try with hotbar gaps (e.g. only slots 1, 4 filled) and grid slots far apart (slot 12 and 30), then move items back, cancel a drag (release outside the panel), and move while a chest is open: every slot keeps its label.
+
+## Hidden-wood round (headless only)
+- Join: any wood stuck in an invalid slot comes back into a free slot (output log shows "[Inventory] ... rescued N item(s)").
+- Drag Wood from hotbar slot 2 into several grid cells (first, middle, last), then pick up more wood: the grid cell shows Wood with the summed count; the hotbar slot is empty; no ghost stack elsewhere. Drag it back to the hotbar.
+- Run `/debug inv` after each step: server lines list "slot N [hotbar|grid cell k]: item xN" and no WARNING; client output lists "grid cell k reads slot s" with the same item. If wood is invisible, paste the `/debug inv` output to the PM (a WARNING line or a mirror/ui mismatch identifies the layer).
+- Same for a chest cell and an equipment slot.
+
+
+## Round: combat, economy, weather, loot (4 agents, headless only)
+- Sprint outruns a wolf (walk does not). Wolf hit = about a fifth of max health; armor reduces it (cap 60%).
+- Wolves ignore you inside a fire radius until you hit them, and give up when you run (~50 studs) or break line of sight.
+- Day animals spawn only outside fire radii and are fewer (half). A killed animal is replaced 1-3 days later, away from players.
+- Mob counts within ~150 studs: 3-6 in rings 1-2, 5-9 in rings 3-4 (`/debug mobs`); the 8 regional species appear.
+- Frost Brute: hit it during the telegraph; the slam still lands (flinch only). Prompts/HUD say "Rime Wolverine", not "RimeWolverine".
+- Instant pickups (sticks, berries, mushrooms, pinecones, reeds) on one E with no progress bar; trees/stone/ore/ice/scrap/bone show hit progress; chest opens on a short hold.
+- Workbench: only current-tier recipes listed plus an "Upgrade Workbench" row with cost; higher recipes appear after the upgrade (party-wide, small visual change).
+- Clothing tooltips read "Warmth +N"; region message is a general hint (comfortable / chilly / dangerous / deadly), no numbers.
+- `/debug blizzard start` works; `/debug blizzard` prints state. 2-3x snow. Whiteout limited to the full-upgrade campfire radius, eased. Night + blizzard: dark blue-grey, no black band over a white wall.
+- "The wind starts to howl..." toast ~3 min before a blizzard; arrival toast at start.
+- One death panel at a time: spectate bar only while a teammate lives, else run summary.
+- Return to lobby works in Studio/debug (local reload); real teleport hand-tested on the published place.
+- Ring 1 structures: at most 1 chest (may be none), rings 2-4 up to 2/3/4; no iron on day 2; iron nodes only ring 2+. Chests do not open through walls.

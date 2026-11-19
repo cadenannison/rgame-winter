@@ -51,6 +51,7 @@ local fullGroupPredicate: (() -> boolean)? = nil
 local spawnSink: ((number) -> ())? = nil
 local lastSpawnStep = -1
 local lastCueKey = ""
+local announcedStart = -1 -- bStartAt of the blizzard whose forecast toast was already sent
 local blizzardStartCbs: { () -> () } = {}
 local eventStartCbs: { (string) -> () } = {}
 local eventEndCbs: { (string, { Player }) -> () } = {}
@@ -74,6 +75,11 @@ end
 local function sendCue(kind: string, level: number?, eventId: string?)
 	Remotes.event(Remotes.Cue)
 		:FireAllClients({ kind = kind, level = level, event = eventId } :: Remotes.CuePayload)
+end
+
+-- Server-decided toast to every player (existing Notify remote; only on state change, never per tick).
+local function notifyAll(text: string)
+	Remotes.event(Remotes.Notify):FireAllClients(Config.Blizzard.NotifyKind, text)
 end
 
 local function survivors(): { Player }
@@ -180,6 +186,7 @@ end
 local function handle(tr: EventSchedule.Transition)
 	local kind, id = tr.kind, tr.id
 	if kind == "BlizzardStart" then
+		notifyAll(Config.Blizzard.ArrivalText)
 		fire(blizzardStartCbs :: { (...any) -> () })
 		fire(eventStartCbs :: { (...any) -> () }, BLIZZARD_ID)
 	elseif kind == "BlizzardEnd" then
@@ -226,6 +233,26 @@ local function pollDebug(t: number)
 	end
 end
 
+-- About half a day before a scheduled blizzard: one toast and a sound-hook cue.
+local function checkForecast(t: number)
+	if state.bPhase ~= "idle" or state.dPhase ~= "idle" then
+		return
+	end
+	if
+		BlizzardWind.forecastDue(
+			t,
+			state.bWarnAt,
+			state.bStartAt,
+			Config.Blizzard.ForecastLeadSeconds,
+			announcedStart
+		)
+	then
+		announcedStart = state.bStartAt
+		notifyAll(Config.Blizzard.ForecastText)
+		sendCue(Config.Blizzard.ForecastCue, 0)
+	end
+end
+
 local function tick()
 	local t = now()
 	if t < lastElapsed - 1 then
@@ -242,6 +269,7 @@ local function tick()
 	for _, tr in EventSchedule.step(state, t, fullGroup, params) do
 		handle(tr)
 	end
+	checkForecast(t)
 	publish(t)
 	updateCues(t)
 	updateSpawnSink(t)
@@ -325,6 +353,28 @@ end
 -- Debug: pin the intensity (nil releases it back to the schedule curve).
 function EventService.setIntensityOverride(value: number?)
 	intensityOverride = if value == nil then nil else math.clamp(value, 0, 1)
+end
+
+-- Debug: snapshot for "/debug blizzard" (pure formatting in BlizzardWind.statusText).
+function EventService.getBlizzardStatus(): BlizzardWind.Status
+	local t = now()
+	local active = EventSchedule.isBlizzardActive(state)
+	local untilStart: number? = nil
+	local forecastIn: number? = nil
+	if state.bPhase ~= "active" and state.bStartAt - t < 1e8 then
+		untilStart = math.max(state.bStartAt - t, 0)
+		forecastIn = if announcedStart == state.bStartAt
+			then 0
+			else math.max(state.bStartAt - Config.Blizzard.ForecastLeadSeconds - t, 0)
+	end
+	return {
+		active = active,
+		phase = state.bPhase,
+		intensity = currentIntensity(t),
+		timeLeft = if active then math.max(state.bEndAt - t, 0) else 0,
+		untilStart = untilStart,
+		forecastIn = forecastIn,
+	}
 end
 
 function EventService.forceDark(id: string): boolean

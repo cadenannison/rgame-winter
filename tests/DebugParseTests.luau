@@ -24,6 +24,7 @@ return function(check: (string, boolean) -> ())
 		{ text = "blizzard off", name = "blizzard", expect = false },
 		{ text = "blizzard start", name = "blizzard", expect = "start" },
 		{ text = "blizzard stop", name = "blizzard", expect = "stop" },
+		{ text = "blizzard", name = "blizzard", expect = "" },
 		{ text = "blizzard intensity 0.5", name = "blizzard", expect = "intensity 0.5" },
 		{ text = "darkEvent", name = "darkEvent", expect = "" },
 		{ text = "stalker on", name = "stalker", expect = true },
@@ -48,6 +49,7 @@ return function(check: (string, boolean) -> ())
 		{ text = "sprint off", name = "sprint", expect = "off" },
 		{ text = "mob " .. mobKind, name = "mob", expect = mobKind },
 		{ text = "mobs", name = "mobs", expect = "" },
+		{ text = "inv", name = "inv", expect = "" },
 	}
 	local covered: { [string]: boolean } = {}
 	for _, c in cases do
@@ -58,6 +60,31 @@ return function(check: (string, boolean) -> ())
 		-- structures/respawn/etc. accept an empty string; "seed" too
 		check(`debugParse: "{c.text}" validates`, valid)
 	end
+	-- blizzard: every word reaches a normalized action (start was the one that "did nothing").
+	local function blizzardAction(text: string): string?
+		local ok, name, arg = HudMath.parseDebug(text, DebugCommands.NAMES)
+		if not ok then
+			return nil
+		end
+		local valid, value = DebugCommands.validate(name, arg, limits)
+		return if valid and type(value) == "table" then (value :: any).action else nil
+	end
+	check("debugParse: blizzard start -> start", blizzardAction("blizzard start") == "start")
+	check("debugParse: blizzard stop -> stop", blizzardAction("blizzard stop") == "stop")
+	check("debugParse: blizzard -> status", blizzardAction("blizzard") == "status")
+	check("debugParse: blizzard status -> status", blizzardAction("blizzard status") == "status")
+	check("debugParse: blizzard on -> start", blizzardAction("blizzard on") == "start")
+	check("debugParse: blizzard off -> stop", blizzardAction("blizzard off") == "stop")
+	check(
+		"debugParse: blizzard intensity 0.5",
+		blizzardAction("blizzard intensity 0.5") == "intensity"
+	)
+	check(
+		"debugParse: blizzard intensity 2 rejected",
+		blizzardAction("blizzard intensity 2") == nil
+	)
+	check("debugParse: blizzard junk rejected", blizzardAction("blizzard banana") == nil)
+
 	local all = true
 	for _, n in DebugCommands.NAMES do
 		all = all and covered[n] == true

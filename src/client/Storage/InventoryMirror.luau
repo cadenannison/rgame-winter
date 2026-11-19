@@ -4,7 +4,9 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Remotes = require(Shared:WaitForChild("Remotes"))
+local SlotViewModel = require(Shared:WaitForChild("logic"):WaitForChild("SlotViewModel"))
 
 export type Stack = { id: string, count: number, durability: number? }
 export type Mirror = {
@@ -40,16 +42,9 @@ function InventoryMirror.start(): Mirror
 			local before = counts
 			slots = {}
 			counts = {}
-			for i, s in p.slots do
-				if type(i) == "number" and type(s) == "table" and type(s.id) == "string" then
-					local n = if type(s.count) == "number" then s.count else 1
-					slots[i] = {
-						id = s.id,
-						count = n,
-						durability = if type(s.durability) == "number" then s.durability else nil,
-					}
-					counts[s.id] = (counts[s.id] or 0) + n
-				end
+			slots = SlotViewModel.decodeSlots(p.slots) -- tolerates string keys from sparse tables
+			for _, s in slots do
+				counts[s.id] = (counts[s.id] or 0) + s.count
 			end
 			equipment = {}
 			if type(p.equipment) == "table" then

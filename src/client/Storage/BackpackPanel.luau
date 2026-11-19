@@ -13,11 +13,11 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
-local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
 local Rarity = require(Shared:WaitForChild("data"):WaitForChild("Rarity"))
 local Equipment = require(Shared:WaitForChild("logic"):WaitForChild("Equipment"))
 local InventoryMove = require(Shared:WaitForChild("logic"):WaitForChild("InventoryMove"))
-local Repair = require(Shared:WaitForChild("logic"):WaitForChild("Repair"))
+local SlotViewModel = require(Shared:WaitForChild("logic"):WaitForChild("SlotViewModel"))
+local SlotLayout = require(Shared:WaitForChild("logic"):WaitForChild("SlotLayout"))
 local HudConfig = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("HudConfig"))
 local EquipmentViewport = require(script.Parent:WaitForChild("EquipmentViewport"))
 local InventoryMirror = require(script.Parent:WaitForChild("InventoryMirror"))
@@ -41,6 +41,8 @@ export type Panel = {
 	showFull: () -> (), -- "Inventory full" hint for Config.Inventory.FullHintSeconds
 	-- QA / tests: the same entry points the pointer handlers use.
 	move: (from: InventoryMove.Addr, to: InventoryMove.Addr?, count: number) -> (),
+	-- /debug inv: per displayed grid cell, the slot index it reads and what it shows; warns about strays.
+	debugLines: () -> { string },
 	destroy: () -> (),
 }
 type Stack = { id: string, count: number, durability: number? }
@@ -409,8 +411,7 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 	end
 
 	local function dropText(stack: Stack): string
-		local def = ItemCatalog.Items[stack.id]
-		return if def then def.name else stack.id
+		return SlotViewModel.name(stack)
 	end
 
 	local function makeSlot(
@@ -477,13 +478,14 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		local column = if slotId <= #Config.Equipment.Slots / 2 then leftCol else rightCol
 		makeSlot(column, addr, slotId, Config.Equipment.SlotLabels[id])
 	end
-	for slot = 1, Config.Inventory.HotbarSize do
+	for slot = SlotLayout.HotbarFirst, SlotLayout.HotbarLast do
 		makeSlot(hotGrid, { kind = "inv", slot = slot }, slot, tostring(slot))
 	end
-	for slot = Config.Inventory.HotbarSize + 1, Config.Inventory.HotbarSize + Config.Inventory.BackpackSize do
+	for cell = 1, SlotLayout.GridCells do
+		local slot = SlotLayout.gridCellToSlot(cell) :: number
 		makeSlot(packGrid, { kind = "inv", slot = slot }, slot, nil)
 	end
-	for slot = 1, Config.Storage.ChestSlots do
+	for slot = SlotLayout.ChestFirst, SlotLayout.ChestLast do
 		makeSlot(chestGrid, { kind = "chest", id = "", slot = slot }, slot, nil)
 	end
 
@@ -525,19 +527,13 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 				view.addr = addr
 			end
 			local stack = stackAt(addr)
-			local def = if stack then ItemCatalog.Items[stack.id] else nil
-			view.name.Text = if stack then dropText(stack) else ""
-			local text = ""
-			if stack and stack.count > 1 then
-				text = `x{stack.count}`
-			elseif stack and def and stack.durability ~= nil then
-				text = Repair.durabilityLabel(def, stack.durability) or "" -- unbreakable items show nothing
-			end
-			view.count.Text = text
+			local v = SlotViewModel.view(stack)
+			view.name.Text = v.name
+			view.count.Text = v.countText
 			local rarityColor: Color3? = nil
-			if stack then
-				local c = Rarity.Colors[ItemCatalog.rarityOf(stack.id)]
-				if c and ItemCatalog.rarityOf(stack.id) ~= "common" then
+			if v.occupied and v.rarity ~= "common" then
+				local c = Rarity.Colors[v.rarity]
+				if c then
 					rarityColor = Color3.fromRGB(c[1], c[2], c[3])
 				end
 			end
@@ -967,6 +963,36 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		end,
 		isOpen = function(): boolean
 			return isOpen
+		end,
+		debugLines = function(): { string }
+			local lines: { string } = {}
+			local shown: { [number]: boolean } = {}
+			for cell = 1, SlotLayout.GridCells do
+				local slot = SlotLayout.gridCellToSlot(cell) :: number
+				local view = views[key({ kind = "inv", slot = slot })]
+				local stack = mirror.slots()[slot]
+				shown[slot] = true
+				table.insert(
+					lines,
+					`grid cell {cell} reads slot {slot}: mirror={if stack
+						then `{stack.id} x{stack.count}`
+						else "empty"} ui="{if view then view.name.Text else "NO VIEW"}" "{if view
+						then view.count.Text
+						else ""}"`
+				)
+			end
+			for slot = SlotLayout.HotbarFirst, SlotLayout.HotbarLast do
+				shown[slot] = true
+			end
+			for slot, stack in mirror.slots() do
+				if not shown[slot] then
+					table.insert(
+						lines,
+						`WARNING: client holds {stack.id} x{stack.count} in slot {slot}, outside every displayed area`
+					)
+				end
+			end
+			return lines
 		end,
 		setChest = function(info: ChestInfo?)
 			chestInfo = info

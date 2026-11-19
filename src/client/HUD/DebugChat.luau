@@ -17,6 +17,13 @@ local CHANNEL_NAME = "RBXGeneral"
 
 local DebugChat = {}
 
+-- Client-side handlers that run alongside the server command (e.g. "inv" prints the client's grid cells).
+local localHandlers: { [string]: (() -> ())? } = {}
+
+function DebugChat.onLocal(name: string, fn: (() -> ())?)
+	localHandlers[name] = fn
+end
+
 local function say(text: string)
 	print(`[Debug] {text}`)
 	pcall(function()
@@ -47,6 +54,10 @@ local function handle(fullText: string)
 		return
 	end
 	send(nameOrErr, arg)
+	local localHandler = localHandlers[nameOrErr]
+	if localHandler then
+		localHandler()
+	end
 end
 
 -- Returns a cleanup function; a no-op (and nothing connected) when not in Studio.

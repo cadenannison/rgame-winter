@@ -16,6 +16,7 @@ local ItemCatalog = require(Shared.ItemCatalog)
 local Equipment = require(Shared.logic.Equipment)
 local Inventory = require(Shared.logic.Inventory)
 local InventoryMove = require(Shared.logic.InventoryMove)
+local SlotLayout = require(Shared.logic.SlotLayout)
 local DataService = require(script.Parent.Parent.Data.DataService)
 local Guard = require(script.Parent.Parent.Net.Guard)
 local HeldItem = require(script.Parent.HeldItem)
@@ -59,19 +60,14 @@ local REFUSAL: { [string]: string } = {
 	Loading = "Still loading",
 }
 
-local TOTAL_SLOTS = Config.Inventory.HotbarSize + Config.Inventory.BackpackSize
+local TOTAL_SLOTS = SlotLayout.InvSize
 
 local function sync(player: Player)
 	local inv = inventories[player]
 	if inv == nil or player.Parent ~= Players then
 		return
 	end
-	local slots: { [number]: Remotes.ItemStack? } = {}
-	for i, s in inv.slots do
-		if s then
-			slots[i] = { id = s.id, count = s.count, durability = s.durability }
-		end
-	end
+	local slots: { Remotes.ItemStack } = SlotLayout.snapshot(inv)
 	local index = selected[player] or 1
 	local worn: { [string]: Remotes.ItemStack } = {}
 	local equip = equipment[player]
@@ -101,12 +97,32 @@ local function persistEquipment(player: Player)
 	end
 end
 
+-- Moves any item stored outside a valid slot area into the first free valid slot (join, rejoin hold, profile
+-- load). Returns the number of items moved.
+local function rescueStrays(player: Player): number
+	local inv = inventories[player]
+	if inv == nil then
+		return 0
+	end
+	local moved, remaining = SlotLayout.rescue(inv)
+	if moved > 0 or remaining > 0 then
+		warn(
+			`[Inventory] {player.Name}: rescued {moved} item(s) from invalid slots, {remaining} stack(s) still stranded`
+		)
+	end
+	if moved > 0 then
+		sync(player)
+	end
+	return moved
+end
+
 local function loadEquipment(player: Player, profile: DataService.Profile)
 	if player.Parent ~= Players or inventories[player] == nil or equipReady[player] then
 		return
 	end
 	equipment[player] = Equipment.fromMap(profile.equipment)
 	equipReady[player] = true
+	rescueStrays(player)
 	-- Rewrite the validated map so dropped/unknown items leave the save.
 	persistEquipment(player)
 	sync(player)
@@ -136,6 +152,7 @@ local function setup(player: Player)
 		end
 	end
 	inventories[player] = inv
+	rescueStrays(player)
 	selected[player] = slot
 	player:SetAttribute(Config.Inventory.SlotAttribute, slot)
 	-- Re-show the held item on every (re)spawn; deferred so the Humanoid exists.
@@ -152,6 +169,47 @@ local function setup(player: Player)
 	if profile then
 		loadEquipment(player, profile)
 	end
+end
+
+-- /debug inv: every non-empty slot (index, area, item, count) plus a warning line when items sit outside every
+-- displayed area. Returns the lines.
+function InventoryService.debugDump(player: Player): { string }
+	local lines: { string } = {}
+	local inv = inventories[player]
+	if inv == nil then
+		return { "inv: no inventory" }
+	end
+	local keys: { any } = {}
+	for key, stack in inv.slots :: { [any]: any } do
+		if stack ~= nil then
+			table.insert(keys, key)
+		end
+	end
+	table.sort(keys, function(a: any, b: any)
+		return tostring(a) < tostring(b)
+	end)
+	for _, key in keys do
+		local s = (inv.slots :: { [any]: any })[key]
+		local area = SlotLayout.areaOf(key)
+		local cell = if area == "grid" then SlotLayout.slotToGridCell(key :: number) else nil
+		table.insert(
+			lines,
+			`slot {tostring(key)} [{area or "OUTSIDE"}{if cell then ` cell {cell}` else ""}]: {tostring(
+				s.id
+			)} x{tostring(s.count)}`
+		)
+	end
+	local strays = SlotLayout.strays(inv.slots :: any, inv.size)
+	if #strays > 0 then
+		table.insert(
+			lines,
+			`WARNING: {#strays} stack(s) outside every displayed area (rejoin or move to rescue)`
+		)
+	end
+	if #keys == 0 then
+		table.insert(lines, "inv: empty")
+	end
+	return lines
 end
 
 function InventoryService.get(player: Player): Inventory.Inv?
@@ -279,7 +337,7 @@ function InventoryService.sync(player: Player)
 end
 
 local function onSelect(player: Player, slot: unknown)
-	if not Guard.isNumber(slot) or not Guard.inRange(slot, 1, Config.Inventory.HotbarSize) then
+	if not Guard.isNumber(slot) or SlotLayout.areaOf(slot) ~= "hotbar" then
 		return
 	end
 	local index = math.floor(slot :: number)
@@ -295,7 +353,7 @@ local function onSelect(player: Player, slot: unknown)
 end
 
 local function onUse(player: Player, slot: unknown)
-	if not Guard.isNumber(slot) or not Guard.inRange(slot, 1, TOTAL_SLOTS) then
+	if not Guard.isNumber(slot) or SlotLayout.areaOf(slot) == nil then
 		return
 	end
 	local index = math.floor(slot :: number)

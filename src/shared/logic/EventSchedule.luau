@@ -275,7 +275,7 @@ end
 
 -- Debug: start a blizzard immediately (no warning). Returns false during another event.
 function EventSchedule.startBlizzardNow(state: State, now: number, p: Params): boolean
-	if state.dPhase ~= "idle" or state.bPhase ~= "idle" then
+	if state.dPhase ~= "idle" or state.bPhase == "active" then
 		return false
 	end
 	state.bWarnAt = now

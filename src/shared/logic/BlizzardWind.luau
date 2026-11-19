@@ -117,4 +117,63 @@ function BlizzardWind.quantize(x: number, step: number): number
 	return math.floor(x / step + 0.5) * step
 end
 
+-- Radius of the biggest campfire: the last tier's WarmRadius (Config.Fire.Tiers). 0 when no tiers.
+function BlizzardWind.maxFireRadius(tiers: { any }): number
+	local last = tiers[#tiers]
+	return if last then (last :: { WarmRadius: number }).WarmRadius else 0
+end
+
+-- Fog end (studs) for a whiteout amount 0..1: the clear-weather end at 0, the fire radius at 1 (never
+-- farther than clear). `whiteout` already carries the ease in/out (eased presence).
+function BlizzardWind.fogEnd(whiteout: number, radius: number, clearFogEnd: number): number
+	local target = math.min(math.max(radius, 1), clearFogEnd)
+	return BlizzardWind.lerp(clearFogEnd, target, math.clamp(whiteout, 0, 1))
+end
+
+-- True once per scheduled blizzard: it is idle, starts within `lead` seconds but after its warning
+-- (a debug start has startAt <= warnAt <= now), and this start was not announced yet.
+function BlizzardWind.forecastDue(
+	now: number,
+	warnAt: number,
+	startAt: number,
+	lead: number,
+	announcedStart: number
+): boolean
+	if startAt == announcedStart then
+		return false
+	end
+	local untilStart = startAt - now
+	return untilStart > 0 and untilStart <= lead and warnAt > now
+end
+
+export type Status = {
+	active: boolean,
+	phase: string, -- idle | warning | active
+	intensity: number,
+	timeLeft: number, -- seconds left of the active blizzard (0 when none)
+	untilStart: number?, -- seconds until the next scheduled start (nil = none planned)
+	forecastIn: number?, -- seconds until the forecast toast (0 = already shown/due)
+}
+
+local function minutes(seconds: number): string
+	return string.format("%d:%02d", math.floor(seconds / 60), math.floor(seconds % 60))
+end
+
+-- One toast line (<= HudConfig.ToastMaxChars) for /debug blizzard.
+function BlizzardWind.statusText(s: Status): string
+	local nextPart = "next none"
+	if s.untilStart ~= nil then
+		nextPart = `next {minutes(s.untilStart)}`
+		if s.forecastIn ~= nil then
+			nextPart ..= if s.forecastIn > 0
+				then ` forecast {minutes(s.forecastIn)}`
+				else " forecast sent"
+		end
+	end
+	return `blizzard {if s.active then "ON" else "off"} ({s.phase}) i={string.format(
+		"%.2f",
+		s.intensity
+	)} left {minutes(s.timeLeft)} {nextPart}`
+end
+
 return BlizzardWind

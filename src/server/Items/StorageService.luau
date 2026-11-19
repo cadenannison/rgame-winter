@@ -15,6 +15,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
 local Inventory = require(Shared.logic.Inventory)
+local SlotLayout = require(Shared.logic.SlotLayout)
 local Structures = require(Shared.data.Structures)
 local Guard = require(script.Parent.Parent.Net.Guard)
 local InventoryService = require(script.Parent.InventoryService)
@@ -40,15 +41,8 @@ local function notify(player: Player, text: string)
 end
 
 local function snapshot(chest: Instance?): Remotes.StorageStatePayload
-	local slots: { [number]: Remotes.ItemStack? } = {}
 	local rec = if chest then chests[chest] else nil
-	if rec then
-		for i, s in rec.inv.slots do
-			if s then
-				slots[i] = { id = s.id, count = s.count, durability = s.durability }
-			end
-		end
-	end
+	local slots: { Remotes.ItemStack } = if rec then SlotLayout.snapshot(rec.inv) else {}
 	return {
 		chest = chest,
 		slots = slots,

@@ -19,6 +19,7 @@ local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local DownedLogic = require(Shared:WaitForChild("logic"):WaitForChild("DownedLogic"))
 local DeathPanelState = require(Shared:WaitForChild("logic"):WaitForChild("DeathPanelState"))
+local DeathPanelInputs = require(script.Parent:WaitForChild("DeathPanelInputs"))
 local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
 local D = Config.Downed
@@ -348,6 +349,11 @@ function DownedUi.start(): () -> ()
 	returnButton.MouseButton1Click:Connect(function()
 		Remotes.event(Remotes.ReturnToLobbyRequest):FireServer()
 		returnButton.Text = "Returning..."
+		task.delay(Config.Run.ReturnButtonResetSeconds, function()
+			if not destroyed then
+				returnButton.Text = "Return to lobby"
+			end
+		end)
 	end)
 	local keyConn = UserInputService.InputBegan:Connect(
 		function(input: InputObject, processed: boolean)
@@ -375,13 +381,15 @@ function DownedUi.start(): () -> ()
 		local me: DownedLogic.Actor = { downed = meDowned, dead = meDead }
 
 		-- Authoritative state -> visibility (pure mapping, re-evaluated every scan, CharacterAdded and respawn).
+		local summaryState = DeathPanelInputs.summaryState()
 		local panelView = DeathPanelState.resolve({
 			downed = meDowned,
 			dead = meDead,
-			runEnded = false,
-			hasSummary = false,
+			runEnded = summaryState ~= "",
+			hasSummary = summaryState ~= "",
 			inLobby = false,
-			dismissed = false,
+			dismissed = summaryState == "dismissed",
+			aliveTeammates = DeathPanelInputs.aliveTeammates(),
 		})
 
 		-- Own downed banner.
@@ -433,8 +441,14 @@ function DownedUi.start(): () -> ()
 		end
 
 		-- Spectator mode.
-		deadPanel.Visible = panelView.showSpectate
-		deadPanel.Active = panelView.showSpectate
+		deadPanel.Visible = panelView.showDeadBar
+		deadPanel.Active = panelView.showDeadBar
+		prevButton.Visible = panelView.showSpectate and D.SpectateOnDeath
+		nextButton.Visible = prevButton.Visible
+		watching.Visible = panelView.showSpectate
+		deadTitle.Text = if panelView.showSpectate
+			then "You died"
+			else "You died. Nobody left to watch"
 		gui.Enabled = panelView.visible or revivePanel.Visible
 		if panelView.showSpectate then
 			if D.SpectateOnDeath then
@@ -467,8 +481,6 @@ function DownedUi.start(): () -> ()
 			else
 				watching.Text = ""
 			end
-			prevButton.Visible = D.SpectateOnDeath
-			nextButton.Visible = D.SpectateOnDeath
 		else
 			if spectated ~= nil then
 				spectated = nil
@@ -478,7 +490,9 @@ function DownedUi.start(): () -> ()
 					camera.CameraSubject = own
 				end
 			end
-			returnButton.Text = "Return to lobby"
+			if not panelView.showDeadBar then
+				returnButton.Text = "Return to lobby"
+			end
 		end
 	end
 

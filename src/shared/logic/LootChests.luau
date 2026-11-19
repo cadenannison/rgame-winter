@@ -80,6 +80,40 @@ function LootChests.ruleOf(structureType: string): Config.ChestCountRule
 	return rules[LootChests.classOf(structureType)] or rules[Config.Loot.DefaultClass]
 end
 
+-- Relative item weight for iron items (Config.Loot.Rings.IronItems) at an internal ring 0..3 (player ring =
+-- ring + 1): 0 before IronMinRing, then IronWeightByRing. Everything else weighs 1.
+function LootChests.ironWeight(ring: number): number
+	local R = Config.Loot.Rings
+	local playerRing = math.floor(ring) + 1
+	if playerRing < R.IronMinRing then
+		return 0
+	end
+	local list = R.IronWeightByRing
+	return list[math.clamp(playerRing, 1, #list)] or 0
+end
+
+function LootChests.itemWeightFor(ring: number): LootRoll.ItemWeight
+	local iron: { [string]: boolean } = {}
+	for _, id in Config.Loot.Rings.IronItems do
+		iron[id] = true
+	end
+	local w = LootChests.ironWeight(ring)
+	return function(id: string): number
+		return if iron[id] then w else 1
+	end
+end
+
+-- Max chests a structure may hold at an internal ring (player ring = ring + 1), from Config.Loot.Rings.Chests.
+function LootChests.ringRule(ring: number): Config.RingChestRule
+	local list = Config.Loot.Rings.Chests
+	local count = #list
+	return list[math.clamp(math.floor(ring) + 1, 1, count)]
+end
+
+local function ownsRange(structureType: string): boolean
+	return table.find(Config.Loot.Rings.OwnRangeClasses, LootChests.classOf(structureType)) ~= nil
+end
+
 local function keyHash(runSeed: number, key: string): number
 	local h = mix(0x7F4A7C15, runSeed)
 	for i = 1, #key do
@@ -94,10 +128,22 @@ function LootChests.countFor(
 	structureType: string,
 	runSeed: number,
 	key: string,
-	available: number
+	available: number,
+	ring: number? -- internal ring 0..3; nil = class range only (legacy)
 ): number
 	local rule = LootChests.ruleOf(structureType)
 	local rng = LootChests.makeRng(keyHash(runSeed, key))
+	if ring ~= nil and not ownsRange(structureType) then
+		-- ring rule: up to min(ring max, class max) chests, each one chance-based (a structure may have none)
+		local rr = LootChests.ringRule(ring)
+		local n = 0
+		for _ = 1, math.min(rr.MaxPerStructure, rule.Max) do
+			if rng() < rr.ChestChance then
+				n += 1
+			end
+		end
+		return math.min(n, available)
+	end
 	local n = rule.Min + math.floor(rng() * (rule.Max - rule.Min + 1))
 	return math.min(n, available)
 end
@@ -110,13 +156,14 @@ function LootChests.selectSlots(
 	structureType: string,
 	runSeed: number,
 	key: string,
-	candidates: { Candidate }
+	candidates: { Candidate },
+	ring: number?
 ): { Pick }
 	local pool = table.clone(candidates)
 	table.sort(pool, function(a, b)
 		return a.index < b.index
 	end)
-	local count = LootChests.countFor(structureType, runSeed, key, #pool)
+	local count = LootChests.countFor(structureType, runSeed, key, #pool, ring)
 	local rng = LootChests.makeRng(keyHash(runSeed, key .. "#pick"))
 	local usedRooms: { [string]: boolean } = {}
 	local usedDepths: { [number]: boolean } = {}
@@ -191,7 +238,12 @@ function LootChests.plan(
 			LootChests.ringBonus(slot.ring),
 			slot.topMode == "exclude"
 		)
-	return { rarity = rarity, items = LootRoll.rollChest(t, pool, rarity, rng), seed = seed }
+	local weightOf = LootChests.itemWeightFor(slot.ring)
+	return {
+		rarity = rarity,
+		items = LootRoll.rollChest(t, pool, rarity, rng, weightOf),
+		seed = seed,
+	}
 end
 
 return LootChests

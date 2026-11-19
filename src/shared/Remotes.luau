@@ -12,15 +12,16 @@ export type MetersPayload = {
 	day: number,
 	isNight: boolean,
 }
-export type ItemStack = { id: string, count: number, durability: number? }
+export type ItemStack = { id: string, count: number, durability: number?, slot: number? }
 export type InventoryPayload = {
-	slots: { [number]: ItemStack? }, -- full snapshot, index = slot
+	slots: { ItemStack }, -- full snapshot: dense array, each entry carries its slot index (SlotLayout)
 	selected: number,
 	equipment: { [string]: ItemStack }?, -- worn gear, Config.Equipment.Slots id -> stack (Items round)
 }
 export type CraftPayload = { recipeId: string }
 export type PlacePayload = { structureId: string, position: Vector3, rotationY: number }
 export type GatherPayload = { node: Instance }
+export type UpgradeWorkbenchPayload = {} -- no fields: server derives the bench, tier and cost itself
 export type AttackPayload = { target: Instance? } -- server validates range, cooldown, weapon
 -- Phase 2 (lobby, party, run end, daily reward). UserIds are numbers; times are os.time() seconds.
 export type PadJoinPayload = { padIndex: number } -- 1..Config.Lobby.PadCount
@@ -66,7 +67,7 @@ export type StorageDepositPayload = { chest: Instance, slot: number, count: numb
 export type StorageWithdrawPayload = { chest: Instance, chestSlot: number, count: number } -- 1..Config.Storage.ChestSlots
 export type StorageStatePayload = {
 	chest: Instance?, -- nil = closed (out of range, destroyed or StorageCloseRequest)
-	slots: { [number]: ItemStack? }, -- full snapshot, index = chest slot
+	slots: { ItemStack }, -- full snapshot: dense array, each entry carries its chest slot index
 	id: string?, -- chest id string (address id for {kind="chest"})
 	rev: number?, -- Config.Storage.RevisionAttribute at snapshot time
 }
@@ -159,6 +160,7 @@ Remotes.InventoryUpdate = "InventoryUpdate" -- server -> client (InventoryPayloa
 Remotes.CraftRequest = "CraftRequest" -- client -> server (recipeId: string)
 Remotes.PlaceRequest = "PlaceRequest" -- client -> server (structureId: string, position: Vector3, rotationY: number)
 Remotes.GatherRequest = "GatherRequest" -- client -> server (node: Instance)
+Remotes.UpgradeWorkbench = "UpgradeWorkbench" -- client -> server (no payload); near a workbench, has the cost, below max tier
 Remotes.AttackRequest = "AttackRequest" -- client -> server (target: Instance?)
 Remotes.SelectSlotRequest = "SelectSlotRequest" -- client -> server (slot: number)
 Remotes.UseItemRequest = "UseItemRequest" -- client -> server (slot: number), eat/consume
@@ -221,6 +223,7 @@ Remotes.all = {
 	Remotes.CraftRequest,
 	Remotes.PlaceRequest,
 	Remotes.GatherRequest,
+	Remotes.UpgradeWorkbench,
 	Remotes.AttackRequest,
 	Remotes.SelectSlotRequest,
 	Remotes.UseItemRequest,

@@ -117,4 +117,17 @@ local list: { Types.Recipe } = {
 
 Recipes.List = list
 
+-- Workbench tier (1..Config.Workbench.MaxTier) a "workbench" recipe needs; unlisted workbench recipes = tier 1.
+-- Hand recipes and other stations (forge, cooking station, map table) ignore it.
+Recipes.BenchTier = {
+	SpikeTrap = 2,
+	MapTable = 2,
+	CookingStation = 2,
+	InsulatedCoat = 2,
+	FangSpear = 2,
+	Forge = 2,
+	Watchtower = 3,
+	AuroraTorch = 3,
+} :: { [string]: number }
+
 return Recipes

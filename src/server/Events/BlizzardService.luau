@@ -3,13 +3,21 @@
 -- The schedule, modifiers and visible attributes (Blizzard, BlizzardIntensity) live in EventService;
 -- clients render snow and whiteout from those attributes (client/Atmosphere/BlizzardFx). Studio/debug only.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local EventService = require(script.Parent.EventService)
+local BlizzardWind = require(ReplicatedStorage:WaitForChild("Shared").logic.BlizzardWind)
 
 local BlizzardService = {}
 
 -- Starts a blizzard immediately (no warning). Returns false while another event runs.
 function BlizzardService.DebugStart(): boolean
 	return EventService.startBlizzardNow()
+end
+
+-- Snapshot for "/debug blizzard" with no argument.
+function BlizzardService.DebugStatus(): string
+	return BlizzardWind.statusText(EventService.getBlizzardStatus())
 end
 
 -- Ends the blizzard (or cancels a pending warning).

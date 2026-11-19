@@ -19,7 +19,8 @@ local function meanRank(items: { LootRoll.Stack }, sum: { number }): ()
 		sum[2] += 1
 	end
 end
-
+local Biomes = require("../src/shared/data/Biomes")
+local LootChests = require("../src/shared/logic/LootChests")
 return function(check: (string, boolean) -> ())
 	-- Rarity tags
 	local tagged = true
@@ -314,4 +315,96 @@ return function(check: (string, boolean) -> ())
 			and MobScaling.wolfDamageFactor(1000) == Config.WolfScaling.MaxDamageMultiplier
 			and MobScaling.wolfSpawnFactor(1000) == Config.WolfScaling.MaxSpawnRateMultiplier
 	)
+
+	-- Iron gating by ring (Config.Loot.Rings): none in ring 1, rare in ring 2, more in ring 3+
+	local ironSet: { [string]: boolean } = {}
+	for _, id in Config.Loot.Rings.IronItems do
+		ironSet[id] = true
+	end
+	check(
+		"iron: every IronItems id exists in the catalog",
+		(function(): boolean
+			for id in ironSet do
+				if ItemCatalog.Items[id] == nil then
+					return false
+				end
+			end
+			return true
+		end)()
+	)
+	local function ironRate(ring: number): number
+		local rng = LootChests.makeRng(4242 + ring)
+		local hits, stacks = 0, 0
+		for i = 1, 6000 do
+			local rarity = Rarity.List[(i % #Rarity.List) + 1]
+			for _, s in
+				LootRoll.rollChest(LootTables, pool, rarity, rng, LootChests.itemWeightFor(ring))
+			do
+				stacks += 1
+				if ironSet[s.id] then
+					hits += 1
+				end
+			end
+		end
+		return hits / math.max(stacks, 1)
+	end
+	local r1, r2, r3, r4 = ironRate(0), ironRate(1), ironRate(2), ironRate(3)
+	check("iron: ring 1 chests never contain iron", r1 == 0)
+	check("iron: ring 2 chests have rare iron", r2 > 0 and r2 < 0.03)
+	check("iron: ring 3 has more iron than ring 2", r3 > r2 * 1.5)
+	check("iron: ring 4 has at least ring 3 iron", r4 >= r3)
+	local planIron = 0
+	for i = 1, 4000 do
+		local plan = LootChests.plan(LootTables, pool, 100 + i, {
+			x = i * 7,
+			y = 0,
+			z = i * 13,
+			depth = i % 5,
+			structureType = ({ "cabin", "plane", "ruin", "MineComplex", "RuinedTemple" })[i % 5 + 1],
+			ring = 0,
+			index = i % 4,
+			topMode = if i % 50 == 0 then "force" else nil,
+		})
+		for _, s in plan.items do
+			if ironSet[s.id] then
+				planIron += 1
+			end
+		end
+	end
+	check("iron: planned ring-1 chests (any structure/rarity) have zero iron", planIron == 0)
+	check(
+		"iron: starter items contain no iron",
+		(function(): boolean
+			for _, s in Config.Inventory.StarterItems do
+				if ironSet[s.id] then
+					return false
+				end
+			end
+			return true
+		end)()
+	)
+	local biomesOk = true
+	for tier = 1, 2 do
+		for _, e in Biomes.Loot[tier].entries do
+			if ironSet[e.id] then
+				biomesOk = false
+			end
+		end
+	end
+	check("iron: POI crate tiers 1-2 (rings 1-2 of the biome table) have no iron", biomesOk)
+	check(
+		"iron: node ring gate is ring 2 or later",
+		Config.Loot.Rings.IronNodeMinRing >= Config.Loot.Rings.IronMinRing
+			and Config.Loot.Rings.IronNodeMinRing >= 2
+	)
+	local nodeBiomesOk = true
+	for _, b in Biomes.List do
+		if
+			table.find(b.nodeKinds, "IronOre")
+			and b.ring + 1 < Config.Loot.Rings.IronNodeMinRing
+		then
+			nodeBiomesOk = false
+		end
+	end
+	check("iron: biome node kinds respect IronNodeMinRing", nodeBiomesOk)
 end

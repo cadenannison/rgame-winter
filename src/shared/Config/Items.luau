@@ -21,7 +21,43 @@ export type ToolTierConfig = {
 	Metal: number, -- Phase 3: forge tools
 }
 
+-- Round contract (Agent B owns): effort per task type. Mode "instant" = picked up on E, no progress shown;
+-- "hits" = Hits (or HitsByTier[tool tier] when present) with a progress display; "hold" = HoldSeconds hold.
+export type GatherEffort = {
+	Mode: string, -- "instant" | "hits" | "hold"
+	Hits: number?,
+	HitsByTier: { number }?, -- index = tool tier (1 basic, 2 stone, 3 metal)
+	HoldSeconds: number?,
+	ShowProgress: boolean,
+}
+
+-- Armor (owner: Agent B defines values, Agent A applies damage): per-item reduction fraction 0..1, stamped on
+-- ItemDef.armor by ItemCatalog; summed over worn gear and capped at MaxReduction.
+export type ArmorConfig = {
+	MaxReduction: number, -- cap on total damage reduction (0.6 = 60%)
+	Values: { [string]: number }, -- item id -> reduction fraction
+}
+
+export type WorkbenchTier = {
+	Tier: number,
+	Cost: { { id: string, count: number } }, -- cost to upgrade FROM the previous tier TO this one (tier 1 = free)
+	Label: string,
+	Scale: number, -- visual size multiplier of the workbench at this tier
+	Color: { number }?, -- {r, g, b} 0-255 tint at this tier (nil = keep the structure colour)
+}
+
+export type WorkbenchConfig = {
+	MaxTier: number,
+	Tiers: { WorkbenchTier },
+	TierAttribute: string, -- workbench instance + Workspace attribute: current party-wide tier
+	UpgradeRowText: string, -- craft panel row label
+	UpgradeRateInterval: number, -- Guard interval for the upgrade remote
+}
+
 export type GatherConfig = {
+	Effort: { [string]: GatherEffort }, -- keys: Forage, Tree, Stone, Ore, Ice, Scrap, Bone, Animal, Chest
+	EffortKeyByKind: { [string]: string }, -- node kind -> Effort key (kinds absent here: hand nodes = Forage)
+	AnimalHitsFromHealth: boolean, -- animals: hits derive from health vs weapon damage (no fixed count)
 	Range: number,
 	Cooldown: number,
 	RespawnSeconds: number,
@@ -106,6 +142,8 @@ export type ItemEntry = {
 	stack: number?, -- nil = category default
 	equipSlot: string?, -- Equipment.Slots entry the item may be worn in
 	coldResistance: number?, -- points while equipped (counts toward the HUD x/12 total)
+	warmth: number?, -- every clothing item: shown as "Warmth +N"; equals coldResistance (the one mechanical effect; never added twice)
+	armor: number?, -- damage reduction fraction (also in Config.Armor.Values; Config.Armor is the source)
 	fuelSeconds: number?, -- campfire burn time of one item at tier 1 (nil = not fuel); higher tiers scale by their WoodFuelSeconds
 }
 
@@ -222,6 +260,8 @@ export type Sections = {
 	Inventory: InventoryConfig,
 	ToolTier: ToolTierConfig,
 	Gather: GatherConfig,
+	Armor: ArmorConfig,
+	Workbench: WorkbenchConfig,
 	Craft: CraftConfig,
 	Build: BuildConfig,
 	Storage: StorageConfig,
@@ -452,6 +492,28 @@ local Sections: Sections = {
 		Metal = 3, -- iron tools (forge)
 	},
 	Gather = {
+		Effort = {
+			Forage = { Mode = "instant", ShowProgress = false }, -- sticks, berries, mushrooms, pinecones, reeds
+			Tree = { Mode = "hits", Hits = 4, ShowProgress = true },
+			Stone = { Mode = "hits", Hits = 4, ShowProgress = true },
+			Ore = { Mode = "hits", HitsByTier = { 6, 5, 4 }, ShowProgress = true },
+			Ice = { Mode = "hits", HitsByTier = { 4, 3, 3 }, ShowProgress = true },
+			Scrap = { Mode = "hits", HitsByTier = { 3, 3, 2 }, ShowProgress = true },
+			Bone = { Mode = "hits", HitsByTier = { 3, 2, 2 }, ShowProgress = true },
+			Animal = { Mode = "hits", ShowProgress = false }, -- hits come from health vs weapon damage
+			Chest = { Mode = "hold", HoldSeconds = 0.6, ShowProgress = true },
+		},
+		EffortKeyByKind = {
+			Tree = "Tree",
+			Rock = "Stone",
+			Coal = "Ore",
+			IronOre = "Ore",
+			Crystal = "Ore",
+			IceBlock = "Ice",
+			ScrapMetal = "Scrap",
+			Bone = "Bone",
+		},
+		AnimalHitsFromHealth = true,
 		Range = 12, -- max studs from player to node
 		Cooldown = 0.6, -- seconds between gather hits per player
 		RespawnSeconds = 240, -- slow node respawn
@@ -462,6 +524,49 @@ local Sections: Sections = {
 		HitsToDeplete = 4, -- hits before a node is depleted
 		ToolDurabilityPerUse = 1, -- durability lost per gather hit
 		NodeTag = "ResourceNode", -- CollectionService tag
+	},
+	Armor = {
+		MaxReduction = 0.6,
+		-- Worn pieces only; a full set stays well under MaxReduction (tested).
+		Values = {
+			HideHood = 0.02,
+			HideCoat = 0.04,
+			HideBoots = 0.02,
+			FurHood = 0.04,
+			FurCoat = 0.08,
+			FurBoots = 0.04,
+			ArcticHood = 0.07,
+			ArcticCoat = 0.14,
+			ArcticBoots = 0.07,
+			InsulatedCoat = 0.1,
+		},
+	},
+	Workbench = {
+		MaxTier = 3,
+		Tiers = {
+			{ Tier = 1, Cost = {}, Label = "Workbench", Scale = 1 }, -- no Color: keeps the placed colour
+			{
+				Tier = 2,
+				Cost = { { id = "Wood", count = 20 }, { id = "Stone", count = 10 } },
+				Label = "Improved Workbench",
+				Scale = 1.15,
+				Color = { 150, 110, 70 },
+			},
+			{
+				Tier = 3,
+				Cost = {
+					{ id = "Wood", count = 30 },
+					{ id = "Stone", count = 20 },
+					{ id = "Rope", count = 2 },
+				},
+				Label = "Master Workbench",
+				Scale = 1.3,
+				Color = { 120, 130, 150 },
+			},
+		},
+		TierAttribute = "WorkbenchTier",
+		UpgradeRowText = "Upgrade Workbench",
+		UpgradeRateInterval = 0.5,
 	},
 	Craft = {
 		-- Recipes with a station field unlock only within Range studs of a tagged station (server checks at craft).
@@ -573,7 +678,7 @@ local Sections: Sections = {
 			DenseHide = { category = "animalPart", stack = 10 },
 			CrystalShard = { category = "rareMaterial", stack = 10 },
 			AuroraDust = { category = "rareMaterial", stack = 10 },
-			InsulatedCoat = { equipSlot = "Body", coldResistance = 3 },
+			InsulatedCoat = { equipSlot = "Body", coldResistance = 3, warmth = 3 },
 			Crystal = { category = "rareMaterial" },
 			IceShard = { category = "rareMaterial" },
 			RelicFragment = { category = "rareMaterial" },
@@ -593,15 +698,15 @@ local Sections: Sections = {
 			Torch = { category = "torch" },
 			Flare = { category = "light", stack = 5 },
 			Wall = { category = "placeable", stack = 10 },
-			HideHood = { equipSlot = "Head", coldResistance = 1 },
-			HideCoat = { equipSlot = "Body", coldResistance = 1 },
-			HideBoots = { equipSlot = "Feet", coldResistance = 1 },
-			FurHood = { equipSlot = "Head", coldResistance = 2 },
-			FurCoat = { equipSlot = "Body", coldResistance = 2 },
-			FurBoots = { equipSlot = "Feet", coldResistance = 2 },
-			ArcticHood = { equipSlot = "Head", coldResistance = 4 },
-			ArcticCoat = { equipSlot = "Body", coldResistance = 4 },
-			ArcticBoots = { equipSlot = "Feet", coldResistance = 4 },
+			HideHood = { equipSlot = "Head", coldResistance = 1, warmth = 1 },
+			HideCoat = { equipSlot = "Body", coldResistance = 1, warmth = 1 },
+			HideBoots = { equipSlot = "Feet", coldResistance = 1, warmth = 1 },
+			FurHood = { equipSlot = "Head", coldResistance = 2, warmth = 2 },
+			FurCoat = { equipSlot = "Body", coldResistance = 2, warmth = 2 },
+			FurBoots = { equipSlot = "Feet", coldResistance = 2, warmth = 2 },
+			ArcticHood = { equipSlot = "Head", coldResistance = 4, warmth = 4 },
+			ArcticCoat = { equipSlot = "Body", coldResistance = 4, warmth = 4 },
+			ArcticBoots = { equipSlot = "Feet", coldResistance = 4, warmth = 4 },
 		},
 		FallbackStack = 20,
 		MaxStack = 50,

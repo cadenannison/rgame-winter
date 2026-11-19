@@ -226,4 +226,56 @@ return function(check: (string, boolean) -> ())
 			and ChestStyle.beamFade(R - band / 2, R, band) > 0
 			and ChestStyle.beamFade(R - band / 2, R, band) < 1
 	)
+
+	-- Ring chest rules: ring N (player-facing 1..4) holds at most N chests, each chance-based
+	for ring = 0, 3 do
+		local rr = Config.Loot.Rings.Chests[ring + 1]
+		local maxSeen, minSeen, total = 0, 99, 0
+		for seed = 1, SEEDS do
+			local n = LootChests.countFor("RangerLodge", seed, `RangerLodge#{seed}`, 99, ring)
+			local nCabin = LootChests.countFor("cabin", seed, `cabin#{seed}`, 99, ring)
+			maxSeen, minSeen, total = math.max(maxSeen, n), math.min(minSeen, n), total + n
+			if nCabin > math.min(rr.MaxPerStructure, Config.Loot.Chests.Small.Max) then
+				maxSeen = 99
+			end
+		end
+		check(
+			`ringchests: ring {ring + 1} never exceeds {rr.MaxPerStructure}`,
+			maxSeen <= rr.MaxPerStructure
+		)
+		check(`ringchests: ring {ring + 1} can have no chest`, minSeen == 0)
+		local trials = math.min(rr.MaxPerStructure, Config.Loot.Chests.Medium.Max)
+		local expected = trials * rr.ChestChance
+		check(
+			`ringchests: ring {ring + 1} mean count follows ChestChance`,
+			math.abs(total / SEEDS - expected) < 0.12
+		)
+	end
+	check(
+		"ringchests: ring 1 max 1, ring 4 max 4 in config",
+		Config.Loot.Rings.Chests[1].MaxPerStructure == 1
+			and Config.Loot.Rings.Chests[4].MaxPerStructure == 4
+	)
+	local ownOk = true
+	for seed = 1, 200 do
+		for ring = 0, 3 do
+			local mass = LootChests.countFor("MineComplex", seed, `m{seed}`, 99, ring)
+			local rule = Config.Loot.Chests.Massive
+			ownOk = ownOk and mass >= rule.Min and mass <= rule.Max
+			local picks =
+				LootChests.selectSlots("ResearchStation", seed, `b{seed}`, candidates(12), ring)
+			ownOk = ownOk and #picks >= Config.Loot.Chests.Beacon.Min
+		end
+	end
+	check("ringchests: massive and beacon structures keep their own range", ownOk)
+	local detOk = true
+	for seed = 1, 100 do
+		local a = LootChests.selectSlots("ruin", seed, "ruin#1", candidates(8), 2)
+		local b = LootChests.selectSlots("ruin", seed, "ruin#1", candidates(8), 2)
+		detOk = detOk and #a == #b
+		for i, p in a do
+			detOk = detOk and b[i].index == p.index
+		end
+	end
+	check("ringchests: ring-based picks are deterministic from the seed", detOk)
 end

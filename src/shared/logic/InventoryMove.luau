@@ -8,6 +8,7 @@ local Config = require("../Config")
 local ItemCatalog = require("../ItemCatalog")
 local Equipment = require("./Equipment")
 local Inventory = require("./Inventory")
+local SlotLayout = require("./SlotLayout")
 
 export type Addr = { kind: string, slot: number | string, id: string? }
 export type Ctx = {
@@ -37,26 +38,16 @@ function InventoryMove.parseAddr(raw: unknown): Addr?
 	end
 	local r = raw :: { [string]: unknown }
 	local kind, slot = r.kind, r.slot
+	if not SlotLayout.validAddr(kind, slot) then
+		return nil
+	end
 	if kind == "inv" then
-		if
-			whole(slot)
-			and (slot :: number) <= Config.Inventory.HotbarSize + Config.Inventory.BackpackSize
-		then
-			return { kind = "inv", slot = slot :: number }
-		end
+		return { kind = "inv", slot = slot :: number }
 	elseif kind == "equip" then
-		if type(slot) == "string" and Equipment.slotIndex(slot) ~= nil then
-			return { kind = "equip", slot = slot }
-		end
+		return { kind = "equip", slot = slot :: string }
 	elseif kind == "chest" then
 		local id = r.id
-		if
-			type(id) == "string"
-			and #id >= 1
-			and #id <= MAX_ID_LENGTH
-			and whole(slot)
-			and (slot :: number) <= Config.Storage.ChestSlots
-		then
+		if type(id) == "string" and #id >= 1 and #id <= MAX_ID_LENGTH then
 			return { kind = "chest", slot = slot :: number, id = id }
 		end
 	end
@@ -103,11 +94,11 @@ end
 -- (container, index) for an address, or (nil, reason).
 local function resolve(ctx: Ctx, addr: Addr): (Inventory.Inv?, number, string)
 	if addr.kind == "inv" then
-		local slot = addr.slot :: number
-		if slot < 1 or slot > ctx.inv.size then
+		local slot = addr.slot
+		if not SlotLayout.validAddr("inv", slot) or (slot :: number) > ctx.inv.size then
 			return nil, 0, "BadSlot"
 		end
-		return ctx.inv, slot, "ok"
+		return ctx.inv, slot :: number, "ok"
 	elseif addr.kind == "equip" then
 		local index = Equipment.slotIndex(addr.slot :: string)
 		if index == nil then
@@ -118,11 +109,11 @@ local function resolve(ctx: Ctx, addr: Addr): (Inventory.Inv?, number, string)
 		if ctx.chest == nil or ctx.chestId == nil or addr.id ~= ctx.chestId then
 			return nil, 0, "NoChest"
 		end
-		local slot = addr.slot :: number
-		if slot < 1 or slot > ctx.chest.size then
+		local slot = addr.slot
+		if not SlotLayout.validAddr("chest", slot) or (slot :: number) > ctx.chest.size then
 			return nil, 0, "BadSlot"
 		end
-		return ctx.chest, slot, "ok"
+		return ctx.chest, slot :: number, "ok"
 	end
 	return nil, 0, "BadSlot"
 end
@@ -261,7 +252,6 @@ function InventoryMove.quickMove(ctx: Ctx, from: Addr): (boolean, string, Touche
 	if ItemCatalog.Items[s.id] == nil then
 		return false, "UnknownItem", touched
 	end
-	local hot = Config.Inventory.HotbarSize
 	local put = 0
 	if from.kind == "equip" then
 		if Inventory.canAdd(ctx.inv, s.id, s.count, ItemCatalog.stackOf(s.id), s.durability) then
@@ -307,9 +297,9 @@ function InventoryMove.quickMove(ctx: Ctx, from: Addr): (boolean, string, Touche
 			return InventoryMove.move(ctx, from, { kind = "equip", slot = fallback }, 1)
 		end
 	end
-	local lo, hi = hot + 1, ctx.inv.size
-	if si > hot then
-		lo, hi = 1, hot
+	local lo, hi = SlotLayout.GridFirst, SlotLayout.GridLast
+	if SlotLayout.areaOf(si) == "grid" then
+		lo, hi = SlotLayout.HotbarFirst, SlotLayout.HotbarLast
 	end
 	put = transfer(src, si, ctx.inv, lo, hi)
 	if put == 0 then
@@ -327,7 +317,7 @@ function InventoryMove.drop(
 	slot: unknown,
 	count: unknown
 ): (boolean, string, string?, number, number?)
-	if not whole(slot) or (slot :: number) > inv.size then
+	if not SlotLayout.validAddr("inv", slot) or (slot :: number) > inv.size then
 		return false, "BadSlot", nil, 0, nil
 	end
 	local stack = inv.slots[slot :: number]

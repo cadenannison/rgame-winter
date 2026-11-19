@@ -134,9 +134,25 @@ function LootRoll.buildPool(items: { [string]: ItemLike }): Pool
 end
 
 -- Pool entries for a category at a rarity, falling back to lower rarities when that bucket is empty.
-function LootRoll.bucket(pool: Pool, category: string, rarity: string): { PoolItem }
+-- `weightOf` (optional) drops items whose weight is <= 0 (e.g. iron before its ring) before the emptiness test.
+export type ItemWeight = (id: string) -> number
+function LootRoll.bucket(
+	pool: Pool,
+	category: string,
+	rarity: string,
+	weightOf: ItemWeight?
+): { PoolItem }
 	for r = Rarity.rank(rarity), 1, -1 do
 		local bucket = pool.byKey[`{category}/{Rarity.List[r]}`]
+		if bucket and weightOf then
+			local kept: { PoolItem } = {}
+			for _, item in bucket do
+				if weightOf(item.id) > 0 then
+					table.insert(kept, item)
+				end
+			end
+			bucket = kept
+		end
 		if bucket and #bucket > 0 then
 			return bucket
 		end
@@ -144,8 +160,42 @@ function LootRoll.bucket(pool: Pool, category: string, rarity: string): { PoolIt
 	return {}
 end
 
+-- Uniform pick among positive-weight items; an item with weight w < 1 is kept with probability w, otherwise
+-- replaced by a full-weight (w >= 1) item of the same category at this rarity or lower.
+local function pickItem(
+	pool: Pool,
+	category: string,
+	rarity: string,
+	bucket: { PoolItem },
+	weightOf: ItemWeight?,
+	rng: Rng
+): PoolItem
+	local item = bucket[math.floor(rng() * #bucket) + 1]
+	if weightOf == nil then
+		return item
+	end
+	local w = weightOf(item.id)
+	if w >= 1 or rng() < w then
+		return item
+	end
+	local full = LootRoll.bucket(pool, category, rarity, function(id: string): number
+		local x = weightOf(id)
+		return if x >= 1 then x else 0
+	end)
+	if #full == 0 then
+		return item
+	end
+	return full[math.floor(rng() * #full) + 1]
+end
+
 -- Rolls the contents of one chest. Never returns more stacks than ChestTable.items[2].
-function LootRoll.rollChest(t: Tables, pool: Pool, chestRarity: string, rng: Rng): { Stack }
+function LootRoll.rollChest(
+	t: Tables,
+	pool: Pool,
+	chestRarity: string,
+	rng: Rng,
+	weightOf: ItemWeight? -- per-item relative weight (1 = normal, 0 = never); nil = uniform
+): { Stack }
 	local chest = t.chests[chestRarity]
 	local out: { Stack } = {}
 	if chest == nil then
@@ -155,9 +205,9 @@ function LootRoll.rollChest(t: Tables, pool: Pool, chestRarity: string, rng: Rng
 		local category = LootRoll.weightedPick(chest.categoryWeights, Rarity.Categories, rng)
 		local rarity = LootRoll.weightedPick(chest.rarityWeights, Rarity.List, rng)
 		if category and rarity then
-			local bucket = LootRoll.bucket(pool, category, rarity)
+			local bucket = LootRoll.bucket(pool, category, rarity, weightOf)
 			if #bucket > 0 then
-				local item = bucket[math.floor(rng() * #bucket) + 1]
+				local item = pickItem(pool, category, rarity, bucket, weightOf, rng)
 				local range = t.stackCounts[category]
 				local count = if item.maxStack > 1 and range then randomInt(range, rng) else 1
 				table.insert(out, { id = item.id, count = math.clamp(count, 1, item.maxStack) })

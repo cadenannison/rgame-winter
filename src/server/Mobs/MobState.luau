@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
+local MobPoise = require(Shared.logic.MobPoise)
 local MobStateMap = require(Shared.logic.MobStateMap)
 local Types = require(script.Parent.MobTypes)
 
@@ -20,7 +21,13 @@ local MobState = {}
 function MobState.sync(row: MobRow, now: number)
 	local model = row.model
 	local action = row.lastAction
-	local state = MobStateMap.resolve(action, row.hurtUntil - now, row.attackUntil - now, false)
+	-- Heavy mobs (Frost Brute) never flinch out of a telegraph or slam: Hurt is ignored while they wind up.
+	local state = MobPoise.resolveState(
+		action,
+		row.hurtUntil - now,
+		row.attackUntil - now,
+		MobPoise.isHeavy(row.kind.name)
+	)
 	local previous = row.stateWritten
 	if state ~= previous then
 		row.stateWritten = state

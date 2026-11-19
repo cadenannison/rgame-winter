@@ -10,6 +10,7 @@ local Config = require(Shared.Config)
 local CreatureRegistry = require(Shared.Creatures.Registry)
 local FireRepel = require(Shared.logic.FireRepel)
 local MobAI = require(Shared.logic.MobAI)
+local MobDamage = require(Shared.logic.MobDamage)
 local MobRules = require(Shared.logic.MobRules)
 local MobData = require(Shared.data.Mobs)
 local Mobs = script.Parent.Parent
@@ -144,7 +145,7 @@ function Legacy.step(row: MobRow, env: Env)
 			MobActions.setWindup(row, false)
 		elseif result == "Strike" then
 			MobActions.setWindup(row, false)
-			row.nextAttackAt = now + stats.AttackCooldown
+			row.nextAttackAt = now + MobDamage.cooldown(row.kind.name, stats.AttackCooldown)
 			MobState.attacked(row, now)
 			local biteOk = MobRules.biteAllowed(
 				repelled,

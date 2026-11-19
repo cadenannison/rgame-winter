@@ -8,6 +8,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
 local FireRepel = require(Shared.logic.FireRepel)
+local MobDamage = require(Shared.logic.MobDamage)
+local InventoryService = require(script.Parent.Parent.Items.InventoryService)
 local MobState = require(script.Parent.MobState)
 local Types = require(script.Parent.MobTypes)
 
@@ -47,7 +49,11 @@ function MobActions.dealDamage(row: MobRow, info: PlayerInfo): boolean
 	if onHit then
 		pcall(onHit, info.player, row.kind.name)
 	end
-	info.humanoid:TakeDamage(row.damage)
+	-- Wolves hit for a share of the victim's max health; worn armor then reduces any mob's damage.
+	local reduction = MobDamage.reductionOfEquipment(InventoryService.getEquipment(info.player))
+	info.humanoid:TakeDamage(
+		MobDamage.toPlayer(row.kind.name, row.damage, info.humanoid.MaxHealth, reduction)
+	)
 	biteSeq(info.player)
 	return true
 end

@@ -199,6 +199,14 @@ export type ClothingConfig = {
 	MaxColdResistance: number, -- cap on the summed resistance of every worn piece
 }
 
+-- Round contract (Agent B owns): general cold hint replacing the exact "needs N cold" region message.
+-- ratio = player cold resistance / zone required resistance. Highest band whose MinRatio <= ratio wins.
+export type WarmthHintBand = { MinRatio: number, Id: string, Text: string }
+export type WarmthHintsConfig = {
+	Bands: { WarmthHintBand }, -- sorted by MinRatio descending; no numbers in Text
+	ShowNumbers: boolean, -- must stay false
+}
+
 export type BuffConfig = {
 	MaxActive: number,
 	MaxDurationSeconds: number,
@@ -233,6 +241,7 @@ export type SprintConfig = {
 
 export type Sections = {
 	Sprint: SprintConfig,
+	WarmthHints: WarmthHintsConfig,
 	Time: TimeConfig,
 	Meters: MeterConfig,
 	Fire: FireConfig,
@@ -416,6 +425,23 @@ local Sections: Sections = {
 		Slots = { "Head", "Body", "Feet" },
 		MaxTier = 3,
 		MaxColdResistance = 12,
+	},
+	WarmthHints = {
+		Bands = {
+			{ MinRatio = 1, Id = "comfortable", Text = "The cold here feels manageable." },
+			{
+				MinRatio = 0.7,
+				Id = "chilly",
+				Text = "It is chilly. Dress warmer to stay out long.",
+			},
+			{
+				MinRatio = 0.4,
+				Id = "dangerous",
+				Text = "The cold here is dangerous without better clothing.",
+			},
+			{ MinRatio = 0, Id = "deadly", Text = "This cold will kill you. Turn back." },
+		},
+		ShowNumbers = false,
 	},
 	Buffs = {
 		MaxActive = 2,

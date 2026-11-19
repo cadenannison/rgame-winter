@@ -173,6 +173,15 @@ export type BlizzardConfig = {
 	AtmoDensity: number,
 	AtmoOffset: number,
 	AtmoHaze: number,
+	AtmoGlare: number, -- Atmosphere.Glare at peak (0 = no sun disc seam)
+	NightColor: { number }, -- {r, g, b} 0-255 fog / haze tint at full night (dark blue-grey)
+	AmbientMix: number, -- 0..1 share of Ambient / OutdoorAmbient blended toward the tint at peak whiteout
+	-- Forecast (server toasts via Remotes.Notify; cue via Remotes.Cue, never per tick).
+	ForecastLeadSeconds: number, -- toast this long before the blizzard starts (~half a day)
+	ForecastText: string,
+	ArrivalText: string,
+	ForecastCue: string, -- Remotes.Cue kind (data/AudioCues row)
+	NotifyKind: string, -- Remotes.Notify kind
 	-- Glow that stays faintly visible in the whiteout.
 	GlowTags: { string },
 	GlowMax: number, -- nearest N glow targets
@@ -295,6 +304,7 @@ local Sections: Sections = {
 			"LurkerSighted",
 			"IceCrack", -- thin ice cracking (position)
 			"WarnBlizzard",
+			"BlizzardForecast", -- ~half a day before a blizzard (sound hook; toast comes through Notify)
 			"WarnFalseNight",
 			"WarnTheQuiet",
 			"WarnDeepFreeze",
@@ -350,8 +360,8 @@ local Sections: Sections = {
 		SpawnWidth = 90,
 		SpawnHeight = 50,
 		SpawnUpwind = 40,
-		RatePerIntensity = 260,
-		MaxParticles = 320,
+		RatePerIntensity = 720, -- ~2.8x the old 260
+		MaxParticles = 900, -- PC cap scaled with the rate (mobile cap unchanged)
 		MaxParticlesMobile = 120,
 		WindUpdateInterval = 0.1,
 		PeakVisibility = 60,
@@ -360,8 +370,16 @@ local Sections: Sections = {
 		WhiteColor = { 236, 242, 250 },
 		MinLightScale = 0.45,
 		AtmoDensity = 0.55,
-		AtmoOffset = 0.3,
+		AtmoOffset = 0.8, -- high offset hides the dark sky above the horizon (no black band over a white wall)
 		AtmoHaze = 2.2,
+		AtmoGlare = 0,
+		NightColor = { 54, 64, 88 },
+		AmbientMix = 0.35,
+		ForecastLeadSeconds = 180, -- ~half a 6-min day
+		ForecastText = "The wind starts to howl...",
+		ArrivalText = "The blizzard has arrived. Stay near a fire.",
+		ForecastCue = "BlizzardForecast",
+		NotifyKind = "event",
 		GlowTags = { "Campfire", "WarmSpot" }, -- (StructureBeacon was never applied; removed)
 		GlowMax = 6,
 		GlowRange = 220,

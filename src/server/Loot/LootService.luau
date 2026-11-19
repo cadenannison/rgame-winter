@@ -17,6 +17,7 @@ local Config = require(Shared.Config)
 local ItemCatalog = require(Shared.ItemCatalog)
 local Remotes = require(Shared.Remotes)
 local LootChests = require(Shared.logic.LootChests)
+local ChestAccess = require(Shared.logic.ChestAccess)
 local LootRoll = require(Shared.logic.LootRoll)
 local Guard = require(script.Parent.Parent.Net.Guard)
 local InventoryService = require(script.Parent.Parent.Items.InventoryService)
@@ -165,7 +166,12 @@ function LootService.RegisterDebugChest(slot: Slot, rarity: string, parent: Inst
 		index = slot.Index,
 	})
 	local rng = LootChests.makeRng(plan.seed)
-	return registerWith(slot, rarity, LootRoll.rollChest(LootTables, pool, rarity, rng), parent)
+	return registerWith(
+		slot,
+		rarity,
+		LootRoll.rollChest(LootTables, pool, rarity, rng, LootChests.itemWeightFor(slot.Ring or 0)),
+		parent
+	)
 end
 
 function LootService.CurrentSeed(): number
@@ -237,6 +243,26 @@ local function makeDrop(player: Player, stack: LootRoll.Stack, at: Vector3)
 	Debris:AddItem(part, DROP_LIFETIME)
 end
 
+-- Thin raycast wrapper: true when something solid sits between the player's chest height and the chest.
+-- Excludes the character and the chest; ignores non-colliding parts. Any error fails closed (blocked).
+local function wallBetween(player: Player, root: BasePart, chest: Instance, pos: Vector3): boolean
+	local ok, hit = pcall(function(): RaycastResult?
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.RespectCanCollide = true
+		local exclude: { Instance } = { chest }
+		if player.Character then
+			table.insert(exclude, player.Character)
+		end
+		params.FilterDescendantsInstances = exclude
+		local lift = Vector3.new(0, L.ChestSafety.RaycastHeight, 0)
+		local from = root.Position + lift
+		local to = pos + lift
+		return Workspace:Raycast(from, to - from, params)
+	end)
+	return not ok or hit ~= nil
+end
+
 local function onOpen(player: Player, payload: unknown)
 	-- type
 	if type(payload) ~= "table" then
@@ -253,7 +279,11 @@ local function onOpen(player: Player, payload: unknown)
 	-- range / sanity
 	local root = rootOf(player)
 	local pos = pivotOf(chest)
-	if root == nil or pos == nil or (root.Position - pos).Magnitude > L.ServerOpenRange then
+	if
+		root == nil
+		or pos == nil
+		or (root.Position - pos).Magnitude > L.ChestSafety.ServerMaxDistance
+	then
 		return
 	end
 	-- rate limit
@@ -261,7 +291,17 @@ local function onOpen(player: Player, payload: unknown)
 		return
 	end
 	-- state
-	if rec.opened or not isAlive(player) then
+	if not isAlive(player) then
+		return
+	end
+	local blocked = L.ChestSafety.RequiresLineOfSight and wallBetween(player, root, chest, pos)
+	local verdict = ChestAccess.decide(
+		(root.Position - pos).Magnitude,
+		blocked,
+		rec.opened,
+		L.ChestSafety.ServerMaxDistance
+	)
+	if not verdict.ok then
 		return
 	end
 	-- act: mark opened first (no yield between check and set), then grant

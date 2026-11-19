@@ -6,7 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
-local MobScaling = require(Shared.logic.MobScaling)
+local MobSpawnPick = require(Shared.logic.MobSpawnPick)
 local MobData = require(Shared.data.Mobs)
 local DataTypes = require(Shared.data.Types)
 local Types = require(script.Parent.MobTypes)
@@ -162,24 +162,8 @@ for _, id in Config.Mobs.SpeciesIds do
 	MobKinds.ByName[id] = kindFromSpecies(def)
 end
 
--- Legacy spawn table source: animals and hostiles with biome lists (bosses never use the normal budget;
--- species use ringWeights through MobSpecies instead).
-MobKinds.SpawnEntries = {} :: { MobScaling.Entry }
-for _, kind in MobKinds.ByName do
-	if kind.species == nil and (kind.category == "animal" or kind.category == "hostile") then
-		table.insert(MobKinds.SpawnEntries, {
-			kind = kind.name,
-			category = kind.category :: string,
-			biomes = kind.biomes or ({} :: { string }),
-			minDay = kind.minDay,
-			nightOnly = kind.stats.NightOnly,
-			weight = kind.stats.Weight,
-		})
-	end
-end
-table.sort(MobKinds.SpawnEntries, function(a, b)
-	return a.kind < b.kind
-end)
+-- Legacy spawn table source (pure: MobSpawnPick.legacyEntries; species use ringWeights through MobSpecies).
+MobKinds.SpawnEntries = MobSpawnPick.legacyEntries()
 
 -- Species kinds in config order (spawn picks iterate this for a stable table).
 MobKinds.SpeciesKinds = {} :: { MobKind }

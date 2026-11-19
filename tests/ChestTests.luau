@@ -6,7 +6,7 @@ local Config = require("../src/shared/Config")
 local ItemCatalog = require("../src/shared/ItemCatalog")
 local Rarity = require("../src/shared/data/Rarity")
 local ChestStyle = require("../src/shared/logic/ChestStyle")
-
+local ChestAccess = require("../src/shared/logic/ChestAccess")
 return function(check: (string, boolean) -> ())
 	local B = ChestStyle.Budget
 	local allOk, monotonic, distinct, farOk = true, true, true, true
@@ -116,5 +116,29 @@ return function(check: (string, boolean) -> ())
 			and sun ~= nil
 			and (spear.damage or 0) < (blade.damage or 0)
 			and (blade.damage or 0) < (sun.damage or 0)
+	)
+
+	-- Chest access decision (distance + wall + opened) and prompt safety config
+	local S = Config.Loot.ChestSafety
+	local max = S.ServerMaxDistance
+	check("chestaccess: near, clear, unopened ok", ChestAccess.decide(3, false, false, max).ok)
+	check(
+		"chestaccess: beyond range fails 'far'",
+		ChestAccess.decide(max + 1, false, false, max).reason == "far"
+	)
+	check("chestaccess: wall blocks", ChestAccess.decide(3, true, false, max).reason == "blocked")
+	check("chestaccess: opened fails", ChestAccess.decide(3, false, true, max).reason == "opened")
+	check(
+		"chestaccess: NaN or negative rejected",
+		ChestAccess.decide(0 / 0, false, false, max).reason == "bad"
+			and ChestAccess.decide(-1, false, false, max).reason == "bad"
+	)
+	check("chestaccess: exactly max range ok", ChestAccess.decide(max, false, false, max).ok)
+	check(
+		"chestaccess: line of sight on, prompt distance small, server slack",
+		S.RequiresLineOfSight
+			and S.PromptMaxDistance <= 8
+			and S.ServerMaxDistance > S.PromptMaxDistance
+			and S.ServerMaxDistance <= 12
 	)
 end

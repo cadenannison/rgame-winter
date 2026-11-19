@@ -16,6 +16,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local BlizzardWind = require(Shared:WaitForChild("logic"):WaitForChild("BlizzardWind"))
+local LightingMath = require(Shared:WaitForChild("logic"):WaitForChild("LightingMath"))
 
 local B = Config.Blizzard
 local BIND_NAME = "BlizzardFxWhiteout"
@@ -55,7 +56,7 @@ end
 
 -- Blend `inst[prop]` toward `target` by w without compounding: if another system rewrote the value,
 -- that becomes the new base; if the value is still the one we wrote, keep the stored base.
-local function blendNumber(inst: Instance, prop: string, target: number, w: number)
+local function blendWith(inst: Instance, prop: string, fn: (number) -> number)
 	local forInst = tracks[inst]
 	if forInst == nil then
 		forInst = {}
@@ -67,9 +68,15 @@ local function blendNumber(inst: Instance, prop: string, target: number, w: numb
 		t = { base = cur, written = cur }
 		forInst[prop] = t
 	end
-	local v = BlizzardWind.lerp(t.base, target, w)
+	local v = fn(t.base)
 	t.written = v;
 	(inst :: any)[prop] = v
+end
+
+local function blendNumber(inst: Instance, prop: string, target: number, w: number)
+	blendWith(inst, prop, function(base: number): number
+		return BlizzardWind.lerp(base, target, w)
+	end)
 end
 
 local function blendColor(inst: Instance, prop: string, target: Color3, w: number)
@@ -170,26 +177,37 @@ local function makeEmitter(
 	return e
 end
 
+local ATMO_NUMBERS = { "Density", "Offset", "Haze", "Glare" }
+local ATMO_COLORS = { "Color", "Decay" }
+
 local function whiteoutStep()
 	local w = BlizzardWind.whiteout(presence, intensity, B.FullWhiteoutIntensity)
-	local outdoor = Lighting.OutdoorAmbient
-	local dayOutdoor = Config.Lighting.DayOutdoorAmbient
-	local current = (outdoor.R + outdoor.G + outdoor.B) / 3 * 255
-	local day = (dayOutdoor[1] + dayOutdoor[2] + dayOutdoor[3]) / 3
-	local white = col(B.WhiteColor, BlizzardWind.lightScale(current, day, B.MinLightScale))
+	local L = Config.Lighting
+	-- Fog, atmosphere haze/decay and ambient all blend toward ONE tint that follows the time of day
+	-- (white by day, dark blue-grey by night), so the horizon has no seam and no black band over white.
+	local night = LightingMath.nightFromClock(Lighting.ClockTime, L.DayClockTime, L.NightClockTime)
+	local tintArr = LightingMath.blizzardTint(B.WhiteColor, B.NightColor, night)
+	local tint = Color3.fromRGB(
+		math.floor(tintArr[1] + 0.5),
+		math.floor(tintArr[2] + 0.5),
+		math.floor(tintArr[3] + 0.5)
+	)
 	if w <= 0.001 then
 		if next(tracks) ~= nil or next(colorTracks) ~= nil then
 			-- Restore: blending at w = 0 writes the base back, then forget.
 			for _, child in Lighting:GetChildren() do
 				if child:IsA("Atmosphere") then
-					blendNumber(child, "Density", 0, 0)
-					blendNumber(child, "Offset", 0, 0)
-					blendNumber(child, "Haze", 0, 0)
-					blendColor(child, "Color", white, 0)
-					blendColor(child, "Decay", white, 0)
+					for _, prop in ATMO_NUMBERS do
+						blendNumber(child, prop, 0, 0)
+					end
+					for _, prop in ATMO_COLORS do
+						blendColor(child, prop, tint, 0)
+					end
 				end
 			end
-			blendColor(Lighting, "FogColor", white, 0)
+			blendColor(Lighting, "FogColor", tint, 0)
+			blendColor(Lighting, "Ambient", tint, 0)
+			blendColor(Lighting, "OutdoorAmbient", tint, 0)
 			blendNumber(Lighting, "FogStart", 0, 0)
 			blendNumber(Lighting, "FogEnd", 0, 0)
 			releaseTracks()
@@ -201,13 +219,21 @@ local function whiteoutStep()
 			blendNumber(child, "Density", B.AtmoDensity, w)
 			blendNumber(child, "Offset", B.AtmoOffset, w)
 			blendNumber(child, "Haze", B.AtmoHaze, w)
-			blendColor(child, "Color", white, w)
-			blendColor(child, "Decay", white, w)
+			blendNumber(child, "Glare", B.AtmoGlare, w)
+			for _, prop in ATMO_COLORS do
+				blendColor(child, prop, tint, w)
+			end
 		end
 	end
-	blendColor(Lighting, "FogColor", white, w)
+	blendColor(Lighting, "FogColor", tint, w)
+	blendColor(Lighting, "Ambient", tint, w * B.AmbientMix)
+	blendColor(Lighting, "OutdoorAmbient", tint, w * B.AmbientMix)
 	blendNumber(Lighting, "FogStart", B.FogStartPeak, w)
-	blendNumber(Lighting, "FogEnd", B.PeakVisibility, w)
+	-- Visibility ends at the biggest campfire's warm radius at full whiteout (eased with presence).
+	local radius = BlizzardWind.maxFireRadius(Config.Fire.Tiers)
+	blendWith(Lighting, "FogEnd", function(base: number): number
+		return BlizzardWind.fogEnd(w, radius, base)
+	end)
 end
 
 -- Fires and warm spots stay faintly visible through the whiteout: a faint always-on-top highlight on the

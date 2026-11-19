@@ -19,6 +19,8 @@ local InventoryService = require(script.Parent.InventoryService)
 
 local GatherService = {}
 
+local HIT_EPSILON = 1e-6 -- float slack when fractional hits (better tools) reach zero
+
 type Saved = { part: BasePart, transparency: number, canCollide: boolean }
 type NodeState = { saved: { Saved }, conn: RBXScriptConnection }
 
@@ -99,7 +101,7 @@ function GatherService.registerNode(node: Instance, kind: string): boolean
 		table.insert(saved, { part = p, transparency = p.Transparency, canCollide = p.CanCollide })
 	end
 	node:SetAttribute(ItemCatalog.NodeKindAttribute, kind)
-	node:SetAttribute(ItemCatalog.NodeHitsAttribute, Config.Gather.HitsToDeplete)
+	node:SetAttribute(ItemCatalog.NodeHitsAttribute, ItemsGather.baseHits(kind))
 	node:SetAttribute(ItemCatalog.NodeDepletedAttribute, false)
 	nodes[node] = {
 		saved = saved,
@@ -130,7 +132,13 @@ local function setDepleted(node: Instance, depleted: boolean)
 		respawnAt[node] = os.clock() + Config.Gather.RespawnSeconds
 	else
 		respawnAt[node] = nil
-		node:SetAttribute(ItemCatalog.NodeHitsAttribute, Config.Gather.HitsToDeplete)
+		local kind = node:GetAttribute(ItemCatalog.NodeKindAttribute)
+		node:SetAttribute(
+			ItemCatalog.NodeHitsAttribute,
+			if type(kind) == "string"
+				then ItemsGather.baseHits(kind)
+				else Config.Gather.HitsToDeplete
+		)
 	end
 end
 
@@ -204,9 +212,16 @@ local function onGather(player: Player, node: unknown)
 	end
 	-- 5. act
 	SwingRelay.notify(player) -- accepted swing: other clients animate it
+	-- Effort comes from Config.Gather.Effort by node kind; a better tool removes more of the node per hit.
+	local selected = InventoryService.getSelected(player)
+	local selectedDef = if selected then ItemCatalog.Items[selected.id] else nil
+	local toolTier = if selectedDef and selectedDef.toolTier then selectedDef.toolTier else 0
 	local hits = (target:GetAttribute(ItemCatalog.NodeHitsAttribute) :: number?)
-		or Config.Gather.HitsToDeplete
-	hits -= 1
+		or ItemsGather.baseHits(kind)
+	hits -= ItemsGather.hitDamage(kind, toolTier)
+	if hits < HIT_EPSILON then
+		hits = 0
+	end
 	local nodeYield = ItemCatalog.Nodes[kind]
 	local pickCount = target:GetAttribute(Config.Forage.CountAttribute)
 	local yieldCount = if type(pickCount) == "number" and pickCount >= 1

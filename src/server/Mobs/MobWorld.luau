@@ -131,6 +131,24 @@ function MobWorld.groundAt(x: number, z: number, originY: number): Vector3?
 	return if hit then hit.Position else nil
 end
 
+-- Clear line from a mob to a player (terrain, trees and walls block; other mobs and characters do not).
+function MobWorld.hasSight(from: Vector3, targetRoot: BasePart): boolean
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local exclude: { Instance } = {}
+	if folder then
+		table.insert(exclude, folder)
+	end
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(exclude, player.Character)
+		end
+	end
+	params.FilterDescendantsInstances = exclude
+	local eye = from + Vector3.new(0, Config.Aggro.SightEyeHeight, 0)
+	return Workspace:Raycast(eye, targetRoot.Position - eye, params) == nil
+end
+
 -- Lit campfires from the Fire tag (position + per-fire WarmRadius attribute, Config fallback).
 function MobWorld.collectFires(): { FireRepel.Fire }
 	local out: { FireRepel.Fire } = {}

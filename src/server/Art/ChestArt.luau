@@ -147,9 +147,10 @@ function ChestArt.build(rarity: string, cframe: CFrame, parent: Instance): Model
 	prompt.Name = PROMPT_NAME
 	prompt.ActionText = "Open"
 	prompt.ObjectText = style.label
-	prompt.HoldDuration = style.holdSeconds
-	prompt.MaxActivationDistance = B.PromptDistance
-	prompt.RequiresLineOfSight = false
+	local effort = Config.Gather.Effort.Chest
+	prompt.HoldDuration = if effort then effort.HoldSeconds or 0 else 0
+	prompt.MaxActivationDistance = Config.Loot.ChestSafety.PromptMaxDistance
+	prompt.RequiresLineOfSight = Config.Loot.ChestSafety.RequiresLineOfSight
 	prompt.Style = Enum.ProximityPromptStyle.Custom -- client/Loot/ChestPrompt draws the rarity-coloured UI
 	prompt:SetAttribute(PROMPT_KEY, true)
 	prompt.Parent = base

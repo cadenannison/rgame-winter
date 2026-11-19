@@ -4,11 +4,15 @@
 -- "needs workbench", and shows inventory counts. Display only: clicking sends CraftRequest via onCraft.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local ItemCatalog = require(Shared:WaitForChild("ItemCatalog"))
+local Remotes = require(Shared:WaitForChild("Remotes"))
 local Crafting = require(Shared:WaitForChild("logic"):WaitForChild("Crafting"))
+local WorkbenchTier = require(Shared:WaitForChild("logic"):WaitForChild("WorkbenchTier"))
+local ItemTooltip = require(Shared:WaitForChild("logic"):WaitForChild("ItemTooltip"))
 local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
 local RightStack = require(script.Parent:WaitForChild("RightStack"))
 
@@ -144,7 +148,21 @@ function CraftPanel.new(
 		label(frame, "Inventory", UDim2.new(1, -24, 0, 44), UDim2.new(0, 12, 1, -48), 14)
 	invText.TextWrapped = true
 	invText.TextYAlignment = Enum.TextYAlignment.Top
+	-- Hover (PC) / long-press (touch) tooltip for a recipe's output item: name, Warmth +N, Armor.
+	local tip = label(frame, "Tooltip", UDim2.new(1, -24, 0, 48), UDim2.new(0, 12, 1, -118), 14)
+	tip.ZIndex = 7
+	tip.BackgroundTransparency = 0.1
+	tip.BackgroundColor3 = Color3.new(0, 0, 0)
+	tip.TextWrapped = true
+	tip.TextYAlignment = Enum.TextYAlignment.Top
+	tip.Visible = false
 	frame.Parent = gui
+
+	local lastCounts: { [string]: number } = {}
+	local lastNear: Crafting.Near = {}
+	local function partyTier(): number
+		return WorkbenchTier.clamp(Workspace:GetAttribute(Config.Workbench.TierAttribute))
+	end
 
 	local rows: { [string]: Row } = {}
 	local status: { [string]: string } = {}
@@ -183,7 +201,74 @@ function CraftPanel.new(
 				click(id)
 			end)
 		)
+		local outId = ItemCatalog.Recipes[id].output.id
+		local function showTip()
+			tip.Text = ItemTooltip.text(outId)
+			tip.Visible = true
+		end
+		table.insert(connections, button.MouseEnter:Connect(showTip))
+		table.insert(
+			connections,
+			button.MouseLeave:Connect(function()
+				tip.Visible = false
+			end)
+		)
+		local pressToken = 0
+		table.insert(
+			connections,
+			button.InputBegan:Connect(function(input: InputObject)
+				if input.UserInputType ~= Enum.UserInputType.Touch then
+					return
+				end
+				pressToken += 1
+				local mine = pressToken
+				task.delay(Config.Inventory.SplitHoldSeconds, function()
+					if mine == pressToken then
+						showTip()
+					end
+				end)
+			end)
+		)
+		table.insert(
+			connections,
+			button.InputEnded:Connect(function(input: InputObject)
+				if input.UserInputType == Enum.UserInputType.Touch then
+					pressToken += 1
+					tip.Visible = false
+				end
+			end)
+		)
 	end
+
+	-- "Upgrade Workbench" row: lists the next tier's cost; the server recomputes and validates everything.
+	local upgradeButton = Instance.new("TextButton")
+	upgradeButton.Name = "UpgradeWorkbench"
+	upgradeButton.LayoutOrder = 0
+	upgradeButton.Size = UDim2.new(1, -8, 0, HudConfig.CraftRowHeight)
+	upgradeButton.BackgroundColor3 = HudConfig.AccentColor
+	upgradeButton.BackgroundTransparency = 0.7
+	upgradeButton.BorderSizePixel = 0
+	upgradeButton.Text = ""
+	corner(upgradeButton, 6)
+	local upTitle =
+		label(upgradeButton, "Title", UDim2.new(1, -12, 0.5, 0), UDim2.fromOffset(8, 2), 18)
+	upTitle.Font = Enum.Font.GothamBold
+	local upDetail =
+		label(upgradeButton, "Detail", UDim2.new(1, -12, 0.45, 0), UDim2.new(0, 8, 0.5, 0), 14)
+	upgradeButton.Parent = list
+	local upgradeStatus = "NeedStation"
+	local function clickUpgrade()
+		if upgradeStatus == "Ok" then
+			Remotes.event(Remotes.UpgradeWorkbench):FireServer()
+		elseif upgradeStatus == "NeedStation" then
+			onDenied(`Needs a {Config.Craft.Stations.workbench.Label} nearby`)
+		elseif upgradeStatus == "MaxTier" then
+			onDenied("The workbench is fully upgraded")
+		else
+			onDenied(HudConfig.NotifyText[upgradeStatus] or "Not enough materials")
+		end
+	end
+	table.insert(connections, upgradeButton.Activated:Connect(clickUpgrade))
 
 	local panel: Panel
 	local function setOpen(v: boolean)
@@ -193,6 +278,14 @@ function CraftPanel.new(
 			onOpened()
 		end
 	end
+	table.insert(
+		connections,
+		Workspace:GetAttributeChangedSignal(Config.Workbench.TierAttribute):Connect(function()
+			if open and panel then
+				panel.refresh(lastCounts, lastNear) -- newly unlocked recipes appear at once
+			end
+		end)
+	)
 	table.insert(
 		connections,
 		toggleButton.Activated:Connect(function()
@@ -219,6 +312,8 @@ function CraftPanel.new(
 			return status[recipeId] or "Unknown"
 		end,
 		refresh = function(counts: { [string]: number }, near: Crafting.Near)
+			lastCounts, lastNear = counts, near
+			local tier = partyTier()
 			local here: { string } = {}
 			for name, station in Config.Craft.Stations do
 				if near[name] then
@@ -229,9 +324,23 @@ function CraftPanel.new(
 			benchNote.Text = if #here > 0
 				then `At a {table.concat(here, ", ")}: its recipes are unlocked`
 				else "No station nearby: hand recipes only"
+			-- Upgrade row (hidden once the bench is at max tier).
+			local nextCost = WorkbenchTier.nextCost(tier)
+			upgradeStatus = WorkbenchTier.status(counts, tier, near.workbench == true)
+			upgradeButton.Visible = nextCost ~= nil
+			if nextCost then
+				local nextDef = Config.Workbench.Tiers[tier + 1]
+				upTitle.Text = `{Config.Workbench.UpgradeRowText}: {nextDef.Label}`
+				upDetail.Text = WorkbenchTier.costText(nextCost, counts)
+				local dimUp = if upgradeStatus == "Ok" then 0 else HudConfig.DisabledTransparency
+				upTitle.TextTransparency = dimUp
+				upDetail.TextTransparency = dimUp
+				upgradeButton.AutoButtonColor = upgradeStatus == "Ok"
+			end
 			for id, row in rows do
 				local recipe = ItemCatalog.Recipes[id]
-				local s = Crafting.status(counts, id, near)
+				row.button.Visible = WorkbenchTier.recipeAvailable(id, tier) -- higher tiers stay hidden
+				local s = Crafting.status(counts, id, near, tier)
 				status[id] = s
 				local parts: { string } = {}
 				for _, input in recipe.inputs do
@@ -242,7 +351,9 @@ function CraftPanel.new(
 					)
 				end
 				local outDef = ItemCatalog.Items[recipe.output.id]
-				row.title.Text = if outDef then outDef.name else id
+				local warmth = ItemTooltip.warmthLine(recipe.output.id)
+				row.title.Text = (if outDef then outDef.name else id)
+					.. (if warmth then `  ({warmth})` else "")
 				row.detail.Text = table.concat(parts, "   ")
 					.. (
 						if s == "NeedStation"

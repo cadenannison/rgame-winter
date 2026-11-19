@@ -8,6 +8,7 @@ local Clothing = require("../data/Clothing")
 local ItemCatalog = require("../ItemCatalog")
 local Equipment = require("./Equipment")
 local Inventory = require("./Inventory")
+local WarmthHint = require("./WarmthHint")
 
 local ClothingLogic = {}
 
@@ -53,13 +54,9 @@ function ClothingLogic.deficit(resistance: number, required: number): number
 	return math.max(0, math.min(required, Config.Biome.MaxRequiredColdResistance) - resistance)
 end
 
--- Player-facing warning, or nil when dressed enough.
+-- Player-facing warning, or nil when dressed enough. A general hint (WarmthHint bands), no numbers.
 function ClothingLogic.warning(resistance: number, required: number, biomeName: string): string?
-	local missing = ClothingLogic.deficit(resistance, required)
-	if missing <= 0 then
-		return nil
-	end
-	return `{biomeName}: needs {required} cold resistance (you have {resistance})`
+	return WarmthHint.message(resistance, required, biomeName)
 end
 
 return ClothingLogic

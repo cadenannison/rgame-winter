@@ -2,6 +2,7 @@
 -- Pure crafting rules. Atomic: either the whole recipe applies or inventory is untouched.
 
 local Inventory = require("./Inventory")
+local Config = require("../Config")
 local ItemCatalog = require("../ItemCatalog")
 
 local Crafting = {}
@@ -15,14 +16,24 @@ function Crafting.requiredStation(recipeId: string): string?
 	return if recipe then recipe.station else nil
 end
 
--- Returns (ok, reason). reason: "UnknownRecipe" | "NeedStation" | "MissingMaterials" | "InventoryFull".
-function Crafting.craft(inv: Inventory.Inv, recipeId: string, near: Near): (boolean, string)
+-- partyTier = the party-wide workbench tier (nil = Config.Workbench.MaxTier, for legacy callers); a workbench
+-- recipe above it fails with "NeedBenchTier".
+-- Returns (ok, reason). reason: "UnknownRecipe" | "NeedStation" | "NeedBenchTier" | "MissingMaterials" | "InventoryFull".
+function Crafting.craft(
+	inv: Inventory.Inv,
+	recipeId: string,
+	near: Near,
+	partyTier: number?
+): (boolean, string)
 	local recipe = ItemCatalog.Recipes[recipeId]
 	if recipe == nil then
 		return false, "UnknownRecipe"
 	end
 	if recipe.station ~= nil and not near[recipe.station] then
 		return false, "NeedStation"
+	end
+	if ItemCatalog.benchTierOf(recipeId) > (partyTier or Config.Workbench.MaxTier) then
+		return false, "NeedBenchTier"
 	end
 	for _, input in recipe.inputs do
 		if Inventory.count(inv, input.id) < input.count then
@@ -46,14 +57,22 @@ function Crafting.craft(inv: Inventory.Inv, recipeId: string, near: Near): (bool
 end
 
 -- Display check from item counts (client panel greys out what this rejects; server still decides).
--- Returns "Ok" | "UnknownRecipe" | "NeedStation" | "MissingMaterials".
-function Crafting.status(counts: { [string]: number }, recipeId: string, near: Near): string
+-- Returns "Ok" | "UnknownRecipe" | "NeedStation" | "NeedBenchTier" | "MissingMaterials".
+function Crafting.status(
+	counts: { [string]: number },
+	recipeId: string,
+	near: Near,
+	partyTier: number?
+): string
 	local recipe = ItemCatalog.Recipes[recipeId]
 	if recipe == nil then
 		return "UnknownRecipe"
 	end
 	if recipe.station ~= nil and not near[recipe.station] then
 		return "NeedStation"
+	end
+	if ItemCatalog.benchTierOf(recipeId) > (partyTier or Config.Workbench.MaxTier) then
+		return "NeedBenchTier"
 	end
 	for _, input in recipe.inputs do
 		if (counts[input.id] or 0) < input.count then

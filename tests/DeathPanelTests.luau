@@ -4,8 +4,9 @@
 local DeathPanelState = require("../src/shared/logic/DeathPanelState")
 local RunState = require("../src/server/Run/RunState")
 
-local function input(overrides: { [string]: boolean }): DeathPanelState.Input
-	local base = {
+local function input(overrides: { [string]: any }): DeathPanelState.Input
+	local base: { [string]: any } = {
+		aliveTeammates = 1,
 		downed = false,
 		dead = false,
 		runEnded = false,
@@ -53,6 +54,44 @@ return function(check: (string, boolean) -> ())
 		input({ dead = true, runEnded = true, hasSummary = true, dismissed = true })
 	)
 	check("deathpanel: dismissed summary falls back to dead bar", closed.mode == "dead")
+
+	-- One panel at a time: spectate only while a teammate lives, the run summary otherwise.
+	local alone = DeathPanelState.resolve(input({ dead = true, aliveTeammates = 0 }))
+	check(
+		"deathpanel: dead with nobody alive has no spectate controls",
+		alone.mode == "dead" and not alone.showSpectate and alone.showDeadBar and alone.showReturn
+	)
+	local aloneEnded = DeathPanelState.resolve(
+		input({ dead = true, aliveTeammates = 0, runEnded = true, hasSummary = true })
+	)
+	check(
+		"deathpanel: nobody alive + run end shows only the summary",
+		aloneEnded.mode == "summary" and not aloneEnded.showDeadBar and not aloneEnded.showSpectate
+	)
+	local withMates =
+		DeathPanelState.resolve(input({ dead = true, aliveTeammates = 2, runEnded = false }))
+	check(
+		"deathpanel: teammate alive shows spectate, not the summary",
+		withMates.showSpectate and withMates.showDeadBar and not withMates.opaque
+	)
+	local matesEnded = DeathPanelState.resolve(
+		input({ dead = true, aliveTeammates = 2, runEnded = true, hasSummary = true })
+	)
+	check(
+		"deathpanel: summary and dead bar are never both shown",
+		matesEnded.mode == "summary" and not matesEnded.showDeadBar and not matesEnded.showSpectate
+	)
+	local aloneClosed = DeathPanelState.resolve(input({
+		dead = true,
+		aliveTeammates = 0,
+		runEnded = true,
+		hasSummary = true,
+		dismissed = true,
+	}))
+	check(
+		"deathpanel: closed summary leaves a Return-only bar",
+		aloneClosed.showDeadBar and aloneClosed.showReturn and not aloneClosed.showSpectate
+	)
 
 	-- Respawn bookkeeping in the run roster.
 	local run = RunState.new({ 1, 2 }, { rejoinWindow = 60, reviveLimit = 60 })

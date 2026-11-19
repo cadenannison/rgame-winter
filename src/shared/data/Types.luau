@@ -24,6 +24,8 @@ export type ItemDef = {
 	clothingSlot: string?, -- Config.Clothing.Slots entry
 	clothingTier: number?, -- 1..Config.Clothing.MaxTier
 	coldResistance: number?, -- resistance points while worn (stamped from Config.Items)
+	warmth: number?, -- warmth-loss reduction while worn (stamped from Config.Items)
+	armor: number?, -- damage reduction fraction while worn (stamped from Config.Armor.Values)
 	category: string?, -- Config.Items category (stamped by ItemCatalog)
 	equipSlot: string?, -- Config.Equipment.Slots entry it can be worn in (stamped by ItemCatalog)
 	lightRadius: number?, -- light items: studs of light (torch/lantern/flare)

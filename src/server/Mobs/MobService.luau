@@ -19,6 +19,7 @@ local MobRegistry = require(script.Parent.MobRegistry)
 local MobSpawner = require(script.Parent.MobSpawner)
 local MobState = require(script.Parent.MobState)
 local MobWorld = require(script.Parent.MobWorld)
+local AggroGate = require(script.Parent.Drivers.AggroGate)
 local Species = require(script.Parent.Species)
 local Types = require(script.Parent.MobTypes)
 
@@ -101,6 +102,7 @@ local function aiPass(infos: { PlayerInfo })
 			env.dt = math.clamp(env.now - row.lastStepAt, 0, MAX_STEP_DT)
 			row.lastStepAt = env.now
 			env.nearestInfo, env.nearest = MobWorld.nearestPlayer(row.root.Position, infos)
+			AggroGate.apply(row, env)
 			Species.get(row.kind.name).step(row, env)
 			row.provoked = false
 			if row.model.Parent and MobRegistry.get(row.model) == row then
@@ -251,6 +253,9 @@ function MobService.start()
 	MobWorld.setFolder(mobsFolder)
 
 	MobCombat.start()
+	MobCombat.onKilled(function(_model, kindName)
+		MobSpawner.noteKill(kindName)
+	end)
 	RunService.Heartbeat:Connect(onHeartbeat)
 end
 

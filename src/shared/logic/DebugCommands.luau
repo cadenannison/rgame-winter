@@ -39,6 +39,7 @@ DebugCommands.NAMES = {
 	"sprint",
 	"mob",
 	"mobs",
+	"inv",
 }
 
 -- Commands that only call registered handlers (no attribute is written by DebugService).
@@ -57,6 +58,7 @@ DebugCommands.ACTION_ONLY = {
 	sprint = true, -- on|off: force the player's sprint state
 	mob = true, -- <id>: spawn any mob kind (all existing + the 8 Art Pass 3 species) in front of the player
 	mobs = true, -- list nearby mobs with their replicated State
+	inv = true, -- print every non-empty inventory slot (server) and each grid cell (client); warn on stray items
 	groundcheck = true, -- heightAt vs real terrain raycast at the player and the nearest fire
 } :: { [string]: boolean }
 
@@ -127,13 +129,19 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 		end
 		return true, arg
 	elseif name == "blizzard" then
-		-- boolean (legacy attribute toggle) or "start" | "stop" | "intensity <0..1>" (BlizzardService)
+		-- "" / status (print state), start | stop | intensity <0..1>; on/off (booleans) map to start/stop
 		if type(arg) == "boolean" then
-			return true, arg
+			return true, { action = if arg then "start" else "stop" }
+		end
+		if arg ~= nil and type(arg) ~= "string" then
+			return false, "blizzard arg must be text"
 		end
 		local text = if type(arg) == "string"
 			then string.lower(string.match(arg, "^%s*(.-)%s*$") or "")
 			else ""
+		if text == "" or text == "status" then
+			return true, { action = "status" }
+		end
 		if text == "start" or text == "stop" then
 			return true, { action = text }
 		end
@@ -141,7 +149,7 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 		if n ~= nil and isNumber(n) and (n :: number) >= 0 and (n :: number) <= 1 then
 			return true, { action = "intensity", value = n }
 		end
-		return false, "blizzard needs start, stop or intensity <0..1>"
+		return false, "blizzard needs start, stop, intensity <0..1> or nothing (status)"
 	elseif name == "forage" then
 		return true, nil
 	elseif name == "sprint" then
@@ -196,7 +204,13 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 			end
 		end
 		return false, "mob needs a kind id"
-	elseif name == "structures" or name == "respawn" or name == "groundcheck" or name == "mobs" then
+	elseif
+		name == "structures"
+		or name == "respawn"
+		or name == "groundcheck"
+		or name == "mobs"
+		or name == "inv"
+	then
 		return true, nil
 	elseif name == "tp" then
 		local target = DebugCommands.parseTp(arg, limits.ringCount)
@@ -227,6 +241,37 @@ function DebugCommands.validate(name: unknown, arg: unknown, limits: Limits): (b
 		return false, "mode must be run, lobby or clear"
 	end
 	return false, "unknown command"
+end
+
+export type BlizzardApi = {
+	DebugStart: () -> boolean,
+	DebugStop: () -> (),
+	DebugSetIntensity: (number?) -> (),
+	DebugStatus: () -> string,
+}
+
+-- Applies a validated blizzard arg ({ action, value? }) to the live service and returns the line to show.
+-- `api` is nil when the server has no weather (lobby servers never start EventService).
+function DebugCommands.runBlizzard(arg: unknown, api: BlizzardApi?): string
+	if api == nil then
+		return "No weather in lobby. /debug mode run, then Test"
+	end
+	if type(arg) ~= "table" then
+		return "blizzard: bad argument"
+	end
+	local a = arg :: { action: string, value: number? }
+	if a.action == "start" then
+		return if api.DebugStart()
+			then "blizzard started"
+			else "blizzard: dark event active, try later"
+	elseif a.action == "stop" then
+		api.DebugStop()
+		return "blizzard stopped"
+	elseif a.action == "intensity" then
+		api.DebugSetIntensity(a.value)
+		return `blizzard intensity {a.value}`
+	end
+	return api.DebugStatus()
 end
 
 return DebugCommands

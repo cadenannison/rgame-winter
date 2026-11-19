@@ -12,6 +12,8 @@ local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local LobbyLogic = require(Shared:WaitForChild("logic"):WaitForChild("LobbyLogic"))
 local DeathPanelState = require(Shared:WaitForChild("logic"):WaitForChild("DeathPanelState"))
+local DeathPanelInputs =
+	require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("DeathPanelInputs"))
 local LobbyConfig = require(script.Parent.LobbyConfig)
 local UiKit = require(script.Parent.UiKit)
 local LobbyState = require(script.Parent.LobbyState)
@@ -141,6 +143,11 @@ function SummaryScreen.start(
 			return
 		end
 		returnButton.Text = "Returning..."
+		task.delay(Config.Run.ReturnButtonResetSeconds, function()
+			if not destroyed then
+				returnButton.Text = "Return to lobby"
+			end
+		end)
 		if not returnRemote then
 			returnRemote = Remotes.event(Remotes.ReturnToLobbyRequest)
 		end
@@ -161,8 +168,16 @@ function SummaryScreen.start(
 			hasSummary = hasSummary,
 			inLobby = state.isLobby(),
 			dismissed = dismissed,
+			aliveTeammates = DeathPanelInputs.aliveTeammates(),
 		})
 		local show = view.mode == "summary"
+		local summaryState = if show
+			then "open"
+			elseif dismissed and runEnded then "dismissed"
+			else ""
+		if player:GetAttribute(Config.Run.SummaryStateAttribute) ~= summaryState then
+			player:SetAttribute(Config.Run.SummaryStateAttribute, summaryState)
+		end
 		panel.Visible = show
 		panel.Active = show -- a hidden panel never swallows input
 		if show then

@@ -10,7 +10,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
+local SlotViewModel = require(Shared:WaitForChild("logic"):WaitForChild("SlotViewModel"))
 local BackpackPanel = require(script.Parent:WaitForChild("BackpackPanel"))
+local DebugChat = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("DebugChat"))
 local InventoryMirror = require(script.Parent:WaitForChild("InventoryMirror"))
 local UiConfig = require(script.Parent:WaitForChild("InventoryUiConfig"))
 
@@ -38,6 +40,11 @@ function StorageController.start(mirror: InventoryMirror.Mirror, report: (string
 	local connections: { RBXScriptConnection } = {}
 	local prompts: { [Instance]: ProximityPrompt } = {}
 	local panel = BackpackPanel.new(mirror)
+	DebugChat.onLocal("inv", function()
+		for _, line in panel.debugLines() do
+			print(`[Debug] {line}`)
+		end
+	end)
 
 	local function addPrompt(chest: Instance)
 		if prompts[chest] or destroyed then
@@ -98,21 +105,7 @@ function StorageController.start(mirror: InventoryMirror.Mirror, report: (string
 					panel.setChest(nil)
 					return
 				end
-				local slots: { [number]: { id: string, count: number, durability: number? } } = {}
-				if type(p.slots) == "table" then
-					for i, s in p.slots do
-						if
-							type(i) == "number"
-							and type(s) == "table"
-							and type(s.id) == "string"
-						then
-							slots[i] = {
-								id = s.id,
-								count = if type(s.count) == "number" then s.count else 1,
-							}
-						end
-					end
-				end
+				local slots = SlotViewModel.decodeSlots(p.slots)
 				if openChest == nil then
 					report("chestOpened")
 				end
@@ -135,6 +128,7 @@ function StorageController.start(mirror: InventoryMirror.Mirror, report: (string
 		panel = panel,
 		destroy = function()
 			destroyed = true
+			DebugChat.onLocal("inv", nil)
 			for _, c in connections do
 				c:Disconnect()
 			end

@@ -42,4 +42,22 @@ function LightingMath.fireLightRange(warmRadius: number, scale: number, maxRange
 	return math.clamp(warmRadius * scale, 0, maxRange)
 end
 
+-- 0 = day, 1 = night from the replicated Lighting.ClockTime (server writes mix(DayClock, NightClock, n)).
+function LightingMath.nightFromClock(clock: number, dayClock: number, nightClock: number): number
+	local span = dayClock - nightClock
+	if math.abs(span) < 1e-6 then
+		return 0
+	end
+	return math.clamp((dayClock - clock) / span, 0, 1)
+end
+
+-- Blizzard tint for the time of day: dayTint by day, nightTint (dark blue-grey) by night.
+function LightingMath.blizzardTint(
+	dayTint: { number },
+	nightTint: { number },
+	night: number
+): { number }
+	return LightingMath.lerpColor(dayTint, nightTint, math.clamp(night, 0, 1))
+end
+
 return LightingMath

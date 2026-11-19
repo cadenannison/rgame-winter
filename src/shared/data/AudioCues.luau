@@ -43,6 +43,7 @@ AudioCues.List = {
 	cue("IceCrack", "world", "IceCrackSound", "IceShardParticle", 0.8, false, false),
 	-- Config.Cue.Kinds: events (sent by EventService) and bosses
 	cue("WarnBlizzard", "event", "EventWarningSound", nil, 0.7, false, false),
+	cue("BlizzardForecast", "event", "EventWarningSound", nil, 0.5, false, false), -- silent until an id is supplied
 	cue("WarnFalseNight", "event", "EventWarningSound", nil, 0.7, false, false),
 	cue("WarnTheQuiet", "event", "EventWarningSound", nil, 0.7, false, false),
 	cue("WarnDeepFreeze", "event", "EventWarningSound", nil, 0.7, false, false),
