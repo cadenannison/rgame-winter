@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local ItemCatalog = require(Shared.ItemCatalog)
+local ItemModels = require(Shared.ItemModels)
 
 local HeldItem = {}
 
@@ -28,25 +29,27 @@ local function build(id: string): Tool?
 	if def == nil then
 		return nil
 	end
-	local visual = Config.Held.Visuals[id] or Config.Held.Default
+	local model = ItemModels.build(id, "held")
+	local primary = model and model.PrimaryPart
+	if model == nil or primary == nil then
+		if model then
+			model:Destroy()
+		end
+		return nil
+	end
 	local tool = Instance.new("Tool")
 	tool.Name = Config.Held.ToolName
 	tool.ToolTip = def.name
 	tool.CanBeDropped = false
 	tool.RequiresHandle = true
 	tool.ManualActivationOnly = true
-	tool.GripPos = Vector3.new(0, -visual.GripOffset, 0)
+	tool.GripPos = ItemModels.heldGrip(id)
 	tool:SetAttribute("ItemId", id)
-	local handle = Instance.new("Part")
-	handle.Name = "Handle"
-	handle.Size = Vector3.new(visual.Size[1], visual.Size[2], visual.Size[3])
-	handle.Color = Color3.fromRGB(visual.Color[1], visual.Color[2], visual.Color[3])
-	handle.Material = Enum.Material.SmoothPlastic
-	handle.CanCollide = false
-	handle.CanQuery = false
-	handle.CanTouch = false
-	handle.Massless = true
-	handle.Parent = tool
+	primary.Name = "Handle" -- Tool contract; the other parts stay welded to it (WeldConstraints survive the move)
+	for _, child in model:GetChildren() do
+		child.Parent = tool
+	end
+	model:Destroy()
 	return tool
 end
 

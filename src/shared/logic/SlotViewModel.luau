@@ -69,6 +69,21 @@ function SlotViewModel.name(stack: Stack): string
 	return stack.id
 end
 
+local idByName: { [string]: string }? = nil
+
+-- Reverse of name(): item id for a display name (HUD slots that only receive the name text). nil if unknown.
+function SlotViewModel.idForName(name: string): string?
+	local map = idByName
+	if map == nil then
+		map = {}
+		for id, def in ItemCatalog.Items do
+			(map :: { [string]: string })[def.name] = id
+		end
+		idByName = map
+	end
+	return (map :: { [string]: string })[name] or (if ItemCatalog.Items[name] then name else nil)
+end
+
 function SlotViewModel.view(stack: Stack?): View
 	if stack == nil then
 		return { occupied = false, name = "", countText = "", rarity = "common" }

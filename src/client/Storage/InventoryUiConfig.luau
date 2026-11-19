@@ -9,7 +9,7 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Co
 local UiConfig = {
 	GuiName = "BackpackPanel",
 	DisplayOrderOffset = 3, -- above HudConfig.DisplayOrder
-	CellPx = 50, -- slot size (>= 44 so phone taps work)
+	CellPx = 54, -- slot size (>= 44 so phone taps work; room for icon + name)
 	MinCellPx = 44,
 	GapPx = 4,
 	PadPx = 10,
@@ -18,8 +18,21 @@ local UiConfig = {
 	CloseButtonPx = 44,
 	PanelWidthScale = 0.96,
 	PanelMaxWidth = 1000,
-	PanelHeightScale = 0.8,
-	PanelCenterY = 0.44,
+	PanelMaxHeight = 760,
+	PanelTopMarginPx = 8, -- gap under the Roblox top bar (the gui starts below it: ScreenInsets.TopbarSafeInsets)
+	PanelBottomMarginPx = 8,
+	HeaderTopPx = 4,
+	HeaderGapPx = 6,
+	TooltipPx = 44, -- item detail footer height
+	TooltipNameMax = 16,
+	TooltipInfoMax = 14,
+	NameMaxPx = 12, -- slot name text: largest / smallest size NameFit will use
+	NameMinPx = 8,
+	NameFont = Enum.Font.SourceSansSemibold,
+	IconBox = { X = 0.12, Y = 0.05, W = 0.76, H = 0.54 }, -- icon area inside a slot (fractions)
+	NameBox = { X = 0.03, Y = 0.6, W = 0.94, H = 0.38 }, -- name area beneath the icon
+	CountBox = { X = 0.4, Y = 0.02, W = 0.58, H = 0.26 }, -- stack count, top-right over the icon
+	CaptionMaxChars = 2, -- captions longer than this (equipment labels) hide while a slot is occupied
 	ViewportWidthPx = 120,
 	ViewportHeightPx = 190,
 	WideChestColumns = 3,
@@ -55,8 +68,8 @@ local UiConfig = {
 		Dim = Color3.fromRGB(150, 170, 190),
 		Hotbar = Color3.fromRGB(240, 200, 90),
 	},
-	SlotTransparency = 0.25,
-	PanelTransparency = 0.08,
+	SlotTransparency = 0.2,
+	PanelTransparency = 0.04, -- near opaque: HUD stat bars must not show through
 	Titles = {
 		Backpack = "Backpack",
 		Equipment = "Equipment",

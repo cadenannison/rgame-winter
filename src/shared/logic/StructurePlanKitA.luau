@@ -41,6 +41,7 @@ export type Box = {
 	rz: number?,
 	collide: boolean,
 	shape: string?, -- "Cylinder": vertical, diameter sx
+	face: string?, -- Enum.NormalId name of the part face that carries Sign/Note text (fixed in the part frame)
 	role: string?, -- "Lamp", "Emitter", "Sign", "Note", "Eyes", "Water"
 	text: string?,
 	light: Light?,
@@ -724,6 +725,7 @@ end
 function Kit.note(name: string, x: number, y: number, z: number, text: string): Box
 	local b = Kit.box(name, "Paper", x, y + 0.1, z, 1.4, 0.15, 1.8, false)
 	b.role = "Note"
+	b.face = "Top"
 	b.text = text
 	return b
 end
@@ -767,6 +769,12 @@ function Kit.sign(name: string, room: Room, side: string, along: number, text: s
 	end
 	b.role = "Sign"
 	b.text = text
+	-- the readable face looks into the room, never at the player
+	b.face = if side == "x0"
+		then "Right"
+		elseif side == "x1" then "Left"
+		elseif side == "z0" then "Back"
+		else "Front"
 	return b
 end
 

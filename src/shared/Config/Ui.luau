@@ -2,14 +2,16 @@
 -- Config module: Ui. Client UI values: held-item visuals, feedback, settings keys, first-run hints.
 -- Merged into Config by Config/init.luau; public API stays Config.<Section>.<Key>.
 
--- Size {x, y, z} studs and Color {r, g, b} 0-255 as plain numbers (Config is also loaded by Lune tests).
+-- Legacy shape (Config/init.luau still re-exports it); held visuals now come from ItemModels.
 export type HeldVisual = { Size: { number }, Color: { number }, GripOffset: number }
 
--- Held item visuals (server builds a Tool in the character hand for the selected slot).
+-- Held item visuals (server builds a Tool in the character hand for the selected slot from ItemModels 'held').
+-- GripFraction: where along the model's long axis the hand grips, 0 = bottom end, 1 = top end.
 export type HeldConfig = {
 	ToolName: string,
-	Default: HeldVisual,
-	Visuals: { [string]: HeldVisual },
+	DefaultGrip: number,
+	KindGrip: { [string]: number }, -- by ItemCatalog kind
+	ItemGrip: { [string]: number }, -- per-item override
 }
 
 -- Client feedback for actions (swing, hit, prompts). Visual only; never gameplay.
@@ -86,57 +88,26 @@ local Sections: Sections = {
 	},
 	Held = {
 		ToolName = "HeldItem", -- name of the server-built Tool in the character (visual only)
-		Default = {
-			Size = { 0.8, 0.8, 0.8 },
-			Color = { 200, 200, 200 },
-			GripOffset = 0,
+		DefaultGrip = 0.5,
+		KindGrip = {
+			tool = 0.25, -- handle low, head above the fist
+			weapon = 0.3,
+			light = 0.2,
+			ammo = 0.5,
+			placeable = 0.5,
 		},
-		Visuals = {
-			Axe = {
-				Size = { 0.4, 3, 0.4 },
-				Color = { 150, 110, 70 },
-				GripOffset = 1,
-			},
-			Pickaxe = {
-				Size = { 0.4, 3, 0.4 },
-				Color = { 120, 120, 130 },
-				GripOffset = 1,
-			},
-			Spear = {
-				Size = { 0.3, 5, 0.3 },
-				Color = { 170, 140, 90 },
-				GripOffset = 1.5,
-			},
-			Wood = {
-				Size = { 0.8, 0.8, 2 },
-				Color = { 130, 90, 55 },
-				GripOffset = 0,
-			},
-			Stone = {
-				Size = { 1, 0.8, 1 },
-				Color = { 130, 130, 135 },
-				GripOffset = 0,
-			},
-			RawMeat = {
-				Size = { 1, 0.6, 1 },
-				Color = { 190, 70, 70 },
-				GripOffset = 0,
-			},
-			Campfire = {
-				Size = { 1.4, 0.6, 1.4 },
-				Color = { 230, 120, 40 },
-				GripOffset = 0,
-			},
-			Workbench = {
-				Size = { 1.6, 0.8, 1.2 },
-				Color = { 140, 100, 60 },
-				GripOffset = 0,
-			},
-			Hide = {
-				Size = { 1.2, 0.2, 1.2 },
-				Color = { 110, 110, 120 },
-				GripOffset = 0,
-			},
+		ItemGrip = {
+			Spear = 0.4,
+			IronSpear = 0.4,
+			FangSpear = 0.4,
+			SunpiercerSpear = 0.4,
+			Bow = 0.5,
+			Torch = 0.25,
+			BlubberTorch = 0.25,
+			AuroraTorch = 0.25,
+			Lantern = 0.35,
+			AuroraLantern = 0.35,
+			SunBeacon = 0.35,
 		},
 	},
 	Feedback = {

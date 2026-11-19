@@ -43,6 +43,22 @@ return function(check: (string, boolean) -> ())
 	end
 	check("chest: five styles inside budget", allOk and #Rarity.List == 5)
 	check("chest: styles distinct", distinct)
+	local A = Config.ArtStructures
+	local artOk, lidsOk = true, true
+	for _, name in Rarity.List do
+		local st = ChestStyle.get(name)
+		if st.glowEmitters > A.ChestGlowEmitters or st.beamHeight > A.BeamMaxStuds then
+			artOk = false
+		end
+		if st.lidColor[1] == st.bodyColor[1] and st.lidColor[2] == st.bodyColor[2] then
+			lidsOk = false
+		end
+		if (st.glowColor == nil) ~= (st.glowEmitters == 0) then
+			artOk = false
+		end
+	end
+	check("chest: glow emitters and beams inside ArtStructures caps", artOk)
+	check("chest: lid colour differs from body per rarity", lidsOk)
 	check("chest: glow, light, particles, burst and open time grow with rarity", monotonic)
 	check("chest: rare+ has a short beam (Config.Loot.Beam)", farOk)
 	check(

@@ -16,6 +16,9 @@ local Meta = require("@self/Meta")
 local Ui = require("@self/Ui")
 local Art = require("@self/Art")
 local Creatures = require("@self/Creatures")
+local ArtItems = require("@self/ArtItems")
+local ArtGear = require("@self/ArtGear")
+local ArtStructures = require("@self/ArtStructures")
 
 export type DebugConfig = Debug.DebugConfig
 export type TimeConfig = Survival.TimeConfig
@@ -114,6 +117,9 @@ export type WorldBiomeArt = Art.WorldBiomeArt
 export type WorldArtConfig = Art.WorldArtConfig
 export type ArtConfig = Art.ArtConfig
 export type CreaturesConfig = Creatures.CreaturesConfig
+export type ArtItemsConfig = ArtItems.ArtItemsConfig
+export type ArtGearConfig = ArtGear.ArtGearConfig
+export type ArtStructuresConfig = ArtStructures.ArtStructuresConfig
 
 export type Config =
 	Core.Sections
@@ -130,6 +136,9 @@ export type Config =
 	& Ui.Sections
 	& Art.Sections
 	& Creatures.Sections
+	& ArtItems.Sections
+	& ArtGear.Sections
+	& ArtStructures.Sections
 
 local modules: { any } = {
 	Core,
@@ -146,6 +155,9 @@ local modules: { any } = {
 	Ui,
 	Art,
 	Creatures,
+	ArtItems,
+	ArtGear,
+	ArtStructures,
 }
 local merged = {}
 for _, module in modules do

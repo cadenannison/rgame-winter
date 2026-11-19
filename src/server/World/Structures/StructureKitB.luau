@@ -24,6 +24,7 @@ local P = ArtKit.palette(Config.Art.World.Palette)
 local MASSIVE = Config.Massive
 local DREAD_COOLDOWN = 20 -- seconds between dread hook calls per zone
 local QUARTER_TURN = math.pi / 2
+local FLICKER_DIM_FACTOR = 0.35
 
 local StructureKitB = {}
 
@@ -58,7 +59,10 @@ local function styleOf(name: string): PoiStructures.Style
 	return KIT_STYLES[name] or PoiStructures.styleOf(name) or KIT_STYLES.Hull
 end
 
-local function makePart(b: Kit.Box, base: CFrame): Part
+type Mood = typeof(Config.ArtStructures.DefaultMood)
+type LightEntry = { light: PointLight, base: number }
+
+local function makePart(b: Kit.Box, base: CFrame, mood: Mood, lights: { LightEntry }): Part
 	local style = styleOf(b.style)
 	local part = Instance.new("Part")
 	part.Name = b.name
@@ -79,11 +83,16 @@ local function makePart(b: Kit.Box, base: CFrame): Part
 	if b.light then
 		local light = Instance.new("PointLight")
 		light.Name = "StructureLight"
-		light.Color = PoiStructures.lightColor(b.light.color)
+		local lc = PoiStructures.lightColor(b.light.color)
+		if mood.tint ~= nil and mood.tintAmount > 0 then
+			lc = lc:Lerp(Color3.fromRGB(mood.tint[1], mood.tint[2], mood.tint[3]), mood.tintAmount)
+		end
+		light.Color = lc
 		light.Range = b.light.range
 		light.Brightness = b.light.brightness
 		light.Shadows = false
 		light.Parent = part
+		table.insert(lights, { light = light, base = b.light.brightness })
 	end
 	if b.fx == "Fire" then
 		part.Transparency = 1
@@ -160,8 +169,32 @@ function StructureKitB.build(
 	model.Name = plan.id
 	model:SetAttribute("StructureType", plan.id)
 	model:SetAttribute("Seed", seed)
+	local mood: Mood = Config.ArtStructures.Mood[plan.id] or Config.ArtStructures.DefaultMood
+	local lights: { LightEntry } = {}
 	for _, b in plan.shell do
-		makePart(b, base).Parent = model
+		makePart(b, base, mood, lights).Parent = model
+	end
+	-- silhouette landmarks (data-driven, capped, no collision): readable from far away
+	local landmarks = Config.ArtStructures.Landmarks[plan.id]
+	if landmarks ~= nil then
+		for i, def in landmarks do
+			if i > Config.ArtStructures.MaxLandmarkParts then
+				break
+			end
+			local style = styleOf(def.style)
+			local lm = Instance.new("Part")
+			lm.Name = def.name
+			lm.Anchored = true
+			lm.CanCollide = false
+			lm.CanQuery = false
+			lm.CanTouch = false
+			lm.CastShadow = false
+			lm.Material = style.material
+			lm.Color = style.color
+			lm.Size = Vector3.new(def.sx, def.sy, def.sz)
+			lm.CFrame = base * CFrame.new(def.fx * halfX, def.y, def.fz * halfZ)
+			lm.Parent = model
+		end
 	end
 
 	local chestSlots: { ChestSlot } = {}
@@ -206,6 +239,7 @@ function StructureKitB.build(
 
 	local destroyed = false
 	local lastUpdate = 0
+	local flickerRandom = Random.new(seed)
 	local handle: Handle -- assigned below
 
 	local function distanceTo(room: Kit.Room, p: Vector3): number
@@ -247,7 +281,7 @@ function StructureKitB.build(
 						st.folder = folder
 					end
 					while st.next <= #st.items and budget > 0 do
-						makePart(st.items[st.next].box, base).Parent = folder
+						makePart(st.items[st.next].box, base, mood, lights).Parent = folder
 						st.next += 1
 						budget -= 1
 					end
@@ -258,6 +292,24 @@ function StructureKitB.build(
 					folder:Destroy()
 					st.folder = nil
 					st.next = 1
+				end
+			end
+		end
+		-- spooky variants: guttering lights near players (same update tick; no extra loop or parts)
+		if mood.spooky then
+			for i = #lights, 1, -1 do
+				local entry = lights[i]
+				if entry.light.Parent == nil then
+					table.remove(lights, i)
+				else
+					local r = flickerRandom:NextNumber()
+					if r < mood.flickerOff then
+						entry.light.Brightness = 0
+					elseif r < mood.flickerDim then
+						entry.light.Brightness = entry.base * FLICKER_DIM_FACTOR
+					else
+						entry.light.Brightness = entry.base
+					end
 				end
 			end
 		end
@@ -290,6 +342,7 @@ function StructureKitB.build(
 		table.clear(states)
 		table.clear(stateById)
 		table.clear(dreadLast)
+		table.clear(lights)
 		handle.DreadListener = nil
 	end
 

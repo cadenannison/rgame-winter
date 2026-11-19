@@ -10,3 +10,5 @@ Part-built (no external asset): hub plaza ground, shop cabin, boards, pads, lamp
 Roblox-bundled placeholder sounds: see docs/ART.md.
 
 Art Pass 3 creatures: all Part-built (src/shared/Creatures/Defs), no Creator Store assets, no asset ids; sounds are silent hooks (docs/ART.md).
+
+Art Pass 4 (item models, worn gear, structure/chest/sign art): all Part-built, no Creator Store assets, no asset ids.

@@ -607,6 +607,8 @@ function HudController.start()
 				local v = SlotViewModel.view(stacks[i])
 				slot.name.Text = v.name
 				slot.count.Text = v.countText
+				local stack = stacks[i]
+				slot.icon.setItem(if stack then stack.id else nil)
 			end
 			-- Onboarding credit from real inventory changes.
 			local now = os.clock()

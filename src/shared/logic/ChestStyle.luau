@@ -11,8 +11,12 @@ export type Style = {
 	bodyMaterial: string, -- Enum.Material name
 	trimColor: { number },
 	trimMaterial: string,
-	glowColor: { number }?, -- nil = no glow strip / beam
-	glowTransparency: number, -- glow strip base transparency (client pulses around it)
+	lidColor: { number }, -- lid differs from the body so each rarity reads at a glance
+	lockColor: { number },
+	accent: string, -- "none" | "gem" (lock gem) | "crown" (gem + lid ridge): one small gem part, crown adds a lid ridge
+	glowColor: { number }?, -- nil = no glow emitters / beam / gem
+	glowTransparency: number, -- gem base transparency (client pulses around it)
+	glowEmitters: number, -- small client glow emitters (<= Config.ArtStructures.ChestGlowEmitters)
 	lightRange: number, -- 0 = no light (client creates it only for nearby chests)
 	lightBrightness: number,
 	particleRate: number, -- per second per emitter; 0 = none
@@ -55,8 +59,12 @@ local STYLES: { [string]: Style } = {
 		bodyMaterial = "Wood",
 		trimColor = { 78, 66, 56 },
 		trimMaterial = "WoodPlanks",
+		lidColor = { 96, 70, 44 },
+		lockColor = { 150, 140, 120 },
+		accent = "none",
 		glowColor = nil,
 		glowTransparency = 1,
+		glowEmitters = 0,
 		lightRange = 0,
 		lightBrightness = 0,
 		particleRate = 0,
@@ -78,8 +86,12 @@ local STYLES: { [string]: Style } = {
 		bodyMaterial = "Wood",
 		trimColor = { 120, 124, 132 },
 		trimMaterial = "CorrodedMetal",
+		lidColor = { 70, 54, 40 },
+		lockColor = { 190, 190, 200 },
+		accent = "none",
 		glowColor = nil,
 		glowTransparency = 1,
+		glowEmitters = 0,
 		lightRange = 0,
 		lightBrightness = 0,
 		particleRate = 0,
@@ -101,8 +113,12 @@ local STYLES: { [string]: Style } = {
 		bodyMaterial = "Metal",
 		trimColor = { 70, 100, 140 },
 		trimMaterial = "Metal",
+		lidColor = { 110, 150, 190 },
+		lockColor = { 210, 235, 255 },
+		accent = "gem",
 		glowColor = { 80, 170, 255 },
 		glowTransparency = 0.25,
+		glowEmitters = 1,
 		lightRange = 14,
 		lightBrightness = 1.2,
 		particleRate = 6,
@@ -124,8 +140,12 @@ local STYLES: { [string]: Style } = {
 		bodyMaterial = "Glass",
 		trimColor = { 160, 100, 235 },
 		trimMaterial = "Neon",
+		lidColor = { 50, 28, 84 },
+		lockColor = { 230, 190, 255 },
+		accent = "gem",
 		glowColor = { 180, 110, 255 },
 		glowTransparency = 0.15,
+		glowEmitters = 2,
 		lightRange = 18,
 		lightBrightness = 1.8,
 		particleRate = 12,
@@ -147,8 +167,12 @@ local STYLES: { [string]: Style } = {
 		bodyMaterial = "Metal",
 		trimColor = { 255, 225, 120 },
 		trimMaterial = "Neon",
+		lidColor = { 255, 215, 100 },
+		lockColor = { 255, 245, 190 },
+		accent = "crown",
 		glowColor = { 255, 210, 90 },
 		glowTransparency = 0.08,
+		glowEmitters = 3,
 		lightRange = 22,
 		lightBrightness = 2.6,
 		particleRate = 20,
@@ -174,14 +198,14 @@ function ChestStyle.get(rarity: string): Style
 	return STYLES[rarity] or STYLES.common
 end
 
--- Server parts a style needs: Base, Lid, two straps, plus lock plate; glow strip and beam when glowing.
+-- Server parts a style needs: Base, Lid, two straps, lock plate; plus a gem (rare+) and a lid ridge (crown).
+-- The beam is built on the client near the local player, so it is not a server part.
 function ChestStyle.partCount(style: Style): number
 	local n = 5
-	if style.glowColor then
+	if style.accent == "gem" then
 		n += 1
-		if style.beamHeight > 0 then
-			n += 1
-		end
+	elseif style.accent == "crown" then
+		n += 2
 	end
 	return n
 end
@@ -233,6 +257,12 @@ function ChestStyle.validate(rarity: string, style: Style): { string }
 	end
 	if style.particleRate > B.MaxParticleRate then
 		table.insert(problems, `{rarity}: particle rate over budget`)
+	end
+	if style.glowEmitters > Config.ArtStructures.ChestGlowEmitters then
+		table.insert(problems, `{rarity}: too many glow emitters`)
+	end
+	if style.beamHeight > Config.ArtStructures.BeamMaxStuds then
+		table.insert(problems, `{rarity}: beam longer than ArtStructures.BeamMaxStuds`)
 	end
 	local beamHeight = Config.Loot.Beam
 	if

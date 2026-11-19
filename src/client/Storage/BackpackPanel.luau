@@ -15,12 +15,16 @@ local Config = require(Shared:WaitForChild("Config"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local Rarity = require(Shared:WaitForChild("data"):WaitForChild("Rarity"))
 local Equipment = require(Shared:WaitForChild("logic"):WaitForChild("Equipment"))
+local BackpackLayout = require(Shared:WaitForChild("logic"):WaitForChild("BackpackLayout"))
+local ItemTooltip = require(Shared:WaitForChild("logic"):WaitForChild("ItemTooltip"))
 local InventoryMove = require(Shared:WaitForChild("logic"):WaitForChild("InventoryMove"))
 local SlotViewModel = require(Shared:WaitForChild("logic"):WaitForChild("SlotViewModel"))
 local SlotLayout = require(Shared:WaitForChild("logic"):WaitForChild("SlotLayout"))
 local HudConfig = require(script.Parent.Parent:WaitForChild("HUD"):WaitForChild("HudConfig"))
 local EquipmentViewport = require(script.Parent:WaitForChild("EquipmentViewport"))
 local InventoryMirror = require(script.Parent:WaitForChild("InventoryMirror"))
+local ItemIcon = require(script.Parent:WaitForChild("ItemIcon"))
+local NameFit = require(script.Parent:WaitForChild("NameFit"))
 local UiConfig = require(script.Parent:WaitForChild("InventoryUiConfig"))
 local InputGuard = require(script.Parent.Parent:WaitForChild("Input"):WaitForChild("InputGuard"))
 
@@ -50,10 +54,13 @@ type SlotView = {
 	addr: InventoryMove.Addr,
 	button: TextButton,
 	inner: Frame,
+	icon: ItemIcon.ItemIconHandle,
+	caption: TextLabel,
 	name: TextLabel,
 	count: TextLabel,
 	stroke: UIStroke,
 	base: Color3, -- resting background color (tinted by highlights, restored on refresh)
+	unbindName: () -> (),
 }
 type Press = {
 	view: SlotView,
@@ -115,6 +122,8 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 	local selection: { addr: InventoryMove.Addr, count: number }? = nil
 	local press: Press? = nil
 	local ghost: TextLabel? = nil
+	local ghostIcon: ItemIcon.ItemIconHandle? = nil
+	local tipView: SlotView? = nil -- slot under the pointer (PC); touch falls back to the focused slot
 	local lastTarget: SlotView? = nil
 	local focus: InventoryMove.Addr? = nil -- last clicked/tapped slot (highlight + Drop target)
 	local dragOrigin: InventoryMove.Addr? = nil -- slot being dragged (held highlight while dragging)
@@ -127,6 +136,8 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		ResetOnSpawn = false,
 		DisplayOrder = HudConfig.DisplayOrder + UiConfig.DisplayOrderOffset,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		IgnoreGuiInset = false,
+		ScreenInsets = Enum.ScreenInsets.TopbarSafeInsets, -- the panel always sits below the Roblox top bar
 	}, nil) :: ScreenGui
 
 	-- Toggle button (always visible, >= 44 px).
@@ -167,29 +178,21 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 	-- Panel shell: titled frame with a scrolling body so nothing is ever cut off on a phone.
 	local panel = make("Frame", {
 		Name = "Panel",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, UiConfig.PanelCenterY),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, UiConfig.PanelTopMarginPx),
 		BackgroundColor3 = UiConfig.Colors.Panel,
 		BackgroundTransparency = UiConfig.PanelTransparency,
 		BorderSizePixel = 0,
+		Active = true, -- swallows clicks so nothing behind the panel reacts
 		Visible = false,
 	}, gui) :: Frame
 	make("UICorner", { CornerRadius = UDim.new(0, 10) }, panel)
 	local title = label(panel, "Backpack", 20)
 	title.Name = "Title"
 	title.Font = Enum.Font.GothamBold
-	title.Position = UDim2.fromOffset(UiConfig.PadPx, 4)
-	title.Size = UDim2.new(
-		1,
-		-(UiConfig.CloseButtonPx + HL.DropButtonWidthPx + UiConfig.PadPx * 3),
-		0,
-		UiConfig.TitlePx
-	)
+	title.TextTruncate = Enum.TextTruncate.AtEnd
 	local closeButton = make("TextButton", {
 		Name = "Close",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -6, 0, 2),
-		Size = UDim2.fromOffset(UiConfig.CloseButtonPx, UiConfig.CloseButtonPx),
 		BackgroundColor3 = HudConfig.BarColors.health,
 		BorderSizePixel = 0,
 		Text = "X",
@@ -200,9 +203,6 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 	make("UICorner", { CornerRadius = UDim.new(0, 8) }, closeButton)
 	dropButton = make("TextButton", {
 		Name = "DropButton",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -(UiConfig.CloseButtonPx + 12), 0, 2),
-		Size = UDim2.fromOffset(HL.DropButtonWidthPx, UiConfig.CloseButtonPx),
 		BackgroundColor3 = UiConfig.Colors.Reject,
 		BorderSizePixel = 0,
 		Text = HL.DropButtonText,
@@ -213,8 +213,6 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 	make("UICorner", { CornerRadius = UDim.new(0, 8) }, dropButton)
 	local body = make("ScrollingFrame", {
 		Name = "Body",
-		Position = UDim2.fromOffset(UiConfig.PadPx, UiConfig.CloseButtonPx + 6),
-		Size = UDim2.new(1, -UiConfig.PadPx * 2, 1, -(UiConfig.CloseButtonPx + 6 + UiConfig.PadPx)),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		ScrollBarThickness = 6,
@@ -227,6 +225,27 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		FillDirection = Enum.FillDirection.Vertical,
 		Padding = UDim.new(0, UiConfig.PadPx),
 	}, body) :: UIListLayout
+
+	-- Item detail footer (hover on PC, focused slot on touch): name, then Warmth / Armor / Damage / Fuel lines.
+	local footer = make("Frame", {
+		Name = "Tooltip",
+		BackgroundColor3 = UiConfig.Colors.Equip,
+		BackgroundTransparency = 0.2,
+		BorderSizePixel = 0,
+	}, panel) :: Frame
+	make("UICorner", { CornerRadius = UDim.new(0, 6) }, footer)
+	local tipName = label(footer, "", UiConfig.TooltipNameMax)
+	tipName.Name = "TipName"
+	tipName.Font = Enum.Font.GothamBold
+	tipName.Position = UDim2.fromOffset(UiConfig.PadPx, 2)
+	tipName.Size = UDim2.new(1, -UiConfig.PadPx * 2, 0.5, -2)
+	tipName.TextTruncate = Enum.TextTruncate.AtEnd
+	local tipInfo = label(footer, "", UiConfig.TooltipInfoMax)
+	tipInfo.Name = "TipInfo"
+	tipInfo.TextColor3 = UiConfig.Colors.Dim
+	tipInfo.Position = UDim2.new(0, UiConfig.PadPx, 0.5, 0)
+	tipInfo.Size = UDim2.new(1, -UiConfig.PadPx * 2, 0.5, -2)
+	tipInfo.TextTruncate = Enum.TextTruncate.AtEnd
 
 	local function section(order: number, name: string): (Frame, TextLabel)
 		local frame = make("Frame", {
@@ -327,6 +346,8 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 
 	local function refresh() end -- assigned below
 
+	local updateTip: () -> () = function() end -- assigned after stackAt
+
 	local function showFull()
 		fullToken += 1
 		local token = fullToken
@@ -347,6 +368,26 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			return chestInfo.slots[addr.slot :: number]
 		end
 		return nil
+	end
+
+	-- Footer text for the hovered slot, else the focused one (touch has no hover).
+	updateTip = function()
+		local stack: Stack? = nil
+		if tipView then
+			stack = stackAt(tipView.addr)
+		end
+		if stack == nil and focus then
+			stack = stackAt(focus)
+		end
+		if stack == nil then
+			tipName.Text = ""
+			tipInfo.Text = ""
+			return
+		end
+		local lines = ItemTooltip.lines(stack.id)
+		tipName.Text = lines[1] or SlotViewModel.name(stack)
+		table.remove(lines, 1)
+		tipInfo.Text = table.concat(lines, "   ")
 	end
 
 	local function send(from: InventoryMove.Addr, to: InventoryMove.Addr?, count: number)
@@ -410,10 +451,6 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		send(from, to, math.clamp(count, 1, s.count))
 	end
 
-	local function dropText(stack: Stack): string
-		return SlotViewModel.name(stack)
-	end
-
 	local function makeSlot(
 		parent: Instance,
 		addr: InventoryMove.Addr,
@@ -450,24 +487,40 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 		cap.Position = UDim2.fromOffset(3, 1)
 		cap.Size = UDim2.new(1, -6, 0, 13)
 		cap.TextColor3 = UiConfig.Colors.Dim
-		local name = label(inner, "", 12, Enum.TextXAlignment.Center)
+		cap.ZIndex = 3
+		local I = UiConfig.IconBox
+		local icon = ItemIcon.create(inner, "", UDim2.fromScale(I.W, I.H))
+		icon.frame.Position = UDim2.fromScale(I.X, I.Y)
+		icon.frame.ZIndex = 2
+		local N = UiConfig.NameBox
+		local name = label(inner, "", UiConfig.NameMaxPx, Enum.TextXAlignment.Center)
 		name.Name = "Name"
+		name.Font = UiConfig.NameFont
 		name.TextWrapped = true
-		name.Position = UDim2.fromScale(0.05, 0.22)
-		name.Size = UDim2.fromScale(0.9, 0.5)
+		name.TextYAlignment = Enum.TextYAlignment.Top
+		name.Position = UDim2.fromScale(N.X, N.Y)
+		name.Size = UDim2.fromScale(N.W, N.H)
+		name.ZIndex = 3
+		local C = UiConfig.CountBox
 		local count = label(inner, "", 12, Enum.TextXAlignment.Right)
 		count.Name = "Count"
 		count.Font = Enum.Font.GothamBold
-		count.Position = UDim2.fromScale(0.05, 0.7)
-		count.Size = UDim2.fromScale(0.9, 0.28)
+		count.TextStrokeTransparency = 0.4
+		count.Position = UDim2.fromScale(C.X, C.Y)
+		count.Size = UDim2.fromScale(C.W, C.H)
+		count.ZIndex = 4
+		local unbindName = NameFit.bind(name, UiConfig.NameMaxPx, UiConfig.NameMinPx)
 		local view: SlotView = {
 			addr = addr,
 			button = button,
 			inner = inner,
+			icon = icon,
+			caption = cap,
 			name = name,
 			count = count,
 			stroke = stroke,
 			base = button.BackgroundColor3,
+			unbindName = unbindName,
 		}
 		views[key(addr)] = view
 		return view
@@ -530,6 +583,8 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			local v = SlotViewModel.view(stack)
 			view.name.Text = v.name
 			view.count.Text = v.countText
+			view.icon.setItem(if stack then stack.id else nil)
+			view.caption.Visible = not v.occupied or #view.caption.Text <= UiConfig.CaptionMaxChars
 			local rarityColor: Color3? = nil
 			if v.occupied and v.rarity ~= "common" then
 				local c = Rarity.Colors[v.rarity]
@@ -566,17 +621,50 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			button.BackgroundTransparency = if target then 0 else 0.7
 			button.TextTransparency = if target then 0 else 0.5
 		end
+		updateTip()
 	end
 
-	-- Layout: wide screens put equipment | backpack | chest in one row, narrow ones stack them (columns shrink
-	-- but cells stay >= UiConfig.MinCellPx).
+	-- Layout: the panel hangs below the top bar; header row (title | Drop | X), scrolling body, detail footer.
+	-- Wide screens put equipment | backpack | chest in one row, narrow ones stack them (columns shrink but cells
+	-- stay >= UiConfig.MinCellPx). Header math is BackpackLayout (headless-tested at phone and PC widths).
 	local function relayout()
+		local guiSize = gui.AbsoluteSize
 		local camera = Workspace.CurrentCamera
-		local screen = if camera then camera.ViewportSize else Vector2.new(1280, 720)
-		local width = math.min(screen.X * UiConfig.PanelWidthScale, UiConfig.PanelMaxWidth)
-		local height = screen.Y * UiConfig.PanelHeightScale
-		panel.Size = UDim2.fromOffset(width, height)
-		local avail = width - UiConfig.PadPx * 2 - 8
+		local fallback = if camera then camera.ViewportSize else Vector2.new(1280, 720)
+		local guiW = if guiSize.X > 0 then guiSize.X else fallback.X
+		local guiH = if guiSize.Y > 0 then guiSize.Y else fallback.Y
+		local rect = BackpackLayout.panel(
+			guiW,
+			guiH,
+			UiConfig.PanelWidthScale,
+			UiConfig.PanelMaxWidth,
+			UiConfig.PanelMaxHeight,
+			UiConfig.PanelTopMarginPx,
+			UiConfig.PanelBottomMarginPx
+		)
+		panel.Size = UDim2.fromOffset(rect.w, rect.h)
+		panel.Position = UDim2.new(0.5, 0, 0, rect.y)
+		local header = BackpackLayout.header(rect.w, {
+			pad = UiConfig.PadPx,
+			gap = UiConfig.HeaderGapPx,
+			button = UiConfig.CloseButtonPx,
+			dropWidth = HL.DropButtonWidthPx,
+			topInset = UiConfig.HeaderTopPx,
+		})
+		title.Position = UDim2.fromOffset(header.title.x, header.title.y)
+		title.Size = UDim2.fromOffset(header.title.w, header.title.h)
+		local drop = dropButton :: TextButton
+		drop.Position = UDim2.fromOffset(header.drop.x, header.drop.y)
+		drop.Size = UDim2.fromOffset(header.drop.w, header.drop.h)
+		closeButton.Position = UDim2.fromOffset(header.close.x, header.close.y)
+		closeButton.Size = UDim2.fromOffset(header.close.w, header.close.h)
+		local footerH = UiConfig.TooltipPx
+		local bodyH = rect.h - header.height - footerH - UiConfig.PadPx * 2
+		body.Position = UDim2.fromOffset(UiConfig.PadPx, header.height)
+		body.Size = UDim2.fromOffset(rect.w - UiConfig.PadPx * 2, math.max(bodyH, 0))
+		footer.Position = UDim2.fromOffset(UiConfig.PadPx, rect.h - UiConfig.PadPx - footerH)
+		footer.Size = UDim2.fromOffset(rect.w - UiConfig.PadPx * 2, footerH)
+		local avail = rect.w - UiConfig.PadPx * 2 - 8
 		local gap = UiConfig.GapPx
 		local cell = UiConfig.CellPx
 		local columns = Config.Inventory.Columns
@@ -607,6 +695,10 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 	end
 
 	local function endGhost()
+		if ghostIcon then
+			ghostIcon.destroy()
+			ghostIcon = nil
+		end
 		if ghost then
 			ghost:Destroy()
 			ghost = nil
@@ -710,14 +802,14 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			BackgroundColor3 = UiConfig.Colors.SlotSelected,
 			BackgroundTransparency = 0.35,
 			BorderSizePixel = 0,
-			Text = dropText(stack),
-			TextColor3 = UiConfig.Colors.Text,
-			Font = Enum.Font.GothamBold,
-			TextSize = 12,
-			TextWrapped = true,
+			Text = "",
 			ZIndex = 20,
 		}, gui) :: TextLabel
 		make("UICorner", { CornerRadius = UDim.new(0, 6) }, g)
+		local gi = ItemIcon.create(g, stack.id, UDim2.fromScale(0.9, 0.9))
+		gi.frame.Position = UDim2.fromScale(0.05, 0.05)
+		gi.frame.ZIndex = 21
+		ghostIcon = gi
 		ghost = g
 	end
 
@@ -750,6 +842,22 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 	end
 
 	local function wire(view: SlotView)
+		table.insert(
+			connections,
+			view.button.MouseEnter:Connect(function()
+				tipView = view
+				updateTip()
+			end)
+		)
+		table.insert(
+			connections,
+			view.button.MouseLeave:Connect(function()
+				if tipView == view then
+					tipView = nil
+					updateTip()
+				end
+			end)
+		)
 		table.insert(
 			connections,
 			view.button.InputBegan:Connect(function(input: InputObject)
@@ -904,17 +1012,14 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			refresh()
 		end
 	end)
-	local camera = Workspace.CurrentCamera
-	if camera then
-		table.insert(
-			connections,
-			camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-				if isOpen then
-					relayout()
-				end
-			end)
-		)
-	end
+	table.insert(
+		connections,
+		gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			if isOpen then
+				relayout()
+			end
+		end)
+	)
 
 	-- Server refusals: shake the target slot (wrong slot, busy, full).
 	task.spawn(function()
@@ -1017,6 +1122,10 @@ function BackpackPanel.new(mirror: InventoryMirror.Mirror): Panel
 			end
 			table.clear(connections)
 			endGhost()
+			for _, view in views do
+				view.unbindName()
+				view.icon.destroy()
+			end
 			viewport.destroy()
 			gui:Destroy()
 		end,

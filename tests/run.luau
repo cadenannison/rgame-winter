@@ -54,6 +54,7 @@ require("./DataTests")(check) -- brief 12 (Phase 3 data)
 require("./BiomeTests")(check) -- brief 13
 require("./EventTests")(check) -- brief 14
 require("./HorrorTests")(check) -- brief 15
+require("./GearTests")(check) -- Art Pass 4: worn gear plan
 require("./ProgressionTests")(check) -- brief 17 (brief 16 uses MobTests)
 require("./MetaTests")(check) -- brief 21 (Phase 4 contract data)
 require("./MetaLogicTests")(check) -- brief 19
@@ -75,6 +76,7 @@ require("./EconomyCraftTests")(check)
 require("./BlizzardDebugTests")(check)
 require("./ReturnPlanTests")(check)
 require("./AgentATests")(check)
+require("./ItemModelsCoverage")(check) -- Art Pass 4: item model recipes, tooltips, backpack header layout
 require("./SlotLayoutTests")(check) -- slot layout: areas, strict move validation, end-to-end mapping, rescue
 require("./EquipmentTests")(check) -- items round: equipment slots and worn resistance (agent B)
 require("./BlizzardTests")(check) -- blizzard rework: wind, whiteout, duration

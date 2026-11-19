@@ -146,3 +146,16 @@ Use `/debug mob <id>` (spawns in front) and `/debug mobs` (nearby list with Stat
 - One death panel at a time: spectate bar only while a teammate lives, else run summary.
 - Return to lobby works in Studio/debug (local reload); real teleport hand-tested on the published place.
 - Ring 1 structures: at most 1 chest (may be none), rings 2-4 up to 2/3/4; no iron on day 2; iron nodes only ring 2+. Chests do not open through walls.
+
+## Art Pass 4: items, worn gear, structures (nothing played in Studio yet)
+- Icon + name for each item type (tool, weapon, material, food, creature drop, placeable, gear) in hotbar, Backpack grid, equipment, chest grid and tooltips; long names (e.g. Winterberry) wrap between words or ellipsize, never mid-word.
+- Tooltips: Warmth +N, Armor, Fuel burn time on fuel items, in every slot area including the Backpack footer.
+- Many items in the Backpack at phone resolution: framerate OK; above the viewport cap slots show a letter tile.
+- Backpack panel sits below the Roblox top bar, is nearly opaque (stat bars hidden), Drop and X overlap nothing.
+- Dropped items use the item models; equipped tool/torch visible in hand (grip tilt/fit).
+- Equip each gear slot (Head, Body, Feet exist; others via new items): visible on you and on a second client, updates on equip/unequip/respawn, gone after death/clearEquipment, tool and animations unaffected.
+- Ring 1 and 2 regular POIs are single story; massive structures are NOT yet (see ART_STATUS). Silhouettes read from distance; interiors lit; spooky ones (research station, mine, temple) flicker.
+- Chests and signs never turn to face the camera (incl. research station signs); sign text on the sign face.
+- Chest glow = small particles only; rarity looks differ; beams short, rare+, near only.
+- `/debug gallery structures|chests|signs|massive|clear`: every structure appears (massive one at a time).
+- Part counts stay under 6000.

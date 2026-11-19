@@ -66,3 +66,9 @@ Nothing committed since Phase 0. Place ids: placeId 130366229723914 (Studio inst
 - 8 Slam radius = CreatureFxLogic.slamRadius(attackRange, strikeLeeway) = 10, used by the server hit test and the client ring. Source of truth for art root size is Config.Mobs.Species.FrostboundBrute.size (5x7x5); Def comment updated.
 - 9 Lobby Leave key Q -> V (Q is Ping); prompt text derives from LobbyConfig.Keys.Leave; handler already goes through InputGuard.
 - Note: Stick/Pinecone/Blubber are now fuel by id; Pinecone is also food, so selecting it still eats (fuel only via auto-pick when no Wood/Stick held). StorageChest/Bow now cost Rope: players need to forage reeds first.
+
+## Round: Art Pass 4 items, worn gear, structures (orchestrated, 3 agents; headless only)
+- check.sh tier=full green (1951). No playtest, QA or MCP; nothing seen in Studio. Details: docs/ART_STATUS.md "Pass 4".
+- Orchestrator: Config modules ArtItems/ArtGear/ArtStructures, shared/IconAssets, GallerySets extended, HudController hotbar icon setItem.
+- Open: massive structures still multi-level (ring rule needs PM decision); gear/landmark/grip offsets are guesses; Config.Ui.HeldVisual type is legacy.
+- Next: PM hand test (HAND_TESTS_ROUND.md "Art Pass 4"). No SAVE NEEDED (no MCP).

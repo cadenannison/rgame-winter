@@ -21,19 +21,21 @@ local World = require(Logic:WaitForChild("World"))
 local MassiveRules = require(Logic:WaitForChild("MassiveRules"))
 local Kit = require(Logic:WaitForChild("StructurePlanKitA"))
 
+local SignArt = require(
+	script.Parent.Parent.Parent
+		:WaitForChild("Art")
+		:WaitForChild("Structures")
+		:WaitForChild("SignArt")
+)
 local SiteGroundTerrain = require(script.Parent.Parent:WaitForChild("SiteGroundTerrain"))
 local GroundProbe = require(script.Parent.Parent:WaitForChild("GroundProbe"))
 
 local P = ArtKit.palette(Config.Art.World.Palette)
 
 local FLICKER_INTERVAL = 0.12 -- seconds between light updates (one loop for all structures)
-local FLICKER_OFF_CHANCE = 0.15
-local FLICKER_DIM_CHANCE = 0.4 -- cumulative: below this (and above off) the light dims
 local FLICKER_DIM_FACTOR = 0.35
 local EYES_VANISH_DISTANCE = 18 -- studs: watching eyes close when a player comes this near
 local EYES_TRANSPARENCY = 0.1
-local SIGN_DISTANCE = 60
-local NOTE_DISTANCE = 14
 local CARVE_MARGIN = 2 -- studs of extra air around each carved room
 local APPROACH_RUN = 40 -- studs: the ramp from an exit door to the terrain
 local APPROACH_SLOPE = 3 -- run per rise: keeps approach ramps walkable
@@ -141,6 +143,7 @@ export type Handle = {
 	Destroy: () -> (),
 }
 
+type ArtStructuresMood = typeof(Config.ArtStructures.DefaultMood)
 type LightEntry = { light: PointLight, base: number, flicker: boolean }
 type GroupState = {
 	group: Kit.Group,
@@ -161,6 +164,7 @@ type State = {
 	active: boolean,
 	destroyed: boolean,
 	random: Random,
+	mood: ArtStructuresMood,
 }
 
 local live: { State } = {}
@@ -170,26 +174,7 @@ local elapsed = 0
 -- Parts -------------------------------------------------------------------------------------------------
 
 local function attachText(part: BasePart, box: Kit.Box)
-	local isNote = box.role == "Note"
-	local gui = Instance.new("BillboardGui")
-	gui.Name = if isNote then "NoteText" else "SignText"
-	gui.Size = if isNote then UDim2.fromOffset(260, 110) else UDim2.fromOffset(210, 34)
-	gui.StudsOffset = if isNote then Vector3.new(0, 1.6, 0) else Vector3.zero
-	gui.MaxDistance = if isNote then NOTE_DISTANCE else SIGN_DISTANCE
-	gui.AlwaysOnTop = false
-	gui.LightInfluence = 0
-	gui.Adornee = part
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.fromScale(1, 1)
-	label.BackgroundTransparency = if isNote then 0.25 else 0.4
-	label.BackgroundColor3 = P.Scorch
-	label.TextColor3 = P.Snow
-	label.Font = if isNote then Enum.Font.SpecialElite else Enum.Font.GothamBold
-	label.TextSize = if isNote then 14 else 18
-	label.TextWrapped = true
-	label.Text = box.text or ""
-	label.Parent = gui
-	gui.Parent = part
+	SignArt.attach(part, box.text or "", box.role == "Note", box.face)
 end
 
 local function makePart(box: Kit.Box, frame: CFrame): Part
@@ -223,6 +208,10 @@ local function makePart(box: Kit.Box, frame: CFrame): Part
 	return part
 end
 
+local function blend(a: Color3, c: { number }, amount: number): Color3
+	return a:Lerp(Color3.fromRGB(c[1], c[2], c[3]), amount)
+end
+
 local function addLight(state: State, part: Part, box: Kit.Box)
 	local def = box.light
 	if def == nil then
@@ -231,7 +220,15 @@ local function addLight(state: State, part: Part, box: Kit.Box)
 	local light = Instance.new("PointLight")
 	light.Range = def.range
 	light.Brightness = def.brightness
-	light.Color = LIGHT_COLORS[def.color] or P.Window
+	local lightColor = LIGHT_COLORS[def.color] or P.Window
+	local mood = state.mood
+	if mood.tint ~= nil and mood.tintAmount > 0 then
+		lightColor = blend(lightColor, mood.tint, mood.tintAmount)
+	end
+	if mood.dangerTint ~= nil and def.color == "Red" then
+		lightColor = blend(lightColor, mood.dangerTint, 1)
+	end
+	light.Color = lightColor
 	light.Shadows = false
 	light.Parent = part
 	table.insert(state.lights, { light = light, base = def.brightness, flicker = def.flicker })
@@ -435,9 +432,9 @@ local function step(dt: number)
 			for _, entry in state.lights do
 				if entry.flicker and entry.light.Parent ~= nil then
 					local r = state.random:NextNumber()
-					if r < FLICKER_OFF_CHANCE then
+					if r < state.mood.flickerOff then
 						entry.light.Brightness = 0
-					elseif r < FLICKER_DIM_CHANCE then
+					elseif r < state.mood.flickerDim then
 						entry.light.Brightness = entry.base * FLICKER_DIM_FACTOR
 					else
 						entry.light.Brightness = entry.base
@@ -531,6 +528,7 @@ function StructureKitA.build(
 		active = false,
 		destroyed = false,
 		random = Random.new(seed),
+		mood = Config.ArtStructures.Mood[plan.id] or Config.ArtStructures.DefaultMood,
 	}
 
 	-- carve the voids out of the terrain first, then build the shell inside them
@@ -555,6 +553,30 @@ function StructureKitA.build(
 			addParticles(state, part, box)
 		end
 		part.Parent = model
+	end
+	-- silhouette landmarks (data-driven, capped): visible from far, no collision
+	local halfX, halfZ = (plan.maxX - plan.minX) / 2, (plan.maxZ - plan.minZ) / 2
+	local cxl, czl = (plan.minX + plan.maxX) / 2, (plan.minZ + plan.maxZ) / 2
+	local landmarks = Config.ArtStructures.Landmarks[plan.id]
+	if landmarks ~= nil then
+		for i, def in landmarks do
+			if i > Config.ArtStructures.MaxLandmarkParts then
+				break
+			end
+			local style = STYLES[def.style] or STYLES.Concrete
+			local lm = Instance.new("Part")
+			lm.Name = def.name
+			lm.Anchored = true
+			lm.CanCollide = false
+			lm.CanQuery = false
+			lm.CanTouch = false
+			lm.CastShadow = false
+			lm.Material = style.material
+			lm.Color = style.color
+			lm.Size = Vector3.new(def.sx, def.sy, def.sz)
+			lm.CFrame = frame * CFrame.new(cxl + def.fx * halfX, def.y, czl + def.fz * halfZ)
+			lm.Parent = model
+		end
 	end
 	for _, exit in plan.exits do
 		buildApproach(state, exit, seed, ground)

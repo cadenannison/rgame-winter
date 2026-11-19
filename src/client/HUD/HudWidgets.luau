@@ -9,6 +9,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 local HudConfig = require(script.Parent:WaitForChild("HudConfig"))
 local HudKit = require(script.Parent:WaitForChild("HudKit"))
+local ItemIcon = require(script.Parent.Parent:WaitForChild("Storage"):WaitForChild("ItemIcon"))
+local NameFit = require(script.Parent.Parent:WaitForChild("Storage"):WaitForChild("NameFit"))
+local SlotViewModel = require(
+	ReplicatedStorage:WaitForChild("Shared"):WaitForChild("logic"):WaitForChild("SlotViewModel")
+)
 
 local make = HudKit.make
 local constrain = HudKit.constrain
@@ -16,7 +21,13 @@ local textProps = HudKit.textProps
 local makeLabel = HudKit.makeLabel
 local panel = HudKit.panel
 
-export type Slot = { button: TextButton, name: TextLabel, count: TextLabel, stroke: UIStroke }
+export type Slot = {
+	button: TextButton,
+	name: TextLabel,
+	count: TextLabel,
+	stroke: UIStroke,
+	icon: ItemIcon.ItemIconHandle, -- item icon (also driven automatically from the name text, see below)
+}
 export type Bar = { fill: Frame, label: TextLabel, name: string }
 export type Widgets = {
 	bars: { [string]: Bar },
@@ -30,6 +41,9 @@ export type Widgets = {
 	hintLabel: TextLabel,
 	actionButton: TextButton?,
 }
+
+local HOTBAR_NAME_MAX = 12 -- hotbar slot name text sizes (NameFit picks the largest that fits word-safe)
+local HOTBAR_NAME_MIN = 8
 
 local HudWidgets = {}
 
@@ -158,16 +172,39 @@ function HudWidgets.build(gui: ScreenGui): Widgets
 			textProps(UDim2.fromScale(0.35, 0.3), UDim2.fromScale(0.04, 0.03), tostring(i), 12)
 		)
 		keyLabel.TextTransparency = 0.4
+		keyLabel.ZIndex = 3
+		-- Icon above, item name beneath (word-safe fit), stack count top-right over the icon.
+		local icon = ItemIcon.create(button, "", UDim2.fromScale(0.64, 0.54))
+		icon.frame.Position = UDim2.fromScale(0.18, 0.08)
 		local nameLabel = makeLabel(
 			button,
-			textProps(UDim2.fromScale(0.9, 0.35), UDim2.fromScale(0.05, 0.3), "", 14)
+			textProps(UDim2.fromScale(0.96, 0.36), UDim2.fromScale(0.02, 0.62), "", 12)
 		)
+		nameLabel.TextScaled = false
+		nameLabel.Font = Enum.Font.SourceSansSemibold
+		nameLabel.ZIndex = 3
+		nameLabel.TextYAlignment = Enum.TextYAlignment.Top
+		nameLabel.TextWrapped = true
+		for _, child in nameLabel:GetChildren() do
+			if child:IsA("UITextSizeConstraint") then
+				child:Destroy() -- NameFit owns the size
+			end
+		end
+		NameFit.bind(nameLabel, HOTBAR_NAME_MAX, HOTBAR_NAME_MIN)
+		-- HudController writes the name text on every inventory update; the icon follows it.
+		nameLabel:GetPropertyChangedSignal("Text"):Connect(function()
+			icon.setItem(SlotViewModel.idForName(nameLabel.Text))
+		end)
 		local countLabel = makeLabel(
 			button,
-			textProps(UDim2.fromScale(0.6, 0.28), UDim2.fromScale(0.37, 0.68), "", 12)
+			textProps(UDim2.fromScale(0.56, 0.26), UDim2.fromScale(0.4, 0.02), "", 12)
 		)
 		countLabel.TextXAlignment = Enum.TextXAlignment.Right
-		slots[i] = { button = button, name = nameLabel, count = countLabel, stroke = stroke }
+		countLabel.Font = Enum.Font.GothamBold
+		countLabel.TextStrokeTransparency = 0.4
+		countLabel.ZIndex = 4
+		slots[i] =
+			{ button = button, name = nameLabel, count = countLabel, stroke = stroke, icon = icon }
 	end
 
 	local itemLabel =

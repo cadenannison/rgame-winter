@@ -11,10 +11,11 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local ItemCatalog = require(Shared.ItemCatalog)
+local ItemModels = require(Shared.ItemModels)
 
 local LIFETIME_SECONDS = 120 -- how long an overflow drop lasts
 local MAX_DROPS = 60 -- live drops in the world (oldest removed first)
-local SIZE = Vector3.new(1.2, 1.2, 1.2)
+local SIZE = Vector3.new(1.2, 1.2, 1.2) -- fallback pickup part when an id has no model
 local BELOW_ROOT = 2.5 -- studs under the root part: at the player's feet
 local SPREAD = 2.5 -- studs between drops of one overflow
 local FOLDER_NAME = "ItemDrops"
@@ -24,10 +25,10 @@ export type Adder = (Player, string, number, number?) -> number -- (taker, id, c
 
 local ItemDrop = {}
 
-local drops: { BasePart } = {}
+local drops: { Instance } = {}
 
-local function remove(part: BasePart)
-	part:Destroy() -- the Destroying hook below drops it from the list
+local function remove(drop: Instance)
+	drop:Destroy() -- the Destroying hook below drops it from the list
 end
 
 local function folder(): Instance
@@ -51,14 +52,28 @@ function ItemDrop.spawn(id: string, count: number, at: Vector3, pickUp: Adder, d
 		remove(drops[1])
 	end
 	local def = ItemCatalog.Items[id]
-	local part = Instance.new("Part")
-	part.Name = "ItemDrop"
-	part.Size = SIZE
-	part.Position = at
-	part.Anchored = true
-	part.CanCollide = false
-	part.Material = Enum.Material.SmoothPlastic
-	part.Color = DROP_COLOR
+	-- ItemModels 'drop' mode (<= Config.ArtItems.DropMaxParts parts) resting on the ground at `at`.
+	local model = ItemModels.build(id, "drop")
+	local part: BasePart
+	local drop: Instance
+	if model and model.PrimaryPart then
+		local boxCFrame, boxSize = model:GetBoundingBox()
+		local target = at + Vector3.new(0, boxSize.Y / 2, 0)
+		model:PivotTo(model:GetPivot() + (target - boxCFrame.Position))
+		part = model.PrimaryPart
+		drop = model
+	else
+		local plain = Instance.new("Part")
+		plain.Size = SIZE
+		plain.Position = at
+		plain.Anchored = true
+		plain.CanCollide = false
+		plain.Material = Enum.Material.SmoothPlastic
+		plain.Color = DROP_COLOR
+		part = plain
+		drop = plain
+	end
+	drop.Name = "ItemDrop"
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Pick up"
 	prompt.ObjectText = `{def.name} x{count}`
@@ -70,7 +85,7 @@ function ItemDrop.spawn(id: string, count: number, at: Vector3, pickUp: Adder, d
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 		if
 			taker.Parent ~= Players
-			or part.Parent == nil
+			or drop.Parent == nil
 			or root == nil
 			or not root:IsA("BasePart")
 			or (root.Position - part.Position).Magnitude > Config.Inventory.DropPickupRange
@@ -79,21 +94,21 @@ function ItemDrop.spawn(id: string, count: number, at: Vector3, pickUp: Adder, d
 		end
 		local left = pickUp(taker, id, remaining, durability)
 		if left <= 0 then
-			remove(part)
+			remove(drop)
 		elseif left < remaining then
 			remaining = left
 			prompt.ObjectText = `{def.name} x{left}`
 		end
 	end)
-	table.insert(drops, part)
-	part.Destroying:Once(function()
-		local index = table.find(drops, part)
+	table.insert(drops, drop)
+	drop.Destroying:Once(function()
+		local index = table.find(drops, drop)
 		if index then
 			table.remove(drops, index)
 		end
 	end)
-	part.Parent = folder()
-	Debris:AddItem(part, LIFETIME_SECONDS)
+	drop.Parent = folder()
+	Debris:AddItem(drop, LIFETIME_SECONDS)
 end
 
 -- Drop position at a player's feet, nudged by `index` so several drops do not overlap.

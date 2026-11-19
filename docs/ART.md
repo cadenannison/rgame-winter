@@ -55,3 +55,6 @@ Interaction audio is silent for now (E no longer spams hit sounds). Re-enable by
 
 ## Creature sound hook points (Art Pass 3; silent, no ids)
 Per creature kind: footstep (client, from Walk/Run phase in AnimKit), growl/warning (State Alert/Telegraph: seal warning, wolf/wolverine/brute wind-up), attack (State Attack), hurt (State Hurt / MobHealth drop), death (State Death). Ambient: CarrionCrow caw (circle + scatter), AuroraWisp hum (loop near camera, tied to the nearby light cap). Add AudioCues keys with empty ids first; hook in CreatureAnim/CreatureFx.
+
+## Art pass 4: items, gear, structures
+Item icons are rendered from Part-built models (shared/ItemModels); to use an uploaded sprite add itemId -> rbxassetid to src/shared/IconAssets.luau (ImageLabel is used automatically). Worn gear: Config.ArtGear (Rig/Parts/Tiers). Chest/structure/sign tuning: Config.ArtStructures. No new asset ids needed.

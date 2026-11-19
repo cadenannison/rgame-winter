@@ -83,3 +83,6 @@ Config is split into `src/shared/Config/<Module>.luau` (which module holds which
 - Weather/session: DebugCommands.runBlizzard (lobby has no weather: toasts), BlizzardWind.fogEnd/maxFireRadius, LightingMath.blizzardTint, ForecastLeadSeconds 180 via Notify, cue BlizzardForecast (silent); DeathPanelState aliveTeammates/showDeadBar, DeathPanelInputs; ReturnPlan.decide (Studio: sets lobby mode for next Test, toast; real teleport failure toasts, no kick).
 - Loot: LootChests ring-aware countFor/selectSlots, ChestAccess (distance + wall + opened), LootService raycast on open, chest prompt RequiresLineOfSight + hold from Gather.Effort.Chest; iron gated by ring (Loot.Rings); ChunkService fills ore only where ring+1 >= IronNodeMinRing.
 - Open: Shop StarterIronAxe gives iron on day 1 (decision pending); POI crate tiers 3-4 contain iron (rings 3-4 only).
+
+## Art Pass 4: items, worn gear, structures (contract: docs/ART_PASS4_CONTRACT.md)
+- Config modules ArtItems / ArtGear / ArtStructures (one owner each). `ItemIcon.create(parent, itemId, size)` (client/Storage) over `ItemModels.build(id, mode)` (shared); `shared/IconAssets` = Assets.Icons override (ImageLabel). Gear: `GearService.refresh/clear(player)` + `GearModels.build`. Chests/signs fixed orientation; sign text SurfaceGui.

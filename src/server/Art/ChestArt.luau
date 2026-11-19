@@ -1,5 +1,5 @@
 --!strict
--- Loot chest art (parts only, no uploads). LootService calls ChestArt.build via LootService.SetArtBuilder
+-- Loot chest art (parts only, no uploads; fixed orientation, never faces the player). LootService calls ChestArt.build via LootService.SetArtBuilder
 -- and ChestArt.setOpened when a chest is looted. Five looks (common wood -> legendary gold with a beam) come
 -- from shared/logic/ChestStyle. Per-tick glow, light, particles and sound are client-side (client/Loot),
 -- driven by the ChestRarity / LootOpened Attributes; this module only builds geometry and the one-shot open.
@@ -19,15 +19,15 @@ local LID_SIZE = Vector3.new(4.1, 0.8, 2.6)
 local STRAP_WIDTH = 0.3
 local STRAP_OVERSHOOT = 0.1
 local LOCK_SIZE = Vector3.new(0.6, 0.8, 0.25)
-local GLOW_SIZE = Vector3.new(4.05, 0.14, 2.55)
-local BEAM_BASE_Y = 2 -- beam starts at the chest top
+local GEM_SIZE = Vector3.new(0.5, 0.5, 0.3)
+local RIDGE_SIZE = Vector3.new(4.2, 0.3, 0.5) -- legendary lid crest
 local PRIMARY_NAME = "Base"
 local PROMPT_NAME = "OpenPrompt"
 local PROMPT_KEY = "ChestPrompt"
 local LID_NAME = "Lid"
-local GLOW_NAME = "Glow"
-local BEAM_NAME = "Beam"
-local OPENED_GLOW_TRANSPARENCY = 1
+local GEM_NAME = "Gem"
+local RIDGE_NAME = "Ridge"
+local OPENED_GEM_TRANSPARENCY = 1
 local DIM_NAMES = { "Base", "Lid", "StrapL", "StrapR", "Lock" }
 
 local ChestArt = {}
@@ -83,7 +83,7 @@ function ChestArt.build(rarity: string, cframe: CFrame, parent: Instance): Model
 	local baseCf = cframe * CFrame.new(0, BODY_SIZE.Y / 2, 0)
 	local base = part(PRIMARY_NAME, BODY_SIZE, baseCf, style.bodyColor, style.bodyMaterial, model)
 	local lid =
-		part(LID_NAME, LID_SIZE, hingeCFrame(baseCf, 0), style.bodyColor, style.bodyMaterial, model)
+		part(LID_NAME, LID_SIZE, hingeCFrame(baseCf, 0), style.lidColor, style.bodyMaterial, model)
 	local strapSize =
 		Vector3.new(STRAP_WIDTH, BODY_SIZE.Y + STRAP_OVERSHOOT, BODY_SIZE.Z + STRAP_OVERSHOOT)
 	local sx = BODY_SIZE.X / 2 - STRAP_WIDTH * 2
@@ -108,38 +108,41 @@ function ChestArt.build(rarity: string, cframe: CFrame, parent: Instance): Model
 		LOCK_SIZE,
 		baseCf
 			* CFrame.new(0, BODY_SIZE.Y / 2 - LOCK_SIZE.Y / 2, -BODY_SIZE.Z / 2 - LOCK_SIZE.Z / 2),
-		style.trimColor,
+		style.lockColor,
 		style.trimMaterial,
 		model
 	)
-	if style.glowColor then
-		local glow = part(
-			GLOW_NAME,
-			GLOW_SIZE,
-			baseCf * CFrame.new(0, BODY_SIZE.Y / 2 + 0.02, 0),
+	if style.accent == "crown" then
+		local ridge = part(
+			RIDGE_NAME,
+			RIDGE_SIZE,
+			hingeCFrame(baseCf, 0) * CFrame.new(0, LID_SIZE.Y / 2 + RIDGE_SIZE.Y / 2, 0),
+			style.trimColor,
+			style.trimMaterial,
+			model
+		)
+		ridge.CanCollide = false
+	end
+	if style.glowColor and style.accent ~= "none" then
+		-- one small neon gem on the lock plate; the glow itself is a few client particle emitters
+		local gem = part(
+			GEM_NAME,
+			GEM_SIZE,
+			baseCf
+				* CFrame.new(
+					0,
+					BODY_SIZE.Y / 2 - LOCK_SIZE.Y / 2 + 0.3,
+					-BODY_SIZE.Z / 2 - LOCK_SIZE.Z - GEM_SIZE.Z / 2
+				),
 			style.glowColor,
 			"Neon",
 			model
 		)
-		glow.Transparency = style.glowTransparency
-		glow.CanCollide = false
-		glow.CanQuery = false
-		glow.CastShadow = false
-		if style.beamHeight > 0 then
-			local beam = part(
-				BEAM_NAME,
-				Vector3.new(style.beamWidth, style.beamHeight, style.beamWidth),
-				cframe * CFrame.new(0, BEAM_BASE_Y + style.beamHeight / 2, 0),
-				style.glowColor,
-				"Neon",
-				model
-			)
-			beam.Transparency = style.beamTransparency
-			beam.CanCollide = false
-			beam.CanQuery = false
-			beam.CanTouch = false
-			beam.CastShadow = false
-		end
+		gem.Transparency = style.glowTransparency
+		gem.CanCollide = false
+		gem.CanQuery = false
+		gem.CanTouch = false
+		gem.CastShadow = false
 	end
 	lid.CanCollide = false
 
@@ -163,7 +166,7 @@ function ChestArt.build(rarity: string, cframe: CFrame, parent: Instance): Model
 	return model
 end
 
--- Open (true): lid swings open once, glow and beam go out, colours dim, prompt disabled, attribute set.
+-- Open (true): lid swings open once, gem goes out (client drops emitters and beam), colours dim, prompt disabled, attribute set.
 -- Idempotent. (false is not supported: chests are not re-closed; the call is ignored.)
 function ChestArt.setOpened(model: Model, opened: boolean)
 	if not opened or model:GetAttribute(L.ChestOpenedAttribute) == true then
@@ -189,13 +192,11 @@ function ChestArt.setOpened(model: Model, opened: boolean)
 			p.Color = Color3.new(c.R * B.OpenedDim, c.G * B.OpenedDim, c.B * B.OpenedDim)
 		end
 	end
-	local glow = model:FindFirstChild(GLOW_NAME)
-	if glow and glow:IsA("BasePart") then
-		glow.Transparency = OPENED_GLOW_TRANSPARENCY
-	end
-	local beam = model:FindFirstChild(BEAM_NAME)
-	if beam then
-		beam:Destroy()
+	for _, name in { GEM_NAME, RIDGE_NAME } do
+		local p = model:FindFirstChild(name) -- the ridge sits on the closed lid: hide it when the lid swings
+		if p and p:IsA("BasePart") then
+			p.Transparency = OPENED_GEM_TRANSPARENCY
+		end
 	end
 	local prompt = base and base:FindFirstChild(PROMPT_NAME)
 	if prompt and prompt:IsA("ProximityPrompt") then
